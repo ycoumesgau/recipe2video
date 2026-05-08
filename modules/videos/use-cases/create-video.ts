@@ -71,7 +71,7 @@ export async function createVideoDraft(
     id: videoId,
     title,
     slug: buildSlug(title, videoId),
-    recipeUrl,
+    recipeUrl: recipeUrl ?? null,
     recipeData: {
       source: sourceSummary,
       productionDefaults,
