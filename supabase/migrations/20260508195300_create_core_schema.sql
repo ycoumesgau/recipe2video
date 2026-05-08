@@ -11,19 +11,7 @@ begin
 end;
 $$;
 
-create table public.allowed_users (
-  id uuid primary key default gen_random_uuid(),
-  email text unique not null,
-  role text not null default 'member' check (role in ('member', 'admin')),
-  created_at timestamptz not null default now()
-);
-
-create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text not null,
-  role text not null default 'member' check (role in ('member', 'admin')),
-  created_at timestamptz not null default now()
-);
+-- allowed_users + profiles: created in 20260508192500_auth_allowlist.sql
 
 create table public.videos (
   id uuid primary key default gen_random_uuid(),
@@ -69,7 +57,7 @@ create table public.segments (
   description text not null,
   prompt text not null,
   prompt_initial text not null,
-  references jsonb not null default '[]'::jsonb,
+  "references" jsonb not null default '[]'::jsonb,
   duration_target numeric not null,
   status text not null default 'pending' check (
     status in (
