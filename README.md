@@ -98,9 +98,9 @@ External references:
 
 Local skill setup:
 
-* The official Runway API skill is published at `runwayml/skills/api` in the public `runwayml/skills` repository under the same SKILL.md format as Claude Code skills.
-* Recipe2Video stores the skill at `.cursor/skills/runway-api/` so that Cursor Cloud Agents can read it like any other in-repo context.
-* The skill content must be copied from `runwayml/skills/api/` (public repo) into `.cursor/skills/runway-api/` of Recipe2Video, keeping the SKILL.md format unchanged.
+* The official Runway API skills are published under `skills/` in the public `runwayml/skills` repository under the same SKILL.md format as Claude Code skills.
+* Recipe2Video stores a mirror at `.cursor/skills/` so that Cursor Cloud Agents can read the skills like any other in-repo context.
+* The skill contents must be copied from `runwayml/skills/skills/` (public repo) into `.cursor/skills/` of Recipe2Video, keeping the upstream folder names and SKILL.md files unchanged.
 * `.cursor/skills/` must not be added to `.gitignore`. The skill is part of the agent execution context and must be tracked.
 * Refresh the local copy when Runway publishes an update to the skill.
 
@@ -162,7 +162,7 @@ The repository should include the following documentation files:
 * `docs/technical-contracts.md` — architecture, types, data model, storage, auth, and service contracts
 * `docs/github-issues-backlog.md` — agent-ready GitHub Issues backlog
 * `docs/demo-runbook.md` — demo recording plan and fallback strategy
-* `.cursor/skills/runway-api/SKILL.md` — Runway API agent skill, copied from https://github.com/runwayml/skills (kept in repo so Cursor Cloud Agents read it as in-repo context)
+* `.cursor/skills/use-runway-api/SKILL.md` and companion `rw-*` skills — Runway API agent skills, copied from https://github.com/runwayml/skills/tree/main/skills (kept in repo so Cursor Cloud Agents read them as in-repo context)
 
 ## Expected repository structure
 
@@ -201,7 +201,9 @@ fixtures/
   paris-brest/
 .cursor/
   skills/
-    runway-api/
+    use-runway-api/
+    rw-api-reference/
+    rw-integrate-video/
 docs/
 ```
 
@@ -314,7 +316,7 @@ Recommended flow:
 
 1. Create the public GitHub repository at hackathon start.
 2. Add PRD and documentation files.
-3. Copy the Runway API skill from `runwayml/skills/api/` into `.cursor/skills/runway-api/`.
+3. Copy the Runway API skills from `runwayml/skills/skills/` into `.cursor/skills/`.
 4. Create GitHub labels.
 5. Create GitHub Issues from `docs/github-issues-backlog.md`.
 6. Launch Cursor agents on separate branches.

@@ -683,9 +683,9 @@ Important data model clarification:
   * Required environment variable: `RUNWAYML_API_SECRET`.
   * Note on Seedance 2: announced by Runway as available via API but not yet listed on the public Models page at the time of writing. Verify availability at hackathon kickoff. If Seedance 2 is web-app only, fall back to `gen4.5` as the default video model.
 * Runway agent skill (Cursor):
-  * The official Runway API skill is hosted at https://github.com/runwayml/skills under `runwayml/skills/api/`, in the same SKILL.md format used by Claude Code skills.
-  * Recipe2Video stores a copy of the skill at `.cursor/skills/runway-api/` so Cursor Cloud Agents read it as in-repo context.
-  * The skill is the authoritative low-level reference for endpoints, parameter names, request/response shapes, polling cadence, and error handling.
+  * The official Runway API skills are hosted at https://github.com/runwayml/skills under `skills/`, in the same SKILL.md format used by Claude Code skills.
+  * Recipe2Video stores a mirror of those skills at `.cursor/skills/` so Cursor Cloud Agents read them as in-repo context.
+  * `use-runway-api` and `rw-api-reference` are the authoritative low-level references for endpoints, parameter names, request/response shapes, polling cadence, and error handling.
   * Setup is part of Phase 0 / Issue 01 of the GitHub Issues backlog. `.cursor/skills/` must be tracked in git.
 * OpenAI API:
   * Use GPT-5.5 High for reasoning, planning, prompt editing, prompt diffs, and feedback interpretation.
@@ -784,7 +784,7 @@ Small but intense hackathon build: 10-15 focused human hours, supported by Curso
 * Key Deliverables:
   * Create new public GitHub repo for the hackathon project.
   * Add `README.md`, `PRD.md`, `docs/ux-contract.md`, `docs/technical-contracts.md`, `docs/agent-workflow.md`, `docs/github-issues-backlog.md`, and `docs/demo-runbook.md` in English.
-  * Copy the Runway API skill from `runwayml/skills/api/` (https://github.com/runwayml/skills) into `.cursor/skills/runway-api/`, keeping the SKILL.md format unchanged. Track `.cursor/skills/` in git.
+  * Copy the Runway API skills from `runwayml/skills/skills/` (https://github.com/runwayml/skills/tree/main/skills) into `.cursor/skills/`, keeping the upstream folder names and SKILL.md format unchanged. Track `.cursor/skills/` in git.
   * Define shared TypeScript types and status enums before launching parallel agents.
   * Create initial GitHub labels and issues with dependency fields.
   * Define branch naming convention.
