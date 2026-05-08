@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { signOutAction } from "@/modules/auth/auth.actions";
 
 const navigationItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -25,7 +26,13 @@ const navigationItems = [
   { href: "/docs", label: "Docs", icon: BookOpen },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  userEmail,
+}: {
+  children: React.ReactNode;
+  userEmail: string;
+}) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
@@ -69,6 +76,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <Badge variant="secondary">Credits: pending</Badge>
               <Badge variant="outline">0 active tasks</Badge>
+              <Badge className="hidden md:inline-flex" variant="outline">
+                {userEmail}
+              </Badge>
+              <form action={signOutAction}>
+                <Button size="sm" type="submit" variant="ghost">
+                  Sign out
+                </Button>
+              </form>
             </div>
           </header>
           <main className="flex-1 p-4 lg:p-6">{children}</main>
