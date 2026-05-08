@@ -89,7 +89,9 @@ fixtures/
   paris-brest/
 .cursor/
   skills/
-    runway-api/
+    use-runway-api/
+    rw-api-reference/
+    rw-integrate-video/
 docs/
 
 ```
@@ -896,7 +898,7 @@ References:
 * Models page: https://docs.dev.runwayml.com/guides/models/
 * Pricing: https://docs.dev.runwayml.com/guides/pricing/
 * Skills repository (public): https://github.com/runwayml/skills
-* In-repo skill (authoritative for endpoints, request shapes, polling cadence, error handling): `.cursor/skills/runway-api/SKILL.md`
+* In-repo skills (authoritative for endpoints, request shapes, polling cadence, error handling): `.cursor/skills/use-runway-api/SKILL.md` and `.cursor/skills/rw-api-reference/SKILL.md`
 * Node.js SDK: `@runwayml/sdk`
 * Required environment variable: `RUNWAYML_API_SECRET`
 
@@ -914,7 +916,7 @@ Rules:
 * Every Runway task ID must be stored.
 * Polling should follow Runway guidance, approximately every 5 seconds.
 * Every successful output must be persisted before the temporary URL expires.
-* When the local skill at `.cursor/skills/runway-api/SKILL.md` and this contract disagree, treat the skill as the source of truth for low-level API mechanics (endpoints, parameter names, response shapes) and this contract as the source of truth for product-side conventions (defaults, status enums, persistence flow).
+* When the local Runway skills and this contract disagree, treat the skills as the source of truth for low-level API mechanics (endpoints, parameter names, response shapes) and this contract as the source of truth for product-side conventions (defaults, status enums, persistence flow).
 
 Required helper functions:
 

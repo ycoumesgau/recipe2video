@@ -58,7 +58,7 @@ Create the initial Recipe2Video repository structure with Next.js, TypeScript, T
 * Create required folder structure.
 * Add placeholder routes for login, dashboard, video detail, and docs.
 * Add the PRD and execution docs.
-* Install the Runway API skill: copy the contents of `runwayml/skills/api/` from https://github.com/runwayml/skills into `.cursor/skills/runway-api/` of this repository, keeping the SKILL.md format unchanged. `.cursor/skills/` must be tracked in git (not in `.gitignore`).
+* Install the Runway API skills: copy the contents of `runwayml/skills/skills/` from https://github.com/runwayml/skills into `.cursor/skills/` of this repository, keeping upstream folder names and SKILL.md files unchanged. `.cursor/skills/` must be tracked in git (not in `.gitignore`).
 
 ### Out of Scope
 
@@ -75,12 +75,12 @@ Create the initial Recipe2Video repository structure with Next.js, TypeScript, T
 * Dashboard route renders a placeholder.
 * Login route renders a placeholder.
 * Documentation files are present.
-* `.cursor/skills/runway-api/SKILL.md` exists and matches the upstream `runwayml/skills/api/SKILL.md` content.
+* `.cursor/skills/use-runway-api/SKILL.md`, `.cursor/skills/rw-api-reference/SKILL.md`, and companion `rw-*` skills exist and match upstream `runwayml/skills/skills/` content.
 * `.cursor/skills/` is tracked in git.
 
 ### Test / Demo
 
-Run the app locally and verify `/login` and `/` render without errors. Confirm `.cursor/skills/runway-api/SKILL.md` is present and readable, and that `git ls-files .cursor/skills/` returns the skill files.
+Run the app locally and verify `/login` and `/` render without errors. Confirm `.cursor/skills/use-runway-api/SKILL.md` is present and readable, and that `git ls-files .cursor/skills/` returns the skill files.
 
 ---
 
@@ -253,7 +253,7 @@ Implement the Runway API client, media uploads, task creation, and task polling 
 
 ### Contracts
 
-* Read `.cursor/skills/runway-api/SKILL.md` for endpoint shapes, parameter names, and polling cadence before implementing helpers. The skill is the authoritative low-level reference.
+* Read `.cursor/skills/use-runway-api/SKILL.md` and `.cursor/skills/rw-api-reference/SKILL.md` for endpoint shapes, parameter names, and polling cadence before implementing helpers. The skills are the authoritative low-level reference.
 * Cross-check against the public Runway API documentation: https://docs.dev.runwayml.com/ and https://docs.dev.runwayml.com/api.
 * Default model identifiers come from `docs/technical-contracts.md` (Runway Contract section).
 * Use the official Node.js SDK: `@runwayml/sdk`.
@@ -282,7 +282,7 @@ Implement the Runway API client, media uploads, task creation, and task polling 
 * A task polling helper returns status consistently.
 * Runtime errors are normalized into application errors.
 * No silent fallback exists.
-* Helpers reference the patterns documented in `.cursor/skills/runway-api/SKILL.md`. Any deviation must be justified in the PR description.
+* Helpers reference the patterns documented in `.cursor/skills/use-runway-api/SKILL.md` and `.cursor/skills/rw-api-reference/SKILL.md`. Any deviation must be justified in the PR description.
 
 ### Test / Demo
 

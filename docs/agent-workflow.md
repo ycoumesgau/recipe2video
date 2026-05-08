@@ -297,10 +297,10 @@ Before coding, read:
 - docs/agent-workflow.md
 - docs/ux-contract.md
 - docs/technical-contracts.md
-- .cursor/skills/runway-api/SKILL.md (Runway API skill, mirrored from https://github.com/runwayml/skills)
+- .cursor/skills/use-runway-api/SKILL.md and .cursor/skills/rw-api-reference/SKILL.md (Runway API skills, mirrored from https://github.com/runwayml/skills/tree/main/skills)
 - the GitHub issue assigned to you
 
-If your issue touches Runway API calls (video, image, audio, or task polling), the Runway skill at .cursor/skills/runway-api/SKILL.md is authoritative for endpoints, model identifiers, request shapes, polling cadence, and error handling. Use the Runway API documentation at https://docs.dev.runwayml.com/ as the secondary source if the local skill is silent on a specific point.
+If your issue touches Runway API calls (video, image, audio, or task polling), the Runway skills at .cursor/skills/use-runway-api/SKILL.md and .cursor/skills/rw-api-reference/SKILL.md are authoritative for endpoints, model identifiers, request shapes, polling cadence, and error handling. Use the Runway API documentation at https://docs.dev.runwayml.com/ as the secondary source if the local skills are silent on a specific point.
 
 Do not modify files outside your issue scope.
 Do not invent new status values, API contracts, or folder conventions.
@@ -357,7 +357,7 @@ Before launching any feature agents, the following must be present in the public
 * docs/technical-contracts.md
 * docs/github-issues-backlog.md
 * demo runbook (fixture-backed instructions for running the demo)
-* `.cursor/skills/runway-api/SKILL.md` and any supporting files copied from `runwayml/skills/api/`
+* `.cursor/skills/use-runway-api/SKILL.md`, `.cursor/skills/rw-api-reference/SKILL.md`, and companion `rw-*` skills copied from `runwayml/skills/skills/`
 
 ### Runway API skill installation
 
@@ -365,8 +365,8 @@ The Runway API skill is the authoritative agent-readable reference for endpoints
 
 Setup rules:
 
-* Copy the contents of `runwayml/skills/api/` into `.cursor/skills/runway-api/` of the Recipe2Video repository before any feature agent that touches Runway is launched.
-* Keep the SKILL.md frontmatter and structure unchanged; do not paraphrase or rewrite it.
+* Copy the contents of `runwayml/skills/skills/` into `.cursor/skills/` of the Recipe2Video repository before any feature agent that touches Runway is launched.
+* Keep upstream folder names, SKILL.md frontmatter, and structure unchanged; do not paraphrase or rewrite them.
 * Track `.cursor/skills/` in git so Cursor Cloud Agents read it as in-repo context. Do not add `.cursor/skills/` to `.gitignore`.
 * Refresh the local copy if Runway publishes an update to the skill during the hackathon.
 * This skill copy is not subject to the public-safe fixture extraction rules above, because the source repository (`runwayml/skills`) is itself public and the skill content is intended for redistribution. No additional human review is required beyond confirming the source path and version.
