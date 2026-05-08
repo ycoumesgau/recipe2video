@@ -10,6 +10,7 @@
     "test": "tsx --test \"modules/**/*.test.ts\""
   },
   "dependencies": {
+    "@runwayml/sdk": "^3.21.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
     "class-variance-authority": "^0.7.1",
