@@ -12,7 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getSupabaseServiceClient } from "@/shared/config/supabase";
+import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
 export default async function VideoDetailPage({
@@ -110,7 +110,7 @@ export default async function VideoDetailPage({
 
 async function loadProject(videoId: string) {
   try {
-    const supabase = getSupabaseServiceClient();
+    const supabase = createSupabaseAdminClient();
     const project = await getVideoProjectById(supabase, videoId);
 
     return { project, dataError: null };

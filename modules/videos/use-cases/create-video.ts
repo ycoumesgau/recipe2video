@@ -1,4 +1,6 @@
-import { getSupabaseServiceClient } from "@/shared/config/supabase";
+import { getCurrentProfile } from "@/modules/auth/assert-allowlisted-user";
+import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { insertRecipeSourceMediaAssets } from "@/modules/media-assets/repositories/media-asset.repository";
 import {
   DEFAULT_IMAGE_MODEL,
   DEFAULT_SFX_MODEL,
@@ -7,10 +9,7 @@ import {
   MAX_RECIPE_SOURCE_FILE_SIZE_BYTES,
   RECIPE_SOURCE_BUCKET,
 } from "@/modules/videos/video.constants";
-import {
-  createDraftVideoRecord,
-  insertRecipeSourceMediaAssets,
-} from "@/modules/videos/repositories/video.repository";
+import { createVideoProject } from "@/modules/videos/repositories/video.repository";
 import type {
   RecipeSourceSummary,
   VideoProductionDefaults,
@@ -49,8 +48,13 @@ export async function createVideoDraft(
   });
   assertRecipeSourceFiles(sourceFiles);
 
-  const supabase = getSupabaseServiceClient();
-  const videoId = crypto.randomUUID();
+  const profile = await getCurrentProfile();
+  if (!profile) {
+    throw new Error("Authentication is required to create a video draft.");
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const draftId = crypto.randomUUID();
   const sourceSummary = buildSourceSummary({
     recipeUrl,
     pastedRecipeText,
@@ -67,10 +71,9 @@ export async function createVideoDraft(
   };
   const title = buildDraftTitle({ recipeUrl, pastedRecipeText, demoRecipeId });
 
-  await createDraftVideoRecord(supabase, {
-    id: videoId,
+  const project = await createVideoProject(supabase, {
     title,
-    slug: buildSlug(title, videoId),
+    slug: buildSlug(title, draftId),
     recipeUrl: recipeUrl ?? null,
     recipeData: {
       source: sourceSummary,
@@ -81,12 +84,13 @@ export async function createVideoDraft(
     selectedImageModel: productionDefaults.imageModel,
     selectedTtsModel: productionDefaults.ttsModel,
     selectedSfxModel: productionDefaults.sfxModel,
+    createdBy: profile.id,
   });
 
   const uploadedAssets = [];
 
   for (const [index, file] of sourceFiles.entries()) {
-    const storagePath = `${videoId}/${Date.now()}-${index}-${sanitizeFileName(
+    const storagePath = `${project.id}/${Date.now()}-${index}-${sanitizeFileName(
       file.name
     )}`;
     const { error } = await supabase.storage
@@ -101,19 +105,19 @@ export async function createVideoDraft(
     }
 
     uploadedAssets.push({
-      id: crypto.randomUUID(),
-      videoId,
+      videoId: project.id,
       storageBucket: RECIPE_SOURCE_BUCKET,
       storagePath,
       originalFilename: file.name,
       mimeType: file.type || null,
       fileSizeBytes: file.size,
+      createdBy: profile.id,
     });
   }
 
   await insertRecipeSourceMediaAssets(supabase, uploadedAssets);
 
-  return { videoId };
+  return { videoId: project.id };
 }
 
 function normalizeOptionalText(value: FormDataEntryValue | string | undefined) {
