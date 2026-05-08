@@ -39,3 +39,13 @@ export interface MediaAsset {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface RecipeSourceMediaAssetInput {
+  videoId: string;
+  storageBucket: string;
+  storagePath: string;
+  originalFilename: string;
+  mimeType: string | null;
+  fileSizeBytes: number;
+  createdBy?: string | null;
+}

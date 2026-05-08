@@ -4,6 +4,7 @@ import type {
   VideoDashboardData,
   VideoDashboardProject,
 } from "./video-dashboard.types";
+import type { VideoProject } from "./video.types";
 
 const SEEDED_PROJECTS: VideoDashboardProject[] = [
   {
@@ -98,27 +99,30 @@ const SEEDED_ACTIVE_QUEUE: ActiveGenerationQueueItem[] = [
   },
 ];
 
-export function getVideoDashboardData(): VideoDashboardData {
-  const activeVideos = SEEDED_PROJECTS.filter(
+export function getVideoDashboardData(
+  persistedProjects: VideoProject[] = [],
+): VideoDashboardData {
+  const projects = [...persistedProjects.map(mapPersistedProject), ...SEEDED_PROJECTS];
+  const activeVideos = projects.filter(
     (project) => project.status !== "exported" && project.status !== "failed",
   ).length;
   const segmentsGenerating = SEEDED_ACTIVE_QUEUE.filter(
     (task) => task.status === "processing" || task.status === "queued",
   ).length;
-  const projectsWaitingForReview = SEEDED_PROJECTS.filter((project) =>
+  const projectsWaitingForReview = projects.filter((project) =>
     ACTIONABLE_VIDEO_STATUSES.includes(project.status),
   ).length;
-  const creditsUsed = SEEDED_PROJECTS.reduce(
+  const creditsUsed = projects.reduce(
     (total, project) => total + project.totalCostCredits,
     0,
   );
   const estimatedCreditsRemaining = 50000 - creditsUsed;
-  const videosCompleted = SEEDED_PROJECTS.filter(
+  const videosCompleted = projects.filter(
     (project) => project.status === "exported",
   ).length;
 
   return {
-    projects: SEEDED_PROJECTS,
+    projects,
     activeQueue: SEEDED_ACTIVE_QUEUE,
     creditsUsed,
     estimatedCreditsRemaining,
@@ -155,4 +159,64 @@ export function getVideoDashboardData(): VideoDashboardData {
       },
     ],
   };
+}
+
+function mapPersistedProject(project: VideoProject): VideoDashboardProject {
+  const source = project.recipeData?.source as
+    | { type?: string; demoRecipeId?: string | null; uploadedFileNames?: string[] }
+    | undefined;
+  const recipeSourceKind = getRecipeSourceKind(source?.type);
+
+  return {
+    id: project.id,
+    title: project.title,
+    recipeSourceKind,
+    recipeSourceLabel: getRecipeSourceLabel(recipeSourceKind),
+    status: project.status,
+    thumbnailLabel: project.title,
+    thumbnailTone: recipeSourceKind === "demo_fixture" ? "amber" : "sky",
+    acceptedSegments: 0,
+    totalSegments: 0,
+    activeTaskCount: 0,
+    totalCostCredits: project.totalCostCredits,
+    updatedAt: project.updatedAt,
+    ownerName: "Licorn Ops",
+    nextAction: "Analyze recipe",
+  };
+}
+
+function getRecipeSourceKind(
+  sourceType: string | undefined,
+): VideoDashboardProject["recipeSourceKind"] {
+  if (sourceType === "url") {
+    return "url";
+  }
+
+  if (sourceType === "photos") {
+    return "photos";
+  }
+
+  if (sourceType === "text") {
+    return "pasted_text";
+  }
+
+  return "demo_fixture";
+}
+
+function getRecipeSourceLabel(
+  sourceKind: VideoDashboardProject["recipeSourceKind"],
+) {
+  if (sourceKind === "url") {
+    return "Recipe URL";
+  }
+
+  if (sourceKind === "photos") {
+    return "Recipe photos";
+  }
+
+  if (sourceKind === "pasted_text") {
+    return "Pasted text";
+  }
+
+  return "Demo fixture";
 }
