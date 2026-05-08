@@ -28,6 +28,7 @@ export type Database = {
           role?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       profiles: {
         Row: {
@@ -48,6 +49,7 @@ export type Database = {
           role?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       videos: {
         Row: {
@@ -107,6 +109,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       logical_scenes: {
         Row: {
@@ -148,6 +151,7 @@ export type Database = {
           duration_target?: number | null;
           note?: string | null;
         };
+        Relationships: [];
       };
       segments: {
         Row: {
@@ -204,6 +208,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       media_assets: {
         Row: {
@@ -278,6 +283,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       reference_assets: {
         Row: {
@@ -316,6 +322,7 @@ export type Database = {
           status?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       generations: {
         Row: {
@@ -360,6 +367,7 @@ export type Database = {
           created_at?: string;
           completed_at?: string | null;
         };
+        Relationships: [];
       };
       scene_feedbacks: {
         Row: {
@@ -401,6 +409,7 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       cost_logs: {
         Row: {
@@ -448,6 +457,7 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       compositions: {
         Row: {
@@ -489,6 +499,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
