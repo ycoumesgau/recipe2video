@@ -1,6 +1,31 @@
 import type { Json } from "@/shared/supabase/database.types";
 
-export type PromptDiff = Json;
+export interface PromptDiffLine {
+  type: "unchanged" | "added" | "removed";
+  text: string;
+}
+
+export interface PromptDiff {
+  lines: PromptDiffLine[];
+}
+
+export type StoredPromptDiff = PromptDiff | Json;
+
+export interface PromptEditInput {
+  videoId: string;
+  segmentId: string;
+  generationId: string;
+  promptBefore: string;
+  feedbackMessage: string;
+  requestedByUserId: string;
+  isAllowlisted: boolean;
+}
+
+export interface PromptEditResult {
+  promptBefore: string;
+  promptAfter: string;
+  diff: PromptDiff;
+}
 
 export interface SegmentFeedback {
   id: string;
@@ -9,7 +34,7 @@ export interface SegmentFeedback {
   message: string;
   promptBefore: string;
   promptAfter: string;
-  diff: PromptDiff;
+  diff: StoredPromptDiff;
   applied: boolean;
   createdBy?: string | null;
   createdAt: string;
