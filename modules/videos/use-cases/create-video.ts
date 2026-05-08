@@ -1,13 +1,12 @@
 import { getCurrentProfile } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
-import { insertRecipeSourceMediaAssets } from "@/modules/media-assets/repositories/media-asset.repository";
+import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
 import {
   DEFAULT_IMAGE_MODEL,
   DEFAULT_SFX_MODEL,
   DEFAULT_TTS_MODEL,
   DEFAULT_VIDEO_MODEL,
   MAX_RECIPE_SOURCE_FILE_SIZE_BYTES,
-  RECIPE_SOURCE_BUCKET,
 } from "@/modules/videos/video.constants";
 import { createVideoProject } from "@/modules/videos/repositories/video.repository";
 import type {
@@ -87,35 +86,19 @@ export async function createVideoDraft(
     createdBy: profile.id,
   });
 
-  const uploadedAssets = [];
-
   for (const [index, file] of sourceFiles.entries()) {
-    const storagePath = `${project.id}/${Date.now()}-${index}-${sanitizeFileName(
-      file.name
-    )}`;
-    const { error } = await supabase.storage
-      .from(RECIPE_SOURCE_BUCKET)
-      .upload(storagePath, file, {
-        contentType: file.type || "application/octet-stream",
-        upsert: false,
-      });
-
-    if (error) {
-      throw new Error(`Unable to upload recipe source file: ${error.message}`);
-    }
-
-    uploadedAssets.push({
+    await persistMediaAssetFile({
+      supabase,
+      type: "recipe_source",
+      body: file,
       videoId: project.id,
-      storageBucket: RECIPE_SOURCE_BUCKET,
-      storagePath,
+      storageFilename: `${Date.now()}-${index}-${sanitizeFileName(file.name)}`,
       originalFilename: file.name,
       mimeType: file.type || null,
       fileSizeBytes: file.size,
       createdBy: profile.id,
     });
   }
-
-  await insertRecipeSourceMediaAssets(supabase, uploadedAssets);
 
   return { videoId: project.id };
 }

@@ -40,6 +40,32 @@ export interface MediaAsset {
   updatedAt: string;
 }
 
+export interface StoredMediaAssetInput {
+  videoId?: string | null;
+  segmentId?: string | null;
+  generationId?: string | null;
+  type: MediaAssetType;
+  provider: MediaAssetProvider;
+  storageBucket: string;
+  storagePath: string;
+  runwayOutputUrl?: string | null;
+  originalFilename?: string | null;
+  mimeType?: string | null;
+  fileSizeBytes?: number | null;
+  durationSeconds?: number | null;
+  width?: number | null;
+  height?: number | null;
+  status?: MediaAssetStatus;
+  metadata?: Record<string, unknown> | null;
+  createdBy?: string | null;
+}
+
+export interface MediaAssetStorageLocation {
+  id: string;
+  storageBucket: string;
+  storagePath: string;
+}
+
 export interface RecipeSourceMediaAssetInput {
   videoId: string;
   storageBucket: string;
