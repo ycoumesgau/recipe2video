@@ -11,6 +11,9 @@ export interface RecipeStep {
   text: string;
   timing?: string | null;
   visualCue?: string | null;
+  block?: string | null;
+  textureCue?: string | null;
+  runwayRisk?: string | null;
 }
 
 export interface RecipeData {
@@ -19,6 +22,8 @@ export interface RecipeData {
   sourceUrl?: string | null;
   ingredients: RecipeIngredient[];
   steps: RecipeStep[];
+  subRecipes: string[];
+  assumptions: string[];
   timing?: {
     prep?: string | null;
     cook?: string | null;
@@ -27,6 +32,7 @@ export interface RecipeData {
   criticalTransformations: string[];
   visualTextureOpportunities: string[];
   possibleHooks: string[];
+  promptPolicySources: string[];
 }
 
 export interface ClarifyingQuestion {

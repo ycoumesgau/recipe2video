@@ -11,15 +11,20 @@ import {
   DEFAULT_SEEDANCE_VIDEO_MODEL,
   DEFAULT_VERTICAL_RATIO,
   FOOD_VIDEO_PROMPT_RULES,
+  MAX_SEEDANCE_PROMPT_CHARACTERS,
   MAX_SEEDANCE_REFERENCES,
   MIN_LOGICAL_SCENES,
   OPENAI_REASONING_MODEL,
+  SEEDANCE_PROMPT_SKELETON,
   TARGET_SEEDANCE_SEGMENT_COUNT,
+  VIDEOS_REPO_POLICY_SOURCES,
 } from "@/modules/storyboard/storyboard.constants";
 import type {
   LogicalScene,
+  RunwaySafeScore,
   SeedanceSegment,
   SeedanceSegmentationInput,
+  SeedancePromptQa,
   SegmentReference,
   StoryboardGenerationInput,
 } from "@/modules/storyboard/storyboard.types";
@@ -134,8 +139,10 @@ export function buildRecipeAnalysisPrompt(input: RecipeAnalysisInput): string {
   return [
     `Model: ${OPENAI_REASONING_MODEL}`,
     "Task: analyze a recipe for Recipe2Video without launching media generation.",
-    "Return JSON with title, ingredients, steps, timing, critical transformations, visual texture opportunities, possible hooks, and material clarifying questions only.",
+    "Return JSON with title, ingredients, sub-recipes, assumptions, steps, timing, critical transformations, visual texture opportunities, possible hooks, and material clarifying questions only.",
     "Ask clarifying questions only when answers materially change the video plan.",
+    "Apply the videos repo policy sources as named source material; do not collapse them into generic food-video advice.",
+    `Policy sources:\n${VIDEOS_REPO_POLICY_SOURCES.map((source) => `- ${source}`).join("\n")}`,
     `Source type: ${input.sourceType}`,
     input.recipeUrl ? `Recipe URL: ${input.recipeUrl}` : null,
     input.recipeText ? `Recipe text:\n${input.recipeText}` : null,
@@ -154,6 +161,8 @@ export function buildStoryboardGenerationPrompt(input: StoryboardGenerationInput
     "Return JSON only. Do not create Runway tasks.",
     `Recipe title: ${input.recipeTitle}`,
     `Target duration seconds: ${input.targetDurationSeconds ?? 60}`,
+    "Required output shape: 30-48 logical scenes with id, type, arc, description, bg, zoom, duration, note, texture cue, SFX cue, satisfaction beat, and Runway-safe score.",
+    "Enforce the videos repo sequencing policy: micro-arc scenes 1-3, 70-80% detail shots, context only when it prepares the next detail, final dressing gesture before the hero shot, final dish on island_default with the character satisfied.",
     "Recipe steps:",
     input.recipeSteps.map((step, index) => `${index + 1}. ${step}`).join("\n"),
     "Creative rules:",
@@ -168,7 +177,9 @@ export function buildSeedanceSegmentationPrompt(input: SeedanceSegmentationInput
     `Default video model: ${DEFAULT_SEEDANCE_VIDEO_MODEL}`,
     `Default ratio: ${DEFAULT_VERTICAL_RATIO}`,
     "Return JSON only. Do not launch Runway generation.",
-    "Each segment must include multiple hard-cut shots, mandatory timing, explicit reference roles, kitchen ASMR only, no speech, no voiceover, and no music.",
+    "Each segment must include mode References, references to load, 2-4 visual beats, continuity, risk, prompt, timing, audio, negatives, and QA checklist.",
+    "Seedance prompt skeleton:",
+    SEEDANCE_PROMPT_SKELETON.map((rule) => `- ${rule}`).join("\n"),
     `Reference limit: ${MAX_SEEDANCE_REFERENCES}`,
     "Logical scenes:",
     input.logicalScenes
@@ -181,7 +192,7 @@ export function buildPromptEditPrompt(input: PromptEditInput): string {
   return [
     `Model: ${OPENAI_REASONING_MODEL}`,
     "Task: revise one Seedance prompt from natural-language feedback and return prompt_before, prompt_after, and a line diff.",
-    "Do not trigger regeneration. Do not switch models. Preserve hard cuts, timing, reference roles, and kitchen ASMR policy.",
+    "Do not trigger regeneration. Do not switch models. Preserve References mode, hard cuts, timing, reference roles, kitchen identity, visible hands, ASMR-only audio, concise negatives, and prompt length.",
     `Feedback: ${input.feedbackMessage}`,
     "Prompt before:",
     input.promptBefore,
@@ -201,8 +212,13 @@ function stubRecipeAnalysis(input: RecipeAnalysisInput): RecipeAnalysisResult {
     steps: steps.map((step, index) => ({
       position: index + 1,
       text: step,
+      block: inferRecipeBlock(step, index),
       visualCue: inferVisualCue(step),
+      textureCue: inferTextureCue(step),
+      runwayRisk: inferRunwayRisk(step),
     })),
+    subRecipes: inferSubRecipes(sourceText),
+    assumptions: inferRecipeAssumptions(sourceText, title),
     timing: null,
     criticalTransformations: [
       "raw ingredients becoming a structured mixture",
@@ -218,6 +234,7 @@ function stubRecipeAnalysis(input: RecipeAnalysisInput): RecipeAnalysisResult {
       `A texture-first reveal of ${title.toLowerCase()} before the full recipe context`,
       "Licorn reacts to the first sensory payoff in the kitchen",
     ],
+    promptPolicySources: [...VIDEOS_REPO_POLICY_SOURCES],
   };
 
   return {
@@ -260,6 +277,14 @@ function stubLogicalScenes(input: StoryboardGenerationInput): LogicalScene[] {
         position % 4 === 0 || isOpening || isFinale
           ? "Texture payoff or material contrast checkpoint."
           : null,
+      textureCue: inferTextureCue(step),
+      sfxCue: inferSfxCue(step),
+      satisfactionBeat: position <= 3 || position % 4 === 0 || isFinale,
+      runwaySafeScore: buildRunwaySafeScore({
+        sceneType,
+        description: step,
+        satisfactionBeat: position <= 3 || position % 4 === 0 || isFinale,
+      }),
     };
   });
 }
@@ -278,13 +303,20 @@ function stubSeedanceSegments(input: SeedanceSegmentationInput): SeedanceSegment
     const lastScene = scenes[scenes.length - 1] ?? firstScene;
     const references = buildSegmentReferences(position);
     const durationTarget = Math.min(15, Math.max(2, Number((scenes.length * 2).toFixed(0))));
+    const beats = buildSegmentBeats(scenes);
+    const timing = buildSegmentTiming(scenes, durationTarget);
+    const risk = inferSegmentRisk(scenes);
     const prompt = buildSeedancePrompt({
       position,
       title: buildSegmentTitle(position, firstScene, lastScene),
       scenes,
       references,
+      beats,
+      timing,
+      risk,
       durationTarget,
     });
+    const qaChecklist = buildSeedancePromptQa({ prompt, references, risk });
 
     return {
       id: `${input.videoId}-segment-${String(position).padStart(2, "0")}`,
@@ -292,11 +324,19 @@ function stubSeedanceSegments(input: SeedanceSegmentationInput): SeedanceSegment
       position,
       title: buildSegmentTitle(position, firstScene, lastScene),
       arc: firstScene?.arc ?? "recipe progression",
+      mode: "References",
       logicalSceneIds: scenes.map((scene) => scene.id),
       description: scenes.map((scene) => scene.description).join(" "),
       prompt,
       promptInitial: prompt,
       references,
+      beats,
+      timing,
+      continuity: buildSegmentContinuity(position, scenes),
+      risk,
+      audioPrompt: buildMandatoryAudio(timing),
+      negatives: buildSegmentNegatives(risk),
+      qaChecklist,
       durationTarget,
       status: "ready",
       selectedGenerationId: null,
@@ -306,10 +346,7 @@ function stubSeedanceSegments(input: SeedanceSegmentationInput): SeedanceSegment
 
 function stubPromptEdit(input: PromptEditInput): PromptEditResult {
   const correction = input.feedbackMessage.trim().replace(/\s+/g, " ");
-  const promptAfter = [
-    input.promptBefore.trim(),
-    `Correction to apply: ${correction}. Make the corrected visual behavior explicit while preserving all existing timing, hard cuts, reference roles, vertical framing, and kitchen ASMR-only audio.`,
-  ].join("\n");
+  const promptAfter = reviseSeedancePrompt(input.promptBefore, correction);
 
   return {
     promptBefore: input.promptBefore,
@@ -323,22 +360,26 @@ function buildSeedancePrompt(input: {
   title: string;
   scenes: LogicalScene[];
   references: SegmentReference[];
+  beats: string[];
+  timing: string[];
+  risk: string;
   durationTarget: number;
 }): string {
-  const shotLines = input.scenes.map((scene, index) => {
-    const start = index * 2;
-    const end = Math.min(input.durationTarget, start + 2);
-
-    return `Shot ${index + 1}, ${start}-${end}s: ${scene.description}`;
-  });
-
   return [
-    `Vertical ${DEFAULT_SEEDANCE_VIDEO_MODEL} segment ${input.position}: ${input.title}.`,
-    `Total duration ${input.durationTarget}s, ${input.scenes.length} shots, hard cuts between every shot.`,
-    `Reference roles: ${input.references.map((reference) => `@${reference.label} as ${reference.role}`).join("; ")}.`,
-    ...shotLines,
-    "Audio: kitchen ASMR only, no speech, no voiceover, no music.",
-    "Negative: no extra limbs, no melted mascot, no incorrect utensil grip, no unstable pastry geometry.",
+    input.references
+      .map((reference) => `Use @${reference.label} only as ${reference.role}.`)
+      .join(" "),
+    "Use @KitchenIslandDefault to preserve the same kitchen identity, surfaces, materials and lighting whenever the shot becomes frontal, three-quarter, or wider than expected. Do not copy the exact original photo framing; choose macro or close-up zooms that fit the food action.",
+    "Use character references to preserve identity and hands. The character's face may stay out of frame in macro shots, but hands must be visible on every human action.",
+    `Generate exactly ${input.timing.length} short shots with hard cuts, total duration ${input.durationTarget} seconds, no slow motion, no soft transitions, no extra shots. TikTok/Reels food ASMR style, no text on screen.`,
+    "Integrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with the cuts and food actions.",
+    "Visual beats:",
+    ...input.beats.map((beat) => `- ${beat}`),
+    "Mandatory timing:",
+    ...input.timing.map((line) => `- ${line}`),
+    `Risk to control: ${input.risk}`,
+    `Global negatives: ${buildSegmentNegatives(input.risk).join(", ")}.`,
+    `Mandatory audio: ${buildMandatoryAudio(input.timing)}`,
   ].join("\n");
 }
 
@@ -366,6 +407,114 @@ function buildSegmentReferences(position: number): SegmentReference[] {
       required: true,
     },
   ];
+}
+
+function buildSegmentBeats(scenes: LogicalScene[]): string[] {
+  const strongScenes = scenes.filter((scene) => scene.satisfactionBeat || scene.textureCue);
+  const selectedScenes = (strongScenes.length > 0 ? strongScenes : scenes).slice(0, 4);
+
+  return selectedScenes.map((scene) => scene.textureCue ?? scene.description);
+}
+
+function buildSegmentTiming(scenes: LogicalScene[], durationTarget: number): string[] {
+  const shotCount = Math.min(Math.max(scenes.length, 2), 8);
+  const shotDuration = Number((durationTarget / shotCount).toFixed(1));
+
+  return Array.from({ length: shotCount }, (_, index) => {
+    const scene = scenes[index] ?? scenes[scenes.length - 1];
+    const start = Number((index * shotDuration).toFixed(1));
+    const end = index === shotCount - 1 ? durationTarget : Number(((index + 1) * shotDuration).toFixed(1));
+
+    return `${start.toFixed(1)}-${end.toFixed(1)}s: ${scene.description}`;
+  });
+}
+
+function buildSegmentContinuity(position: number, scenes: LogicalScene[]): string {
+  if (position === 1) {
+    return "Opening segment; no prior product continuity required.";
+  }
+
+  const hasFragileGeometry = scenes.some((scene) => mentionsFragileGeometry(scene.description));
+
+  if (hasFragileGeometry) {
+    return "Use the best prior product-state frame if available; preserve topology with hard cuts rather than free-form morphing.";
+  }
+
+  return "Preserve kitchen, character, utensil, and current recipe-state continuity from the prior approved segment.";
+}
+
+function inferSegmentRisk(scenes: LogicalScene[]): string {
+  const text = scenes.map((scene) => scene.description).join(" ").toLowerCase();
+
+  if (mentionsFragileGeometry(text)) {
+    return "Fragile repetitive pastry geometry may drift; describe what the shape is and what it is not, and prefer target state frames.";
+  }
+
+  if (text.includes("oven") || text.includes("bake") || text.includes("cuisson")) {
+    return "Baking may change geometry; avoid free morphing and use raw/baked state frames when shape matters.";
+  }
+
+  if (text.includes("rolling pin") || text.includes("rouleau")) {
+    return "Utensil motion can be misread; lock whether the rolling pin rolls normally or moves vertically like a mallet.";
+  }
+
+  if (text.includes("induction") || text.includes("hob")) {
+    return "Induction visuals may hallucinate flame or glow; explicitly forbid flame, red/blue glow, and heat halo.";
+  }
+
+  return "Keep one readable food action per shot and avoid extra objects or unsupported camera movement.";
+}
+
+function buildSegmentNegatives(risk: string): string[] {
+  const negatives = [
+    "no text on screen",
+    "no slow pacing",
+    "no extra shots",
+    "no deformed character",
+    "no floating utensils",
+  ];
+
+  if (risk.includes("geometry") || risk.includes("shape")) {
+    negatives.push("no unstable pastry geometry", "no invented topology", "no scale mismatch");
+  }
+
+  if (risk.includes("Induction")) {
+    negatives.push("no flame", "no red glow", "no blue glow", "no heat halo");
+  }
+
+  if (risk.includes("rolling pin")) {
+    negatives.push("no wrong rolling-pin motion", "no added handles");
+  }
+
+  return negatives;
+}
+
+function buildMandatoryAudio(timing: string[]): string {
+  return timing
+    .map((line) => {
+      const [range, description] = line.split(": ");
+      return `${range} ${inferSfxCue(description ?? line)}`;
+    })
+    .join("; ");
+}
+
+function buildSeedancePromptQa(input: {
+  prompt: string;
+  references: SegmentReference[];
+  risk: string;
+}): SeedancePromptQa {
+  return {
+    referencesWithinLimit: input.references.length <= MAX_SEEDANCE_REFERENCES,
+    globalKitchenReferencePresent: input.references.some((reference) => reference.label === "KitchenIslandDefault"),
+    referenceRolesExplicit: input.references.every((reference) => reference.role.length > 0),
+    promptWithinPracticalLimit: input.prompt.length <= MAX_SEEDANCE_PROMPT_CHARACTERS,
+    hardCutsSpecified: input.prompt.includes("hard cuts"),
+    mandatoryTimingSpecified: input.prompt.includes("Mandatory timing"),
+    noSpeechVoiceoverOrMusic: input.prompt.includes("no speech") && input.prompt.includes("no voiceover") && input.prompt.includes("no music"),
+    fragileFoodPhysicsHandled: input.risk.length > 0,
+    nonStandardGeometryHandled: !input.risk.includes("geometry") || input.prompt.includes("what the shape is and what it is not"),
+    sourcePoliciesApplied: [...VIDEOS_REPO_POLICY_SOURCES],
+  };
 }
 
 function buildLineDiff(before: string, after: string): PromptDiff {
@@ -429,6 +578,25 @@ function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4));
 }
 
+function reviseSeedancePrompt(promptBefore: string, correction: string): string {
+  const lines = promptBefore.trim().split("\n");
+  const riskLineIndex = lines.findIndex((line) => line.startsWith("Risk to control:"));
+  const negativeLineIndex = lines.findIndex((line) => line.startsWith("Global negatives:"));
+  const correctionLine = `Correction to apply: ${correction}. Preserve References mode, all @reference roles, mandatory timing, hard cuts, visible hands for human actions, kitchen identity, and ASMR-only audio.`;
+
+  if (riskLineIndex >= 0) {
+    lines[riskLineIndex] = `${lines[riskLineIndex]} ${correctionLine}`;
+  } else {
+    lines.push(correctionLine);
+  }
+
+  if (negativeLineIndex >= 0 && !lines[negativeLineIndex].toLowerCase().includes(correction.toLowerCase())) {
+    lines[negativeLineIndex] = `${lines[negativeLineIndex].replace(/\.$/, "")}, no recurrence of: ${correction}.`;
+  }
+
+  return lines.join("\n");
+}
+
 function inferRecipeTitle(sourceText: string): string {
   const firstLine = sourceText
     .split(/\n|\./)
@@ -440,6 +608,46 @@ function inferRecipeTitle(sourceText: string): string {
   }
 
   return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
+}
+
+function inferSubRecipes(sourceText: string): string[] {
+  const lower = sourceText.toLowerCase();
+  const subRecipes = new Set<string>();
+
+  if (lower.includes("pralin")) subRecipes.add("praline");
+  if (lower.includes("crumble")) subRecipes.add("crumble");
+  if (lower.includes("choux")) subRecipes.add("choux pastry");
+  if (lower.includes("cream") || lower.includes("creme") || lower.includes("crème")) subRecipes.add("cream");
+  if (lower.includes("caramel")) subRecipes.add("caramel");
+
+  return subRecipes.size > 0 ? [...subRecipes] : ["main preparation", "assembly", "final dressing"];
+}
+
+function inferRecipeAssumptions(sourceText: string, title: string): string[] {
+  const assumptions = ["Translate recipe instructions into visible cooking gestures rather than literal procedural text."];
+  const lower = `${sourceText} ${title}`.toLowerCase();
+
+  if (lower.includes("paris") || lower.includes("choux")) {
+    assumptions.push("Treat Paris-Brest as a non-standard repetitive crown when visible: separate piped choux domes touching in a ring, not a smooth classic ring.");
+  }
+
+  if (lower.includes("pralin")) {
+    assumptions.push("Homemade praline can be used as a mobile opening block when it creates a stronger texture-first hook and is re-anchored later.");
+  }
+
+  return assumptions;
+}
+
+function inferRecipeBlock(step: string, index: number): string {
+  const lower = step.toLowerCase();
+
+  if (lower.includes("caramel") || lower.includes("pralin")) return "praline";
+  if (lower.includes("crumble")) return "crumble";
+  if (lower.includes("choux") || lower.includes("piping") || lower.includes("pipe")) return "choux";
+  if (lower.includes("cream") || lower.includes("creme") || lower.includes("crème")) return "cream";
+  if (lower.includes("finish") || lower.includes("dust") || lower.includes("assemble")) return "assembly";
+
+  return index < 3 ? "opening" : "main preparation";
 }
 
 function inferRecipeSteps(sourceText: string): string[] {
@@ -458,6 +666,44 @@ function inferRecipeSteps(sourceText: string): string[] {
     "Cook until the texture changes visibly",
     "Assemble and finish the dish",
   ];
+}
+
+function inferTextureCue(step: string): string {
+  const lower = step.toLowerCase();
+
+  if (lower.includes("caramel")) return "glossy amber caramel changing from viscous pour to brittle glass shards";
+  if (lower.includes("pralin")) return "smooth oily hazelnut praline ribbon, amber-brown and glossy";
+  if (lower.includes("crumble")) return "matte sandy crumble contrasting with shiny pastry";
+  if (lower.includes("choux")) return "golden glossy choux paste becoming elastic, puffed, crisp, or airy";
+  if (lower.includes("cream") || lower.includes("creme") || lower.includes("crème")) return "dense glossy cream becoming satin, airy, and thick";
+  if (lower.includes("sugar")) return "fine white powdered sugar falling over warm golden pastry";
+
+  return "visible material contrast with color, shine, density, and texture stated explicitly";
+}
+
+function inferSfxCue(step: string): string {
+  const lower = step.toLowerCase();
+
+  if (lower.includes("caramel") && (lower.includes("crack") || lower.includes("hit"))) return "sharp brittle caramel crack";
+  if (lower.includes("caramel")) return "thick hot caramel pouring";
+  if (lower.includes("blender")) return "short dense blender sound";
+  if (lower.includes("mixer") || lower.includes("robot")) return "low mixer hum and thick food friction";
+  if (lower.includes("cream") || lower.includes("creme") || lower.includes("crème")) return "thick cream folding and glossy whisking";
+  if (lower.includes("oven") || lower.includes("bake")) return "low oven warmth, tray slide, and crisp crackles";
+  if (lower.includes("dust") || lower.includes("sugar")) return "fine sugar dusting";
+
+  return "close-up kitchen ASMR synchronized to the action";
+}
+
+function inferRunwayRisk(step: string): string {
+  const lower = step.toLowerCase();
+
+  if (mentionsFragileGeometry(lower)) return "fragile non-standard or repetitive geometry";
+  if (lower.includes("bake") || lower.includes("oven")) return "baking geometry drift";
+  if (lower.includes("cut") || lower.includes("slice")) return "cut axis and hand precision";
+  if (lower.includes("roll") || lower.includes("rolling pin")) return "utensil motion ambiguity";
+
+  return "generic one-action readability";
 }
 
 function inferIngredients(sourceText: string) {
@@ -494,6 +740,59 @@ function inferVisualCue(step: string): string {
   }
 
   return "clear material transformation";
+}
+
+function buildRunwaySafeScore(input: {
+  sceneType: LogicalScene["sceneType"];
+  description: string;
+  satisfactionBeat: boolean;
+}): RunwaySafeScore {
+  const lower = input.description.toLowerCase();
+  const fragile = mentionsFragileGeometry(lower) || lower.includes("slice") || lower.includes("cut");
+
+  return {
+    stillImageReadable: true,
+    singleMainMotion: !lower.includes(" and then "),
+    dominantSound: true,
+    visuallyDesirable: input.satisfactionBeat || input.sceneType === "detail",
+    textureContrast: input.satisfactionBeat || hasTextureLanguage(lower),
+    notes: fragile
+      ? ["Fragile scene: simplify action or require target state references before generation."]
+      : ["Runway-safe if kept to one visible action and one dominant sound."],
+  };
+}
+
+function hasTextureLanguage(text: string): boolean {
+  return [
+    "glossy",
+    "shiny",
+    "crisp",
+    "brittle",
+    "sandy",
+    "matte",
+    "steam",
+    "dense",
+    "ribbon",
+    "crack",
+    "smooth",
+    "cream",
+  ].some((word) => text.includes(word));
+}
+
+function mentionsFragileGeometry(text: string): boolean {
+  return [
+    "paris-brest",
+    "crown",
+    "ring",
+    "choux",
+    "rosette",
+    "piping",
+    "pipe",
+    "layer",
+    "cut",
+    "slice",
+    "filled",
+  ].some((word) => text.toLowerCase().includes(word));
 }
 
 function buildClarifyingQuestions(recipe: RecipeData): ClarifyingQuestion[] {
