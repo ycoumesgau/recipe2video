@@ -1,4 +1,9 @@
+import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -7,6 +12,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getSupabaseServiceClient } from "@/shared/config/supabase";
+import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
 export default async function VideoDetailPage({
   params,
@@ -14,21 +21,30 @@ export default async function VideoDetailPage({
   params: Promise<{ videoId: string }>;
 }) {
   const { videoId } = await params;
+  const { project, dataError } = await loadProject(videoId);
 
   return (
     <div className="space-y-6">
       <div>
         <Badge className="mb-3" variant="outline">
-          Project {videoId}
+          Project {project?.status ?? videoId}
         </Badge>
         <h2 className="text-3xl font-semibold tracking-tight">
-          Project overview
+          {project?.title ?? "Project overview"}
         </h2>
         <p className="text-muted-foreground">
-          This placeholder reserves the cockpit structure for storyboard,
-          references, segments, assembly, costs, and logs.
+          This cockpit reserves the structure for storyboard, references,
+          segments, assembly, costs, and logs.
         </p>
       </div>
+
+      {dataError ? (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Project data unavailable</AlertTitle>
+          <AlertDescription>{dataError}</AlertDescription>
+        </Alert>
+      ) : null}
 
       <Tabs defaultValue="overview">
         <TabsList className="flex flex-wrap">
@@ -44,16 +60,78 @@ export default async function VideoDetailPage({
             <CardHeader>
               <CardTitle>Next required action</CardTitle>
               <CardDescription>
-                Once Supabase is wired, this screen will answer what is
-                happening, what is blocked, and what the user should do next.
+                The draft is ready for recipe ingest once the planning workflow
+                is connected.
               </CardDescription>
             </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              No project data is loaded in Issue #1.
+            <CardContent className="space-y-4 text-sm">
+              {project ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <OverviewItem label="Status" value={project.status} />
+                  <OverviewItem
+                    label="Video model"
+                    value={project.selectedVideoModel}
+                  />
+                  <OverviewItem
+                    label="Image model"
+                    value={project.selectedImageModel}
+                  />
+                  <OverviewItem
+                    label="TTS model"
+                    value={project.selectedTtsModel}
+                  />
+                  <OverviewItem
+                    label="SFX model"
+                    value={project.selectedSfxModel}
+                  />
+                  <OverviewItem
+                    label="Runway credits used"
+                    value={String(project.totalCostCredits)}
+                  />
+                </div>
+              ) : (
+                <p className="text-muted-foreground">
+                  No project data is loaded yet.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button asChild variant="outline">
+                  <Link href="/">Back to dashboard</Link>
+                </Button>
+                <Button disabled>Recipe ingest pending</Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+async function loadProject(videoId: string) {
+  try {
+    const supabase = getSupabaseServiceClient();
+    const project = await getVideoProjectById(supabase, videoId);
+
+    return { project, dataError: null };
+  } catch (error) {
+    return {
+      project: null,
+      dataError:
+        error instanceof Error
+          ? error.message
+          : "Unable to load project data.",
+    };
+  }
+}
+
+function OverviewItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 font-medium">{value}</p>
     </div>
   );
 }

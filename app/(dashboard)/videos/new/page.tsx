@@ -1,5 +1,4 @@
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -7,15 +6,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { NewVideoWizardForm } from "@/modules/videos/ui/new-video-wizard-form";
 
 export default function NewVideoPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
         <Badge className="mb-3" variant="outline">
-          Placeholder
+          Issue #11
         </Badge>
         <h2 className="text-3xl font-semibold tracking-tight">
           Create video
@@ -26,37 +24,22 @@ export default function NewVideoPage() {
         </p>
       </div>
 
-      <Card>
+      <Card className="border-primary/30 bg-primary/5">
         <CardHeader>
-          <CardTitle>Recipe source</CardTitle>
+          <CardTitle>Draft-first creation</CardTitle>
           <CardDescription>
-            Issue #11 will turn this placeholder into a persisted draft flow.
+            The app stores a draft video project before any expensive planning
+            or generation step can run. Selected models stay visible and are
+            persisted with the project.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Tabs defaultValue="url">
-            <TabsList>
-              <TabsTrigger value="url">URL</TabsTrigger>
-              <TabsTrigger value="photos">Photos</TabsTrigger>
-              <TabsTrigger value="text">Text</TabsTrigger>
-              <TabsTrigger value="demo">Demo fixture</TabsTrigger>
-            </TabsList>
-            <TabsContent className="space-y-3 pt-4" value="url">
-              <Input disabled placeholder="https://example.com/recipe" />
-            </TabsContent>
-            <TabsContent className="pt-4 text-sm text-muted-foreground" value="photos">
-              Photo upload will be implemented after storage helpers exist.
-            </TabsContent>
-            <TabsContent className="pt-4 text-sm text-muted-foreground" value="text">
-              Pasted recipe text input will be implemented with the wizard.
-            </TabsContent>
-            <TabsContent className="pt-4 text-sm text-muted-foreground" value="demo">
-              Paris-Brest fixture selection will be added by demo mode.
-            </TabsContent>
-          </Tabs>
-          <Button disabled>Create project and analyze recipe</Button>
+        <CardContent className="text-sm text-muted-foreground">
+          Submit creates status <code>draft</code>, uploads recipe photos to
+          Supabase Storage when provided, and redirects to the project overview.
         </CardContent>
       </Card>
+
+      <NewVideoWizardForm />
     </div>
   );
 }
