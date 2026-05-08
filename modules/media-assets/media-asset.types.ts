@@ -75,3 +75,10 @@ export interface RecipeSourceMediaAssetInput {
   fileSizeBytes: number;
   createdBy?: string | null;
 }
+
+export interface MuxAssetResult {
+  mediaAssetId: string;
+  muxAssetId: string;
+  muxPlaybackId: string;
+  muxStatus?: string | null;
+}

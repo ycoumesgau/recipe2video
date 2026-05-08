@@ -171,3 +171,89 @@ export function mapMediaAsset(row: MediaAssetRow): MediaAsset {
     updatedAt: row.updated_at,
   };
 }
+
+export async function listMuxUploadCandidates(
+  supabase: SupabaseDataClient,
+  limit = 10,
+): Promise<MediaAsset[]> {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("*")
+    .not("storage_bucket", "is", null)
+    .not("storage_path", "is", null)
+    .is("mux_playback_id", null)
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+
+  throwIfSupabaseError(error, "listMuxUploadCandidates failed");
+  return data.map(mapMediaAsset).filter(isLikelyMuxVideoAsset);
+}
+
+export async function listMuxPlayableMediaAssets(
+  supabase: SupabaseDataClient,
+  limit = 10,
+): Promise<MediaAsset[]> {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("*")
+    .not("mux_playback_id", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+
+  throwIfSupabaseError(error, "listMuxPlayableMediaAssets failed");
+  return data.map(mapMediaAsset);
+}
+
+export async function updateMediaAssetMuxPlayback(
+  supabase: SupabaseDataClient,
+  input: {
+    mediaAssetId: string;
+    muxAssetId: string;
+    muxPlaybackId: string;
+    metadata?: Record<string, unknown> | null;
+  },
+): Promise<MediaAsset> {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .update({
+      mux_asset_id: input.muxAssetId,
+      mux_playback_id: input.muxPlaybackId,
+      status: "uploaded_to_mux",
+      metadata: input.metadata ? toJson(input.metadata) : undefined,
+    })
+    .eq("id", input.mediaAssetId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateMediaAssetMuxPlayback failed");
+  return mapMediaAsset(data);
+}
+
+export async function markMediaAssetFailed(
+  supabase: SupabaseDataClient,
+  input: {
+    mediaAssetId: string;
+    metadata?: Record<string, unknown> | null;
+  },
+): Promise<MediaAsset> {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .update({
+      status: "failed",
+      metadata: input.metadata ? toJson(input.metadata) : undefined,
+    })
+    .eq("id", input.mediaAssetId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "markMediaAssetFailed failed");
+  return mapMediaAsset(data);
+}
+
+function isLikelyMuxVideoAsset(asset: MediaAsset) {
+  if (asset.mimeType?.startsWith("video/")) {
+    return true;
+  }
+
+  return asset.originalFilename?.toLowerCase().endsWith(".mp4") ?? false;
+}
