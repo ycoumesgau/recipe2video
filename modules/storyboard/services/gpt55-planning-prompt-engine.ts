@@ -28,6 +28,10 @@ import type {
   SegmentReference,
   StoryboardGenerationInput,
 } from "@/modules/storyboard/storyboard.types";
+import {
+  createOpenAiPlanningClient,
+  type OpenAiPlanningClient,
+} from "./openai-planning-client";
 
 type PlanningOperation =
   | "recipe_analysis"
@@ -36,8 +40,10 @@ type PlanningOperation =
   | "prompt_edit";
 
 interface PlanningPromptEngineOptions {
+  mode?: "stub" | "live";
   model?: string;
   costLogWriter?: CostLogWriter;
+  openAiClient?: OpenAiPlanningClient;
 }
 
 export interface PlanningPromptEngine {
@@ -54,12 +60,33 @@ export function createGpt55PlanningPromptEngine(
   const costLogWriter = options.costLogWriter ?? noopCostLogWriter;
 
   assertConfiguredModel(model);
+  const openAiClient =
+    options.mode === "live" ? options.openAiClient ?? createOpenAiPlanningClient() : null;
 
   return {
     async analyzeRecipe(input) {
       assertCostlyActionAllowed(input);
 
       const prompt = buildRecipeAnalysisPrompt(input);
+      if (openAiClient) {
+        const result = await openAiClient.generateJson<RecipeAnalysisResult>({
+          operation: "recipe_analysis",
+          prompt,
+        });
+
+        await logTokenUsage({
+          costLogWriter,
+          videoId: input.videoId,
+          createdBy: input.requestedByUserId,
+          operation: "recipe_analysis",
+          model,
+          usage: result.usage,
+          metadata: { sourceType: input.sourceType },
+        });
+
+        return result.json;
+      }
+
       const result = stubRecipeAnalysis(input);
 
       await logTokenUsage({
@@ -79,6 +106,25 @@ export function createGpt55PlanningPromptEngine(
       assertCostlyActionAllowed(input);
 
       const prompt = buildStoryboardGenerationPrompt(input);
+      if (openAiClient) {
+        const result = await openAiClient.generateJson<{ logicalScenes: LogicalScene[] }>({
+          operation: "storyboard_generation",
+          prompt,
+        });
+
+        await logTokenUsage({
+          costLogWriter,
+          videoId: input.videoId,
+          createdBy: input.requestedByUserId,
+          operation: "storyboard_generation",
+          model,
+          usage: result.usage,
+          metadata: { logicalSceneCount: result.json.logicalScenes.length },
+        });
+
+        return result.json.logicalScenes;
+      }
+
       const scenes = stubLogicalScenes(input);
 
       await logTokenUsage({
@@ -98,6 +144,25 @@ export function createGpt55PlanningPromptEngine(
       assertCostlyActionAllowed(input);
 
       const prompt = buildSeedanceSegmentationPrompt(input);
+      if (openAiClient) {
+        const result = await openAiClient.generateJson<{ seedanceSegments: SeedanceSegment[] }>({
+          operation: "seedance_segmentation",
+          prompt,
+        });
+
+        await logTokenUsage({
+          costLogWriter,
+          videoId: input.videoId,
+          createdBy: input.requestedByUserId,
+          operation: "seedance_segmentation",
+          model,
+          usage: result.usage,
+          metadata: { segmentCount: result.json.seedanceSegments.length },
+        });
+
+        return result.json.seedanceSegments;
+      }
+
       const segments = stubSeedanceSegments(input);
 
       await logTokenUsage({
@@ -117,6 +182,26 @@ export function createGpt55PlanningPromptEngine(
       assertCostlyActionAllowed(input);
 
       const prompt = buildPromptEditPrompt(input);
+      if (openAiClient) {
+        const result = await openAiClient.generateJson<PromptEditResult>({
+          operation: "prompt_edit",
+          prompt,
+        });
+
+        await logTokenUsage({
+          costLogWriter,
+          videoId: input.videoId,
+          segmentId: input.segmentId,
+          createdBy: input.requestedByUserId,
+          operation: "prompt_edit",
+          model,
+          usage: result.usage,
+          metadata: { generationId: input.generationId },
+        });
+
+        return result.json;
+      }
+
       const result = stubPromptEdit(input);
 
       await logTokenUsage({
@@ -158,7 +243,7 @@ export function buildStoryboardGenerationPrompt(input: StoryboardGenerationInput
   return [
     `Model: ${OPENAI_REASONING_MODEL}`,
     "Task: generate a 30-48 logical-scene storyboard for a vertical Licorn cooking video.",
-    "Return JSON only. Do not create Runway tasks.",
+    "Return a JSON object with a `logicalScenes` array only. Do not create Runway tasks.",
     `Recipe title: ${input.recipeTitle}`,
     `Target duration seconds: ${input.targetDurationSeconds ?? 60}`,
     "Required output shape: 30-48 logical scenes with id, type, arc, description, bg, zoom, duration, note, texture cue, SFX cue, satisfaction beat, and Runway-safe score.",
@@ -176,7 +261,7 @@ export function buildSeedanceSegmentationPrompt(input: SeedanceSegmentationInput
     `Task: compress logical scenes into approximately ${TARGET_SEEDANCE_SEGMENT_COUNT} Seedance generation segments.`,
     `Default video model: ${DEFAULT_SEEDANCE_VIDEO_MODEL}`,
     `Default ratio: ${DEFAULT_VERTICAL_RATIO}`,
-    "Return JSON only. Do not launch Runway generation.",
+    "Return a JSON object with a `seedanceSegments` array only. Do not launch Runway generation.",
     "Each segment must include mode References, references to load, 2-4 visual beats, continuity, risk, prompt, timing, audio, negatives, and QA checklist.",
     "Seedance prompt skeleton:",
     SEEDANCE_PROMPT_SKELETON.map((rule) => `- ${rule}`).join("\n"),
@@ -388,6 +473,7 @@ function buildSegmentReferences(position: number): SegmentReference[] {
     {
       id: `reference-kitchen-${position}`,
       role: "global Licorn kitchen environment",
+      name: "KitchenIslandDefault",
       label: "KitchenIslandDefault",
       runwayUri: null,
       required: true,
@@ -395,6 +481,7 @@ function buildSegmentReferences(position: number): SegmentReference[] {
     {
       id: `reference-mascot-${position}`,
       role: "Licorn mascot cook with consistent body and expression",
+      name: "LicornMascot",
       label: "LicornMascot",
       runwayUri: null,
       required: true,
@@ -402,6 +489,7 @@ function buildSegmentReferences(position: number): SegmentReference[] {
     {
       id: `reference-food-state-${position}`,
       role: "current recipe state and fragile food geometry",
+      name: "RecipeState",
       label: "RecipeState",
       runwayUri: null,
       required: true,

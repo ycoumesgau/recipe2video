@@ -1,3 +1,5 @@
+import type { Json } from "@/shared/supabase/database.types";
+
 export interface PromptDiffLine {
   type: "unchanged" | "added" | "removed";
   text: string;
@@ -6,6 +8,8 @@ export interface PromptDiffLine {
 export interface PromptDiff {
   lines: PromptDiffLine[];
 }
+
+export type StoredPromptDiff = PromptDiff | Json;
 
 export interface PromptEditInput {
   videoId: string;
@@ -21,4 +25,17 @@ export interface PromptEditResult {
   promptBefore: string;
   promptAfter: string;
   diff: PromptDiff;
+}
+
+export interface SegmentFeedback {
+  id: string;
+  segmentId: string;
+  generationId: string;
+  message: string;
+  promptBefore: string;
+  promptAfter: string;
+  diff: StoredPromptDiff;
+  applied: boolean;
+  createdBy?: string | null;
+  createdAt: string;
 }

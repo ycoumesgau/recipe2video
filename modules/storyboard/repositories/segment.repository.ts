@@ -1,0 +1,143 @@
+import type { SupabaseDataClient } from "@/shared/supabase/client.types";
+import type { Database } from "@/shared/supabase/database.types";
+import { throwIfSupabaseError } from "@/shared/supabase/errors";
+import { fromJson, toJson } from "@/shared/supabase/json";
+
+import type {
+  CreateSeedanceSegmentInput,
+  SeedanceSegment,
+  SegmentReference,
+} from "../storyboard.types";
+import type { SegmentStatus } from "../segment-status";
+
+type SegmentRow = Database["public"]["Tables"]["segments"]["Row"];
+
+export async function createSeedanceSegment(
+  supabase: SupabaseDataClient,
+  input: CreateSeedanceSegmentInput,
+): Promise<SeedanceSegment> {
+  const { data, error } = await supabase
+    .from("segments")
+    .insert({
+      video_id: input.videoId,
+      position: input.position,
+      title: input.title,
+      arc: input.arc,
+      logical_scene_ids: toJson(input.logicalSceneIds),
+      description: input.description,
+      prompt: input.prompt,
+      prompt_initial: input.promptInitial,
+      references: toJson(input.references ?? []),
+      duration_target: input.durationTarget,
+      status: input.status ?? "pending",
+      created_by: input.createdBy ?? null,
+    })
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "createSeedanceSegment failed");
+  return mapSeedanceSegment(data);
+}
+
+export async function listSegmentsByVideoId(
+  supabase: SupabaseDataClient,
+  videoId: string,
+): Promise<SeedanceSegment[]> {
+  const { data, error } = await supabase
+    .from("segments")
+    .select("*")
+    .eq("video_id", videoId)
+    .order("position", { ascending: true });
+
+  throwIfSupabaseError(error, "listSegmentsByVideoId failed");
+  return data.map(mapSeedanceSegment);
+}
+
+export async function getSegmentById(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+): Promise<SeedanceSegment | null> {
+  const { data, error } = await supabase
+    .from("segments")
+    .select("*")
+    .eq("id", segmentId)
+    .maybeSingle();
+
+  throwIfSupabaseError(error, "getSegmentById failed");
+  return data ? mapSeedanceSegment(data) : null;
+}
+
+export async function updateSegmentStatus(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+  status: SegmentStatus,
+): Promise<SeedanceSegment> {
+  const { data, error } = await supabase
+    .from("segments")
+    .update({ status })
+    .eq("id", segmentId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateSegmentStatus failed");
+  return mapSeedanceSegment(data);
+}
+
+export async function setSelectedGenerationForSegment(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+  generationId: string | null,
+): Promise<SeedanceSegment> {
+  const { data, error } = await supabase
+    .from("segments")
+    .update({ selected_generation_id: generationId })
+    .eq("id", segmentId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "setSelectedGenerationForSegment failed");
+  return mapSeedanceSegment(data);
+}
+
+export function mapSeedanceSegment(row: SegmentRow): SeedanceSegment {
+  return {
+    id: row.id,
+    videoId: row.video_id,
+    position: row.position,
+    title: row.title,
+    arc: row.arc,
+    mode: "References",
+    logicalSceneIds: fromJson<string[]>(row.logical_scene_ids) ?? [],
+    description: row.description,
+    prompt: row.prompt,
+    promptInitial: row.prompt_initial,
+    references: fromJson<SegmentReference[]>(row.references) ?? [],
+    beats: [],
+    timing: [],
+    continuity: "",
+    risk: "",
+    audioPrompt: "",
+    negatives: [],
+    qaChecklist: {
+      referencesWithinLimit: true,
+      globalKitchenReferencePresent: false,
+      referenceRolesExplicit: true,
+      promptWithinPracticalLimit: true,
+      hardCutsSpecified: row.prompt.includes("hard cuts"),
+      mandatoryTimingSpecified: row.prompt.includes("Mandatory timing"),
+      noSpeechVoiceoverOrMusic:
+        row.prompt.includes("no speech") &&
+        row.prompt.includes("no voiceover") &&
+        row.prompt.includes("no music"),
+      fragileFoodPhysicsHandled: false,
+      nonStandardGeometryHandled: false,
+      sourcePoliciesApplied: [],
+    },
+    durationTarget: row.duration_target,
+    status: row.status as SegmentStatus,
+    selectedGenerationId: row.selected_generation_id,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}

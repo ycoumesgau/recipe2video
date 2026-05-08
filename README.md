@@ -295,10 +295,11 @@ Expected environment variables:
 
 ```txt
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=
 RUNWAYML_API_SECRET=
 OPENAI_API_KEY=
+OPENAI_PLANNING_MODEL=
 MUX_TOKEN_ID=
 MUX_TOKEN_SECRET=
 INNGEST_EVENT_KEY=
@@ -307,6 +308,11 @@ APP_BASE_URL=
 ```
 
 Never expose server-side secrets to the client.
+
+OpenAI planning uses `OPENAI_API_KEY` only on the server. Set
+`OPENAI_PLANNING_MODEL` to the exact API model identifier that corresponds to
+GPT-5.5 High for the account. Recipe2Video does not silently fall back to a
+different model if this value is missing or unavailable.
 
 ## Development workflow
 

@@ -1,13 +1,4 @@
-export type SegmentStatus =
-  | "pending"
-  | "ready"
-  | "queued"
-  | "generating"
-  | "review"
-  | "accepted"
-  | "rejected"
-  | "failed"
-  | "blocked";
+import type { SegmentStatus } from "./segment-status";
 
 export type SeedanceMode = "References";
 
@@ -34,16 +25,18 @@ export interface LogicalScene {
   note?: string | null;
   textureCue?: string | null;
   sfxCue?: string | null;
-  satisfactionBeat: boolean;
-  runwaySafeScore: RunwaySafeScore;
+  satisfactionBeat?: boolean;
+  runwaySafeScore?: RunwaySafeScore;
 }
 
 export interface SegmentReference {
-  id: string;
+  id?: string;
   role: string;
+  name: string;
   label: string;
   runwayUri?: string | null;
-  required: boolean;
+  mediaAssetId?: string | null;
+  required?: boolean;
 }
 
 export interface SeedanceSegment {
@@ -68,6 +61,9 @@ export interface SeedanceSegment {
   durationTarget: number;
   status: SegmentStatus;
   selectedGenerationId?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SeedancePromptQa {
@@ -95,6 +91,21 @@ export interface StoryboardGenerationInput {
   targetDurationSeconds?: number;
   requestedByUserId: string;
   isAllowlisted: boolean;
+}
+
+export interface CreateSeedanceSegmentInput {
+  videoId: string;
+  position: number;
+  title: string;
+  arc: string;
+  logicalSceneIds: string[];
+  description: string;
+  prompt: string;
+  promptInitial: string;
+  references?: SegmentReference[];
+  durationTarget: number;
+  status?: SegmentStatus;
+  createdBy?: string | null;
 }
 
 export interface SeedanceSegmentationInput {
