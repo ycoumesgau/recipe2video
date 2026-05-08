@@ -28,11 +28,11 @@ export const VIDEO_STATUS_LABELS: Record<VideoStatus, string> = {
   failed: "Failed",
 };
 
-export const ACTIONABLE_VIDEO_STATUSES = [
+export const ACTIONABLE_VIDEO_STATUSES: readonly VideoStatus[] = [
   "clarification_needed",
   "storyboard_ready",
   "references_ready",
   "review",
   "assembling",
   "failed",
-] satisfies VideoStatus[];
+];
