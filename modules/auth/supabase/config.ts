@@ -4,12 +4,12 @@ export function getSupabaseUrl() {
   return getRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
 }
 
-export function getSupabaseAnonKey() {
-  return getRequiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+export function getSupabasePublishableKey() {
+  return getRequiredEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
 }
 
-export function getSupabaseServiceRoleKey() {
-  return getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+export function getSupabaseSecretKey() {
+  return getRequiredEnv("SUPABASE_SECRET_KEY");
 }
 
 function getRequiredEnv(name: string) {
