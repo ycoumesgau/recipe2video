@@ -1,0 +1,21 @@
+---
+description: Seedance-only segment planning and prompt rules for Recipe2Video
+alwaysApply: true
+---
+
+# Recipe2Video Seedance Segments
+
+- Default video generation is Seedance 2 (`seedance2`) through the Runway API, subject to the model contract in `docs/technical-contracts.md`.
+- Do not present the old first-frame / last-frame or Kling 2.5 Turbo Pro pipeline as the current production path.
+- Do not use one generation per micro-scene. Compress logical scenes into approximately 5-10 Seedance segments.
+- A logical scene is an editorial unit for narrative, texture cadence, and review. A Seedance segment is a generation unit containing multiple short shots.
+- Store and display the mapping from each Seedance segment to its logical scene IDs whenever segment plans are produced.
+- Use Seedance References mode as the primary workflow. Use state references to guide starts, targets, and fragile transitions.
+- Each segment should declare selected model, duration, logical scene IDs, prompt, planned references, readiness, and estimated generation cost when available.
+- Before any costly generation, require authenticated allowlisted user checks, explicit model visibility, cost visibility, and user approval of the relevant checkpoint.
+- Seedance prompts should be concise English prompts with explicit reference roles, total duration, exact number of shots, hard cuts, mandatory timing, integrated ASMR audio, and short negatives.
+- Video prompts must request no speech, no voiceover, no music, no text on screen, and no extra shots unless the user explicitly changes the policy.
+- Keep each segment within the practical Runway prompt limit and within the Seedance reference limit of 9 images.
+- Every segment needs a global kitchen reference, ideally `@KitchenIslandDefault`, plus the specific working angle or product-state references needed for the shots.
+- If a selected model fails or is unavailable, surface the failure. Do not silently fall back to another model.
+- Runway output URLs are temporary; successful outputs must be persisted to Supabase Storage before Mux playback is treated as ready.

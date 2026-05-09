@@ -1,0 +1,19 @@
+---
+description: Recipe2Video creative planning rules for recipe ingest, logical scenes, hooks, and ASMR pacing
+alwaysApply: true
+---
+
+# Recipe2Video Creative Planning
+
+- Follow `PRD.md`, `docs/ux-contract.md`, and `docs/technical-contracts.md` before adding prompt or storyboard behavior. Do not invent statuses, routes, tables, events, or service contracts.
+- Treat the product as an internal Licorn production cockpit, not a generic creator tool or old `videos` repo clone.
+- Recipe ingest must extract useful cooking structure: sub-recipes, real dependencies, visual transformations, fragile steps, missing references, and clarifying questions that materially affect the video.
+- Storyboards use 30-48 logical scenes for editorial quality. Logical scenes are not Runway generations.
+- Prefer 75-80% detail shots and 20-25% context shots. A context shot must prepare the next detail payoff.
+- The opening must be a texture-first micro-arc of 2-3 logical scenes from the same culinary block. Scene 2 must pay off or clarify scene 1.
+- Never open on ingredients lined up on a counter, a neutral mise en place, or a knife slicing the finished dish.
+- Prefer visually desirable, generatable gestures: pouring, glazing, piping, spreading, dusting, sizzling, steaming, cracking, revealing, and filling.
+- Each logical scene should have one readable action, one main material contrast, and one dominant ASMR sound opportunity.
+- Every 3-5 logical scenes, include a texture payoff or strong material contrast such as crisp/creamy, matte/glossy, dry/flowing, dense/airy, or hot/steamy.
+- If a scene depends on exact causality, tiny finger work, many moving objects, oven-door manipulation plus another action, or fine garnish drift, simplify it before it reaches prompt generation.
+- The final shot should show the finished dish in the Licorn kitchen context with the character visible and satisfied.
