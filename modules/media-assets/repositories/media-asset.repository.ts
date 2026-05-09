@@ -132,6 +132,24 @@ export async function listMediaAssetsByVideoId(
   return data.map(mapMediaAsset);
 }
 
+export async function listMediaAssetsByGenerationIds(
+  supabase: SupabaseDataClient,
+  generationIds: string[],
+): Promise<MediaAsset[]> {
+  if (generationIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("*")
+    .in("generation_id", generationIds)
+    .order("created_at", { ascending: false });
+
+  throwIfSupabaseError(error, "listMediaAssetsByGenerationIds failed");
+  return data.map(mapMediaAsset);
+}
+
 async function linkGenerationMediaAsset(
   supabase: SupabaseDataClient,
   generationId: string,
