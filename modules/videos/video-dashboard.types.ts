@@ -47,4 +47,6 @@ export interface VideoDashboardData {
   kpis: DashboardKpi[];
   creditsUsed: number;
   estimatedCreditsRemaining: number;
+  budgetWarningLevel: 20 | 10 | null;
+  budgetPercentRemaining: number;
 }
