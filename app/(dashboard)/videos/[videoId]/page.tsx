@@ -142,39 +142,54 @@ export default async function VideoDetailPage({
             <CardHeader>
               <CardTitle>Segment review</CardTitle>
               <CardDescription>
-                Open a Seedance segment to review variants, submit feedback, and
-                approve prompt diffs before regeneration.
+                Open a Seedance segment to compare variants, play Mux review
+                copies, submit feedback, and approve prompt diffs before
+                regeneration.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent>
               {seedanceSegments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Load or generate Seedance segments before opening segment
-                  review.
-                </p>
+                <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                  No Seedance segments are available yet. Load or generate a
+                  storyboard before reviewing variants.
+                </div>
               ) : (
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-2">
                   {seedanceSegments.map((segment) => (
-                    <div className="rounded-lg border p-3" key={segment.id}>
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <p className="font-medium">
+                    <Card key={segment.id} size="sm">
+                      <CardHeader>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <CardTitle>
                             S{segment.position}. {segment.title}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {segment.arc}
-                          </p>
+                          </CardTitle>
+                          <Badge variant="outline">{segment.status}</Badge>
                         </div>
-                        <Badge variant="outline">{segment.status}</Badge>
-                      </div>
-                      <Button asChild variant="outline">
-                        <Link
-                          href={`/videos/${videoId}/segments/${segment.id}`}
-                        >
-                          Open segment review
-                        </Link>
-                      </Button>
-                    </div>
+                        <CardDescription>{segment.arc}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="grid gap-2 text-sm md:grid-cols-3">
+                          <OverviewItem
+                            label="Duration"
+                            value={formatSeconds(segment.durationTarget)}
+                          />
+                          <OverviewItem
+                            label="References"
+                            value={String(segment.references.length)}
+                          />
+                          <OverviewItem
+                            label="Accepted"
+                            value={segment.selectedGenerationId ? "yes" : "no"}
+                          />
+                        </div>
+                        <Button asChild>
+                          <Link
+                            href={`/videos/${videoId}/segments/${segment.id}`}
+                          >
+                            Review segment
+                          </Link>
+                        </Button>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
               )}
@@ -227,4 +242,12 @@ function OverviewItem({ label, value }: { label: string; value: string }) {
       <p className="mt-1 font-medium">{value}</p>
     </div>
   );
+}
+
+function formatSeconds(seconds: number) {
+  if (seconds <= 0) {
+    return "-";
+  }
+
+  return `${Number(seconds.toFixed(1))}s`;
 }
