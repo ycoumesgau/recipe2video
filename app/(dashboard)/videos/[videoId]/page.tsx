@@ -137,6 +137,27 @@ export default async function VideoDetailPage({
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="assembly">
+          <Card>
+            <CardHeader>
+              <CardTitle>Final assembly</CardTitle>
+              <CardDescription>
+                Preview accepted Supabase originals in Remotion, reorder clips,
+                align optional Suno audio, and preserve final exports.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <p className="text-muted-foreground">
+                Remotion assembly uses Supabase Storage originals for preview
+                and export handoff. Mux is only used after the final MP4 is
+                stored for playback.
+              </p>
+              <Button asChild>
+                <Link href={`/videos/${videoId}/assembly`}>Open assembly</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
