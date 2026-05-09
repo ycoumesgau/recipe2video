@@ -137,6 +137,50 @@ export default async function VideoDetailPage({
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="segments">
+          <Card>
+            <CardHeader>
+              <CardTitle>Segment review</CardTitle>
+              <CardDescription>
+                Open a Seedance segment to review variants, submit feedback, and
+                approve prompt diffs before regeneration.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {seedanceSegments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Load or generate Seedance segments before opening segment
+                  review.
+                </p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {seedanceSegments.map((segment) => (
+                    <div className="rounded-lg border p-3" key={segment.id}>
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="font-medium">
+                            S{segment.position}. {segment.title}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {segment.arc}
+                          </p>
+                        </div>
+                        <Badge variant="outline">{segment.status}</Badge>
+                      </div>
+                      <Button asChild variant="outline">
+                        <Link
+                          href={`/videos/${videoId}/segments/${segment.id}`}
+                        >
+                          Open segment review
+                        </Link>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
