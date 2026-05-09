@@ -27,15 +27,15 @@ export default async function SegmentReviewPage({
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <Badge className="mb-3" variant="outline">
-            Issue #14
+            Segment review
           </Badge>
           <h2 className="text-3xl font-semibold tracking-tight">
             Segment review
           </h2>
           <p className="max-w-3xl text-muted-foreground">
             Compare generated variants, play Mux review copies, select the
-            accepted take, reject weak output, and request a protected
-            regeneration.
+            accepted take, and use agent feedback with visible prompt diffs
+            before regeneration.
           </p>
         </div>
         <Button asChild variant="outline">
@@ -79,6 +79,7 @@ async function loadSegmentReview(videoId: string, segmentId: string): Promise<{
         project: null,
         segment: null,
         variants: [],
+        feedbacks: [],
       },
       dataError:
         error instanceof Error

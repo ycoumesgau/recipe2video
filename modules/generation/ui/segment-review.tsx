@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Clock,
   Copy,
-  MessageSquare,
   RefreshCcw,
   ThumbsDown,
   ThumbsUp,
@@ -24,6 +23,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AgentChatPanel } from "@/modules/feedback/ui/agent-chat-panel";
 import { RecipeMuxPlayer } from "@/modules/media-assets/ui/mux-player";
 import type { SegmentStatus } from "@/modules/storyboard/segment-status";
 import type { SegmentReference } from "@/modules/storyboard/storyboard.types";
@@ -99,6 +99,7 @@ export function SegmentReview({
     data.variants.find(
       (variant) => variant.generation.id === data.segment?.selectedGenerationId,
     ) ?? data.variants[0];
+  const selectedGenerationId = selectedVariant?.generation.id ?? null;
 
   return (
     <div className="space-y-6">
@@ -154,7 +155,12 @@ export function SegmentReview({
             videoId={videoId}
             variantCount={data.variants.length}
           />
-          <ChatPlaceholder />
+          <AgentChatPanel
+            feedbacks={data.feedbacks}
+            generationId={selectedGenerationId}
+            segmentId={segmentId}
+            videoId={videoId}
+          />
         </div>
       </div>
 
@@ -179,7 +185,12 @@ export function SegmentReview({
           />
         </TabsContent>
         <TabsContent value="chat">
-          <ChatPlaceholder />
+          <AgentChatPanel
+            feedbacks={data.feedbacks}
+            generationId={selectedGenerationId}
+            segmentId={segmentId}
+            videoId={videoId}
+          />
         </TabsContent>
         <TabsContent value="variants">
           <VariantList
@@ -558,34 +569,6 @@ function StatusPanel({
         <Button asChild variant="outline">
           <Link href={`/videos/${project?.id ?? videoId}`}>Back to project</Link>
         </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ChatPlaceholder() {
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">Issue #15</Badge>
-          <Badge variant="secondary">Out of scope</Badge>
-        </div>
-        <CardTitle>Agent feedback</CardTitle>
-        <CardDescription>
-          Natural-language feedback and prompt diffs are reserved for the next
-          issue.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          <p className="mb-2 flex items-center gap-2 font-medium text-foreground">
-            <MessageSquare className="h-4 w-4" />
-            Prompt diff workflow placeholder
-          </p>
-          Regeneration from feedback will require a visible diff before spending
-          credits.
-        </div>
       </CardContent>
     </Card>
   );

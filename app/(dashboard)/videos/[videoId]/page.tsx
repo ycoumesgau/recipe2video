@@ -143,7 +143,8 @@ export default async function VideoDetailPage({
               <CardTitle>Segment review</CardTitle>
               <CardDescription>
                 Open a Seedance segment to compare variants, play Mux review
-                copies, and select the accepted generation.
+                copies, submit feedback, and approve prompt diffs before
+                regeneration.
               </CardDescription>
             </CardHeader>
             <CardContent>

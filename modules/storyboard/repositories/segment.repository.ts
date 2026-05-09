@@ -83,6 +83,22 @@ export async function updateSegmentStatus(
   return mapSeedanceSegment(data);
 }
 
+export async function updateSegmentPrompt(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+  prompt: string,
+): Promise<SeedanceSegment> {
+  const { data, error } = await supabase
+    .from("segments")
+    .update({ prompt })
+    .eq("id", segmentId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateSegmentPrompt failed");
+  return mapSeedanceSegment(data);
+}
+
 export async function setSelectedGenerationForSegment(
   supabase: SupabaseDataClient,
   segmentId: string,

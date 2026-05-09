@@ -1,4 +1,6 @@
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
+import type { SegmentFeedback } from "@/modules/feedback/feedback.types";
+import { listSegmentFeedbacksBySegmentId } from "@/modules/feedback/repositories/feedback.repository";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import { listMediaAssetsByGenerationIds } from "@/modules/media-assets/repositories/media-asset.repository";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
@@ -18,6 +20,7 @@ export interface SegmentReviewData {
   project: VideoProject | null;
   segment: SeedanceSegment | null;
   variants: SegmentVariantReviewItem[];
+  feedbacks: SegmentFeedback[];
 }
 
 export async function getSegmentReviewData(
@@ -34,12 +37,14 @@ export async function getSegmentReviewData(
       project: null,
       segment: null,
       variants: [],
+      feedbacks: [],
     };
   }
 
-  const [project, generations] = await Promise.all([
+  const [project, generations, feedbacks] = await Promise.all([
     getVideoProjectById(supabase, input.videoId),
     listGenerationsBySegmentId(supabase, input.segmentId),
+    listSegmentFeedbacksBySegmentId(supabase, input.segmentId),
   ]);
   const mediaAssets = await listMediaAssetsByGenerationIds(
     supabase,
@@ -55,6 +60,7 @@ export async function getSegmentReviewData(
   return {
     project,
     segment,
+    feedbacks,
     variants: generations.map((generation) => ({
       generation,
       mediaAsset:

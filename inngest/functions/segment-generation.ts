@@ -33,6 +33,7 @@ import {
   isGenerationQueuePaused,
 } from "../config";
 import { INNGEST_EVENTS } from "../events";
+import type { FeedbackApplyRequestedData } from "../events";
 
 const POLL_DELAY = "5s";
 
@@ -62,6 +63,42 @@ export const requestSegmentGeneration = inngest.createFunction(
         });
       },
     });
+  },
+);
+
+export const applySegmentFeedbackRegeneration = inngest.createFunction(
+  {
+    id: "apply-segment-feedback-regeneration",
+    concurrency: { limit: getWorkflowConcurrency() },
+    triggers: [{ event: INNGEST_EVENTS.segmentFeedbackApplyRequested }],
+  },
+  async ({ event }) => {
+    const supabase = createSupabaseAdminClient();
+    const data = event.data as FeedbackApplyRequestedData;
+
+    return requestSegmentGenerationWorkflow(
+      {
+        segmentId: data.segmentId,
+        requestedByUserId: data.requestedByUserId,
+        isAllowlisted: data.isAllowlisted,
+      },
+      {
+        isGenerationQueuePaused,
+        getSegmentById: (segmentId) => getSegmentById(supabase, segmentId),
+        getVideoProjectById: (videoId) => getVideoProjectById(supabase, videoId),
+        updateSegmentStatus: (segmentId, status) =>
+          updateSegmentStatus(supabase, segmentId, status),
+        createGeneration: (input) => createGeneration(supabase, input),
+        startSeedanceGeneration,
+        logCost: (input) => logCost(supabase, input),
+        sendEvent: async (workflowEvent) => {
+          await inngest.send({
+            name: workflowEvent.name,
+            data: workflowEvent.data,
+          });
+        },
+      },
+    );
   },
 );
 

@@ -276,7 +276,9 @@ export function buildSeedanceSegmentationPrompt(input: SeedanceSegmentationInput
 export function buildPromptEditPrompt(input: PromptEditInput): string {
   return [
     `Model: ${OPENAI_REASONING_MODEL}`,
-    "Task: revise one Seedance prompt from natural-language feedback and return prompt_before, prompt_after, and a line diff.",
+    "Task: revise one Seedance prompt from natural-language feedback.",
+    "Return a JSON object with camelCase keys only: promptBefore, promptAfter, and diff.",
+    "diff must be `{ \"lines\": [{ \"type\": \"unchanged\" | \"added\" | \"removed\", \"text\": string }] }`.",
     "Do not trigger regeneration. Do not switch models. Preserve References mode, hard cuts, timing, reference roles, kitchen identity, visible hands, ASMR-only audio, concise negatives, and prompt length.",
     `Feedback: ${input.feedbackMessage}`,
     "Prompt before:",
