@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
+import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
 export default async function VideoDetailPage({
@@ -21,7 +23,8 @@ export default async function VideoDetailPage({
   params: Promise<{ videoId: string }>;
 }) {
   const { videoId } = await params;
-  const { project, dataError } = await loadProject(videoId);
+  const { project, dataError, logicalScenes, seedanceSegments, storyboardError } =
+    await loadProject(videoId);
 
   return (
     <div className="space-y-6">
@@ -103,6 +106,14 @@ export default async function VideoDetailPage({
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="storyboard">
+          <StoryboardReview
+            dataError={storyboardError}
+            logicalScenes={logicalScenes}
+            project={project}
+            seedanceSegments={seedanceSegments}
+          />
+        </TabsContent>
         <TabsContent value="references">
           <Card>
             <CardHeader>
@@ -135,15 +146,30 @@ async function loadProject(videoId: string) {
   try {
     const supabase = createSupabaseAdminClient();
     const project = await getVideoProjectById(supabase, videoId);
+    const { logicalScenes, seedanceSegments } = await getStoryboardReviewData(
+      videoId,
+    );
 
-    return { project, dataError: null };
+    return {
+      project,
+      dataError: null,
+      logicalScenes,
+      seedanceSegments,
+      storyboardError: null,
+    };
   } catch (error) {
     return {
       project: null,
+      logicalScenes: [],
+      seedanceSegments: [],
       dataError:
         error instanceof Error
           ? error.message
           : "Unable to load project data.",
+      storyboardError:
+        error instanceof Error
+          ? error.message
+          : "Unable to load storyboard data.",
     };
   }
 }
