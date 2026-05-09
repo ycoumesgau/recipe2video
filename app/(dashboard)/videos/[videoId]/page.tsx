@@ -103,6 +103,29 @@ export default async function VideoDetailPage({
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="references">
+          <Card>
+            <CardHeader>
+              <CardTitle>Reference checkpoint</CardTitle>
+              <CardDescription>
+                Review global and recipe-specific references before any Seedance
+                generation is launched.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <p className="text-muted-foreground">
+                Approvals require a stored Supabase reference image. Runway
+                uploads are explicit so the selected model and media source stay
+                visible.
+              </p>
+              <Button asChild>
+                <Link href={`/videos/${videoId}/references`}>
+                  Open references
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
