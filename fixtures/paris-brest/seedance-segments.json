@@ -1,0 +1,530 @@
+[
+  {
+    "id": "demo-segment-opening",
+    "videoId": "paris-brest-demo",
+    "position": 1,
+    "title": "Texture-first praline hook",
+    "arc": "texture hook",
+    "mode": "References",
+    "logicalSceneIds": [
+      "demo-scene-01",
+      "demo-scene-02",
+      "demo-scene-03"
+    ],
+    "description": "Amber praline cracks into brittle glass shards under the Licorn rolling pin. Licorn reacts at the kitchen island while shards scatter beside toasted hazelnuts. Warm praline blends into a glossy ribbon with a thick ASMR whirl.",
+    "prompt": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Texture-first praline hook as exactly 3 short shots with hard cuts, total duration 6 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-2.0s: Amber praline cracks into brittle glass shards under the Licorn rolling pin.\n- 2.0-4.0s: Licorn reacts at the kitchen island while shards scatter beside toasted hazelnuts.\n- 4.0-6.0s: Warm praline blends into a glossy ribbon with a thick ASMR whirl.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "promptInitial": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Texture-first praline hook as exactly 3 short shots with hard cuts, total duration 6 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-2.0s: Amber praline cracks into brittle glass shards under the Licorn rolling pin.\n- 2.0-4.0s: Licorn reacts at the kitchen island while shards scatter beside toasted hazelnuts.\n- 4.0-6.0s: Warm praline blends into a glossy ribbon with a thick ASMR whirl.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "references": [
+      {
+        "id": "opening-kitchen",
+        "role": "global Licorn kitchen environment",
+        "name": "KitchenIslandDefault",
+        "label": "KitchenIslandDefault",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "opening-mascot",
+        "role": "Licorn mascot cook with consistent body and hands",
+        "name": "LicornMascot",
+        "label": "LicornMascot",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "opening-food-state",
+        "role": "Paris-Brest food state for this segment",
+        "name": "ParisBrestState",
+        "label": "ParisBrestState",
+        "runwayUri": null,
+        "required": true
+      }
+    ],
+    "beats": [
+      "Scene 1",
+      "Scene 2",
+      "Scene 3"
+    ],
+    "timing": [
+      "0.0-2.0s: Amber praline cracks into brittle glass shards under the Licorn rolling pin.",
+      "2.0-4.0s: Licorn reacts at the kitchen island while shards scatter beside toasted hazelnuts.",
+      "4.0-6.0s: Warm praline blends into a glossy ribbon with a thick ASMR whirl."
+    ],
+    "continuity": "Keep the Licorn kitchen, mascot scale, and Paris-Brest crown topology consistent.",
+    "risk": "Fragile choux geometry can collapse or become a smooth donut if references are ignored.",
+    "audioPrompt": "Close kitchen ASMR only: brittle crack, whisking, piping, sugar dust, and plate contact.",
+    "negatives": [
+      "no speech",
+      "no voiceover",
+      "no music",
+      "no smooth ring",
+      "no deformed mascot"
+    ],
+    "qaChecklist": {
+      "referencesWithinLimit": true,
+      "globalKitchenReferencePresent": true,
+      "referenceRolesExplicit": true,
+      "promptWithinPracticalLimit": true,
+      "hardCutsSpecified": true,
+      "mandatoryTimingSpecified": true,
+      "noSpeechVoiceoverOrMusic": true,
+      "fragileFoodPhysicsHandled": true,
+      "nonStandardGeometryHandled": true,
+      "sourcePoliciesApplied": [
+        "fixture:paris-brest-public-safe"
+      ]
+    },
+    "durationTarget": 6,
+    "status": "accepted",
+    "selectedGenerationId": "demo-generation-1",
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:00:00.000Z",
+    "updatedAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "demo-segment-choux-setup",
+    "videoId": "paris-brest-demo",
+    "position": 2,
+    "title": "Choux paste and piping",
+    "arc": "setup and preparation",
+    "mode": "References",
+    "logicalSceneIds": [
+      "demo-scene-04",
+      "demo-scene-05",
+      "demo-scene-06",
+      "demo-scene-07",
+      "demo-scene-08",
+      "demo-scene-09",
+      "demo-scene-10"
+    ],
+    "description": "Butter melts into water and salt on induction with no flame or glow. Flour falls in one shot and turns the pan into a thick paste. Licorn folds the panade confidently at the island, hands visible. Eggs blend into glossy choux paste with elastic ribbons stretching from the spatula. Piping bag fills with choux paste, the nozzle kept clean and centered. A dotted Paris-Brest crown is piped as separate domes touching in a ring, not a smooth ring. Licorn slides the tray toward the oven, crown topology still visible.",
+    "prompt": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Choux paste and piping as exactly 7 short shots with hard cuts, total duration 12 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-1.7s: Butter melts into water and salt on induction with no flame or glow.\n- 1.7-3.4s: Flour falls in one shot and turns the pan into a thick paste.\n- 3.4-5.1s: Licorn folds the panade confidently at the island, hands visible.\n- 5.1-6.8s: Eggs blend into glossy choux paste with elastic ribbons stretching from the spatula.\n- 6.8-8.5s: Piping bag fills with choux paste, the nozzle kept clean and centered.\n- 8.5-10.2s: A dotted Paris-Brest crown is piped as separate domes touching in a ring, not a smooth ring.\n- 10.2-12.0s: Licorn slides the tray toward the oven, crown topology still visible.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "promptInitial": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Choux paste and piping as exactly 7 short shots with hard cuts, total duration 12 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-1.7s: Butter melts into water and salt on induction with no flame or glow.\n- 1.7-3.4s: Flour falls in one shot and turns the pan into a thick paste.\n- 3.4-5.1s: Licorn folds the panade confidently at the island, hands visible.\n- 5.1-6.8s: Eggs blend into glossy choux paste with elastic ribbons stretching from the spatula.\n- 6.8-8.5s: Piping bag fills with choux paste, the nozzle kept clean and centered.\n- 8.5-10.2s: A dotted Paris-Brest crown is piped as separate domes touching in a ring, not a smooth ring.\n- 10.2-12.0s: Licorn slides the tray toward the oven, crown topology still visible.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "references": [
+      {
+        "id": "choux-setup-kitchen",
+        "role": "global Licorn kitchen environment",
+        "name": "KitchenIslandDefault",
+        "label": "KitchenIslandDefault",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "choux-setup-mascot",
+        "role": "Licorn mascot cook with consistent body and hands",
+        "name": "LicornMascot",
+        "label": "LicornMascot",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "choux-setup-food-state",
+        "role": "Paris-Brest food state for this segment",
+        "name": "ParisBrestState",
+        "label": "ParisBrestState",
+        "runwayUri": null,
+        "required": true
+      }
+    ],
+    "beats": [
+      "Scene 4",
+      "Scene 5",
+      "Scene 6",
+      "Scene 7",
+      "Scene 8",
+      "Scene 9",
+      "Scene 10"
+    ],
+    "timing": [
+      "0.0-1.7s: Butter melts into water and salt on induction with no flame or glow.",
+      "1.7-3.4s: Flour falls in one shot and turns the pan into a thick paste.",
+      "3.4-5.1s: Licorn folds the panade confidently at the island, hands visible.",
+      "5.1-6.8s: Eggs blend into glossy choux paste with elastic ribbons stretching from the spatula.",
+      "6.8-8.5s: Piping bag fills with choux paste, the nozzle kept clean and centered.",
+      "8.5-10.2s: A dotted Paris-Brest crown is piped as separate domes touching in a ring, not a smooth ring.",
+      "10.2-12.0s: Licorn slides the tray toward the oven, crown topology still visible."
+    ],
+    "continuity": "Keep the Licorn kitchen, mascot scale, and Paris-Brest crown topology consistent.",
+    "risk": "Fragile choux geometry can collapse or become a smooth donut if references are ignored.",
+    "audioPrompt": "Close kitchen ASMR only: brittle crack, whisking, piping, sugar dust, and plate contact.",
+    "negatives": [
+      "no speech",
+      "no voiceover",
+      "no music",
+      "no smooth ring",
+      "no deformed mascot"
+    ],
+    "qaChecklist": {
+      "referencesWithinLimit": true,
+      "globalKitchenReferencePresent": true,
+      "referenceRolesExplicit": true,
+      "promptWithinPracticalLimit": true,
+      "hardCutsSpecified": true,
+      "mandatoryTimingSpecified": true,
+      "noSpeechVoiceoverOrMusic": true,
+      "fragileFoodPhysicsHandled": true,
+      "nonStandardGeometryHandled": true,
+      "sourcePoliciesApplied": [
+        "fixture:paris-brest-public-safe"
+      ]
+    },
+    "durationTarget": 12,
+    "status": "accepted",
+    "selectedGenerationId": "demo-generation-2",
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:00:00.000Z",
+    "updatedAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "demo-segment-choux-bake",
+    "videoId": "paris-brest-demo",
+    "position": 3,
+    "title": "Bake reveal and cooling",
+    "arc": "transformation and assembly",
+    "mode": "References",
+    "logicalSceneIds": [
+      "demo-scene-11",
+      "demo-scene-12"
+    ],
+    "description": "Oven reveal: puffed golden choux domes appear crisp and airy. The baked crown cools on a rack with crisp ridges and hollow structure.",
+    "prompt": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Bake reveal and cooling as exactly 2 short shots with hard cuts, total duration 5 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-2.5s: Oven reveal: puffed golden choux domes appear crisp and airy.\n- 2.5-5.0s: The baked crown cools on a rack with crisp ridges and hollow structure.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "promptInitial": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Bake reveal and cooling as exactly 2 short shots with hard cuts, total duration 5 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-2.5s: Oven reveal: puffed golden choux domes appear crisp and airy.\n- 2.5-5.0s: The baked crown cools on a rack with crisp ridges and hollow structure.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "references": [
+      {
+        "id": "choux-bake-kitchen",
+        "role": "global Licorn kitchen environment",
+        "name": "KitchenIslandDefault",
+        "label": "KitchenIslandDefault",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "choux-bake-mascot",
+        "role": "Licorn mascot cook with consistent body and hands",
+        "name": "LicornMascot",
+        "label": "LicornMascot",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "choux-bake-food-state",
+        "role": "Paris-Brest food state for this segment",
+        "name": "ParisBrestState",
+        "label": "ParisBrestState",
+        "runwayUri": null,
+        "required": true
+      }
+    ],
+    "beats": [
+      "Scene 11",
+      "Scene 12"
+    ],
+    "timing": [
+      "0.0-2.5s: Oven reveal: puffed golden choux domes appear crisp and airy.",
+      "2.5-5.0s: The baked crown cools on a rack with crisp ridges and hollow structure."
+    ],
+    "continuity": "Keep the Licorn kitchen, mascot scale, and Paris-Brest crown topology consistent.",
+    "risk": "Fragile choux geometry can collapse or become a smooth donut if references are ignored.",
+    "audioPrompt": "Close kitchen ASMR only: brittle crack, whisking, piping, sugar dust, and plate contact.",
+    "negatives": [
+      "no speech",
+      "no voiceover",
+      "no music",
+      "no smooth ring",
+      "no deformed mascot"
+    ],
+    "qaChecklist": {
+      "referencesWithinLimit": true,
+      "globalKitchenReferencePresent": true,
+      "referenceRolesExplicit": true,
+      "promptWithinPracticalLimit": true,
+      "hardCutsSpecified": true,
+      "mandatoryTimingSpecified": true,
+      "noSpeechVoiceoverOrMusic": true,
+      "fragileFoodPhysicsHandled": true,
+      "nonStandardGeometryHandled": true,
+      "sourcePoliciesApplied": [
+        "fixture:paris-brest-public-safe"
+      ]
+    },
+    "durationTarget": 5,
+    "status": "review",
+    "selectedGenerationId": "demo-generation-3",
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:00:00.000Z",
+    "updatedAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "demo-segment-cream",
+    "videoId": "paris-brest-demo",
+    "position": 4,
+    "title": "Praline cream texture",
+    "arc": "transformation and assembly",
+    "mode": "References",
+    "logicalSceneIds": [
+      "demo-scene-13",
+      "demo-scene-14",
+      "demo-scene-15",
+      "demo-scene-16"
+    ],
+    "description": "Cold cream pours into a bowl and catches light as a dense white ribbon. Praline folds into cream, making beige satin streaks. Licorn steadies the mixer bowl while the cream thickens. The praline cream holds a firm peak on the whisk without collapsing.",
+    "prompt": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Praline cream texture as exactly 4 short shots with hard cuts, total duration 8 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-2.0s: Cold cream pours into a bowl and catches light as a dense white ribbon.\n- 2.0-4.0s: Praline folds into cream, making beige satin streaks.\n- 4.0-6.0s: Licorn steadies the mixer bowl while the cream thickens.\n- 6.0-8.0s: The praline cream holds a firm peak on the whisk without collapsing.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "promptInitial": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Praline cream texture as exactly 4 short shots with hard cuts, total duration 8 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-2.0s: Cold cream pours into a bowl and catches light as a dense white ribbon.\n- 2.0-4.0s: Praline folds into cream, making beige satin streaks.\n- 4.0-6.0s: Licorn steadies the mixer bowl while the cream thickens.\n- 6.0-8.0s: The praline cream holds a firm peak on the whisk without collapsing.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "references": [
+      {
+        "id": "cream-kitchen",
+        "role": "global Licorn kitchen environment",
+        "name": "KitchenIslandDefault",
+        "label": "KitchenIslandDefault",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "cream-mascot",
+        "role": "Licorn mascot cook with consistent body and hands",
+        "name": "LicornMascot",
+        "label": "LicornMascot",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "cream-food-state",
+        "role": "Paris-Brest food state for this segment",
+        "name": "ParisBrestState",
+        "label": "ParisBrestState",
+        "runwayUri": null,
+        "required": true
+      }
+    ],
+    "beats": [
+      "Scene 13",
+      "Scene 14",
+      "Scene 15",
+      "Scene 16"
+    ],
+    "timing": [
+      "0.0-2.0s: Cold cream pours into a bowl and catches light as a dense white ribbon.",
+      "2.0-4.0s: Praline folds into cream, making beige satin streaks.",
+      "4.0-6.0s: Licorn steadies the mixer bowl while the cream thickens.",
+      "6.0-8.0s: The praline cream holds a firm peak on the whisk without collapsing."
+    ],
+    "continuity": "Keep the Licorn kitchen, mascot scale, and Paris-Brest crown topology consistent.",
+    "risk": "Fragile choux geometry can collapse or become a smooth donut if references are ignored.",
+    "audioPrompt": "Close kitchen ASMR only: brittle crack, whisking, piping, sugar dust, and plate contact.",
+    "negatives": [
+      "no speech",
+      "no voiceover",
+      "no music",
+      "no smooth ring",
+      "no deformed mascot"
+    ],
+    "qaChecklist": {
+      "referencesWithinLimit": true,
+      "globalKitchenReferencePresent": true,
+      "referenceRolesExplicit": true,
+      "promptWithinPracticalLimit": true,
+      "hardCutsSpecified": true,
+      "mandatoryTimingSpecified": true,
+      "noSpeechVoiceoverOrMusic": true,
+      "fragileFoodPhysicsHandled": true,
+      "nonStandardGeometryHandled": true,
+      "sourcePoliciesApplied": [
+        "fixture:paris-brest-public-safe"
+      ]
+    },
+    "durationTarget": 8,
+    "status": "ready",
+    "selectedGenerationId": null,
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:00:00.000Z",
+    "updatedAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "demo-segment-assembly",
+    "videoId": "paris-brest-demo",
+    "position": 5,
+    "title": "Cut, fill, and close crown",
+    "arc": "transformation and assembly",
+    "mode": "References",
+    "logicalSceneIds": [
+      "demo-scene-17",
+      "demo-scene-18",
+      "demo-scene-19",
+      "demo-scene-20",
+      "demo-scene-21"
+    ],
+    "description": "The choux crown is sliced open on a clean horizontal axis, preserving the domed ring. The top lid lifts away, exposing the hollow golden interior. Praline cream pipes into the base as separate ridged rosettes. Licorn turns the board slightly to inspect the filled crown. The top crown returns onto the cream with a soft precise press.",
+    "prompt": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Cut, fill, and close crown as exactly 5 short shots with hard cuts, total duration 10 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-2.0s: The choux crown is sliced open on a clean horizontal axis, preserving the domed ring.\n- 2.0-4.0s: The top lid lifts away, exposing the hollow golden interior.\n- 4.0-6.0s: Praline cream pipes into the base as separate ridged rosettes.\n- 6.0-8.0s: Licorn turns the board slightly to inspect the filled crown.\n- 8.0-10.0s: The top crown returns onto the cream with a soft precise press.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "promptInitial": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Cut, fill, and close crown as exactly 5 short shots with hard cuts, total duration 10 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-2.0s: The choux crown is sliced open on a clean horizontal axis, preserving the domed ring.\n- 2.0-4.0s: The top lid lifts away, exposing the hollow golden interior.\n- 4.0-6.0s: Praline cream pipes into the base as separate ridged rosettes.\n- 6.0-8.0s: Licorn turns the board slightly to inspect the filled crown.\n- 8.0-10.0s: The top crown returns onto the cream with a soft precise press.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "references": [
+      {
+        "id": "assembly-kitchen",
+        "role": "global Licorn kitchen environment",
+        "name": "KitchenIslandDefault",
+        "label": "KitchenIslandDefault",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "assembly-mascot",
+        "role": "Licorn mascot cook with consistent body and hands",
+        "name": "LicornMascot",
+        "label": "LicornMascot",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "assembly-food-state",
+        "role": "Paris-Brest food state for this segment",
+        "name": "ParisBrestState",
+        "label": "ParisBrestState",
+        "runwayUri": null,
+        "required": true
+      }
+    ],
+    "beats": [
+      "Scene 17",
+      "Scene 18",
+      "Scene 19",
+      "Scene 20",
+      "Scene 21"
+    ],
+    "timing": [
+      "0.0-2.0s: The choux crown is sliced open on a clean horizontal axis, preserving the domed ring.",
+      "2.0-4.0s: The top lid lifts away, exposing the hollow golden interior.",
+      "4.0-6.0s: Praline cream pipes into the base as separate ridged rosettes.",
+      "6.0-8.0s: Licorn turns the board slightly to inspect the filled crown.",
+      "8.0-10.0s: The top crown returns onto the cream with a soft precise press."
+    ],
+    "continuity": "Keep the Licorn kitchen, mascot scale, and Paris-Brest crown topology consistent.",
+    "risk": "Fragile choux geometry can collapse or become a smooth donut if references are ignored.",
+    "audioPrompt": "Close kitchen ASMR only: brittle crack, whisking, piping, sugar dust, and plate contact.",
+    "negatives": [
+      "no speech",
+      "no voiceover",
+      "no music",
+      "no smooth ring",
+      "no deformed mascot"
+    ],
+    "qaChecklist": {
+      "referencesWithinLimit": true,
+      "globalKitchenReferencePresent": true,
+      "referenceRolesExplicit": true,
+      "promptWithinPracticalLimit": true,
+      "hardCutsSpecified": true,
+      "mandatoryTimingSpecified": true,
+      "noSpeechVoiceoverOrMusic": true,
+      "fragileFoodPhysicsHandled": true,
+      "nonStandardGeometryHandled": true,
+      "sourcePoliciesApplied": [
+        "fixture:paris-brest-public-safe"
+      ]
+    },
+    "durationTarget": 10,
+    "status": "ready",
+    "selectedGenerationId": null,
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:00:00.000Z",
+    "updatedAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "demo-segment-finish",
+    "videoId": "paris-brest-demo",
+    "position": 6,
+    "title": "Finish and hero payoff",
+    "arc": "finishing and reveal",
+    "mode": "References",
+    "logicalSceneIds": [
+      "demo-scene-22",
+      "demo-scene-23",
+      "demo-scene-24",
+      "demo-scene-25",
+      "demo-scene-26",
+      "demo-scene-27",
+      "demo-scene-28",
+      "demo-scene-29",
+      "demo-scene-30"
+    ],
+    "description": "Powdered sugar falls as a fine white cloud over the ridged choux. A thin praline ribbon drizzles over one side without hiding the crown shape. Licorn presents the Paris-Brest on the kitchen island, character visible. Knife touches one slice point and reveals cream layers without crushing the ring. The slice separates cleanly, showing airy choux, praline cream, and crisp top. Licorn leans in satisfied as the plated slice sits beside the full crown. Close detail of cream ridges, sugar dust, and golden choux texture. Finished Paris-Brest hero shot in the Licorn kitchen with the mascot smiling. Final fork pull reveals soft cream and crisp pastry crumbs in one clean motion.",
+    "prompt": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Finish and hero payoff as exactly 9 short shots with hard cuts, total duration 15 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-1.7s: Powdered sugar falls as a fine white cloud over the ridged choux.\n- 1.7-3.4s: A thin praline ribbon drizzles over one side without hiding the crown shape.\n- 3.4-5.1s: Licorn presents the Paris-Brest on the kitchen island, character visible.\n- 5.1-6.8s: Knife touches one slice point and reveals cream layers without crushing the ring.\n- 6.8-8.5s: The slice separates cleanly, showing airy choux, praline cream, and crisp top.\n- 8.5-10.2s: Licorn leans in satisfied as the plated slice sits beside the full crown.\n- 10.2-11.9s: Close detail of cream ridges, sugar dust, and golden choux texture.\n- 11.9-13.6s: Finished Paris-Brest hero shot in the Licorn kitchen with the mascot smiling.\n- 13.6-15.0s: Final fork pull reveals soft cream and crisp pastry crumbs in one clean motion.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "promptInitial": "Use @KitchenIslandDefault only as global Licorn kitchen environment. Use @LicornMascot only as Licorn mascot cook with consistent body and hands. Use @ParisBrestState only as Paris-Brest food state for this segment.\nGenerate Finish and hero payoff as exactly 9 short shots with hard cuts, total duration 15 seconds, no slow motion, no soft transitions, no extra shots.\nVertical TikTok/Reels food ASMR style, no text on screen.\nIntegrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.\nPreserve Paris-Brest as separate piped choux domes touching in a crown, not a smooth ring; handle fragile geometry with hard cuts.\nMandatory timing:\n- 0.0-1.7s: Powdered sugar falls as a fine white cloud over the ridged choux.\n- 1.7-3.4s: A thin praline ribbon drizzles over one side without hiding the crown shape.\n- 3.4-5.1s: Licorn presents the Paris-Brest on the kitchen island, character visible.\n- 5.1-6.8s: Knife touches one slice point and reveals cream layers without crushing the ring.\n- 6.8-8.5s: The slice separates cleanly, showing airy choux, praline cream, and crisp top.\n- 8.5-10.2s: Licorn leans in satisfied as the plated slice sits beside the full crown.\n- 10.2-11.9s: Close detail of cream ridges, sugar dust, and golden choux texture.\n- 11.9-13.6s: Finished Paris-Brest hero shot in the Licorn kitchen with the mascot smiling.\n- 13.6-15.0s: Final fork pull reveals soft cream and crisp pastry crumbs in one clean motion.\nGlobal negatives: no flames, no red or blue induction glow, no deformed character, no floating utensils, no unstable pastry geometry.",
+    "references": [
+      {
+        "id": "finish-kitchen",
+        "role": "global Licorn kitchen environment",
+        "name": "KitchenIslandDefault",
+        "label": "KitchenIslandDefault",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "finish-mascot",
+        "role": "Licorn mascot cook with consistent body and hands",
+        "name": "LicornMascot",
+        "label": "LicornMascot",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "finish-food-state",
+        "role": "Paris-Brest food state for this segment",
+        "name": "ParisBrestState",
+        "label": "ParisBrestState",
+        "runwayUri": null,
+        "required": true
+      }
+    ],
+    "beats": [
+      "Scene 22",
+      "Scene 23",
+      "Scene 24",
+      "Scene 25",
+      "Scene 26",
+      "Scene 27",
+      "Scene 28",
+      "Scene 29",
+      "Scene 30"
+    ],
+    "timing": [
+      "0.0-1.7s: Powdered sugar falls as a fine white cloud over the ridged choux.",
+      "1.7-3.4s: A thin praline ribbon drizzles over one side without hiding the crown shape.",
+      "3.4-5.1s: Licorn presents the Paris-Brest on the kitchen island, character visible.",
+      "5.1-6.8s: Knife touches one slice point and reveals cream layers without crushing the ring.",
+      "6.8-8.5s: The slice separates cleanly, showing airy choux, praline cream, and crisp top.",
+      "8.5-10.2s: Licorn leans in satisfied as the plated slice sits beside the full crown.",
+      "10.2-11.9s: Close detail of cream ridges, sugar dust, and golden choux texture.",
+      "11.9-13.6s: Finished Paris-Brest hero shot in the Licorn kitchen with the mascot smiling.",
+      "13.6-15.0s: Final fork pull reveals soft cream and crisp pastry crumbs in one clean motion."
+    ],
+    "continuity": "Keep the Licorn kitchen, mascot scale, and Paris-Brest crown topology consistent.",
+    "risk": "Fragile choux geometry can collapse or become a smooth donut if references are ignored.",
+    "audioPrompt": "Close kitchen ASMR only: brittle crack, whisking, piping, sugar dust, and plate contact.",
+    "negatives": [
+      "no speech",
+      "no voiceover",
+      "no music",
+      "no smooth ring",
+      "no deformed mascot"
+    ],
+    "qaChecklist": {
+      "referencesWithinLimit": true,
+      "globalKitchenReferencePresent": true,
+      "referenceRolesExplicit": true,
+      "promptWithinPracticalLimit": true,
+      "hardCutsSpecified": true,
+      "mandatoryTimingSpecified": true,
+      "noSpeechVoiceoverOrMusic": true,
+      "fragileFoodPhysicsHandled": true,
+      "nonStandardGeometryHandled": true,
+      "sourcePoliciesApplied": [
+        "fixture:paris-brest-public-safe"
+      ]
+    },
+    "durationTarget": 15,
+    "status": "ready",
+    "selectedGenerationId": null,
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:00:00.000Z",
+    "updatedAt": "2026-05-08T18:42:00.000Z"
+  }
+]
