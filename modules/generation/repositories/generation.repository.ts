@@ -63,6 +63,66 @@ export async function listGenerationsBySegmentId(
   return data.map(mapGeneration);
 }
 
+const ACTIVE_GENERATION_STATUSES: GenerationStatus[] = [
+  "pending",
+  "queued",
+  "processing",
+];
+
+/**
+ * Count generations that are still in flight across the whole workspace.
+ * Used by the dashboard header to surface a live "active tasks" count
+ * instead of the previous static `0 active tasks` badge.
+ */
+export async function countActiveGenerations(
+  supabase: SupabaseDataClient,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("generations")
+    .select("id", { count: "exact", head: true })
+    .in("status", ACTIVE_GENERATION_STATUSES);
+
+  throwIfSupabaseError(error, "countActiveGenerations failed");
+  return count ?? 0;
+}
+
+export async function listActiveGenerations(
+  supabase: SupabaseDataClient,
+  options: { limit?: number } = {},
+): Promise<Generation[]> {
+  let query = supabase
+    .from("generations")
+    .select("*")
+    .in("status", ACTIVE_GENERATION_STATUSES)
+    .order("created_at", { ascending: false });
+
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+  throwIfSupabaseError(error, "listActiveGenerations failed");
+  return data.map(mapGeneration);
+}
+
+export async function countActiveGenerationsForSegments(
+  supabase: SupabaseDataClient,
+  segmentIds: string[],
+): Promise<number> {
+  if (segmentIds.length === 0) {
+    return 0;
+  }
+
+  const { count, error } = await supabase
+    .from("generations")
+    .select("id", { count: "exact", head: true })
+    .in("segment_id", segmentIds)
+    .in("status", ACTIVE_GENERATION_STATUSES);
+
+  throwIfSupabaseError(error, "countActiveGenerationsForSegments failed");
+  return count ?? 0;
+}
+
 export async function updateGenerationStatus(
   supabase: SupabaseDataClient,
   input: UpdateGenerationStatusInput,

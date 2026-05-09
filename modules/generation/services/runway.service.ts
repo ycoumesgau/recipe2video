@@ -94,6 +94,10 @@ export async function startSeedanceGeneration(
   input: SeedanceGenerationInput,
 ): Promise<RunwayTask> {
   try {
+    assertTotalReferenceCountWithinSeedanceLimit(
+      input.promptImage,
+      input.references,
+    );
     const references = normalizeSeedanceReferences(input.references);
     const endpoint = getSeedanceEndpoint(input, references);
     const body = buildSeedanceRequestBody(input, endpoint, references);
@@ -313,6 +317,34 @@ function normalizeSeedanceReferences(
     type: reference.type ?? "image",
     uri: normalizeRunwayUriOrHttpsUrl(reference.uri, "references.uri"),
   }));
+}
+
+/**
+ * Enforce the total reference cap exposed in `.cursor/rules/recipe2video-seedance-segments.mdc`
+ * and the PRD: at most 9 image references per Seedance segment, counting
+ * `promptImage` (when used as a single image reference) AND every entry in
+ * `references`. This prevents the orchestrator from over-shooting the limit
+ * by extracting the first reference into `promptImage` while still passing 9
+ * images in the array.
+ */
+function assertTotalReferenceCountWithinSeedanceLimit(
+  promptImage: RunwayPromptImage | undefined,
+  references: RunwaySeedanceReference[] | undefined,
+) {
+  // First/last keyframe arrays follow Runway's separate keyframe contract and
+  // are checked elsewhere (`assertReferencesAreNotMixedWithKeyframes`); they
+  // do not consume the 9-reference budget.
+  const promptImageCount = typeof promptImage === "string" ? 1 : 0;
+  const referencesCount = references?.length ?? 0;
+  const total = promptImageCount + referencesCount;
+
+  if (total > RUNWAY_MAX_SEEDANCE_REFERENCES) {
+    throw new RunwayServiceError({
+      code: "invalid_input",
+      message: `Seedance generation supports at most ${RUNWAY_MAX_SEEDANCE_REFERENCES} image references in total (promptImage + references). Got ${total}.`,
+      retryable: false,
+    });
+  }
 }
 
 function normalizePromptImage(promptImage: RunwayPromptImage | undefined) {

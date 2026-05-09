@@ -44,7 +44,10 @@ export async function getAssemblyPageData(
   ]);
 
   const acceptedSegments = segments.filter((segment) => segment.status === "accepted");
-  const audioTrack = await buildAudioTrack(mediaAssets);
+  const audioTrack = await buildAudioTrack(
+    mediaAssets,
+    composition?.audioMediaAssetId ?? null,
+  );
   const availableSegments = await buildAssemblySegments(
     acceptedSegments,
     mediaAssets,
@@ -132,11 +135,27 @@ async function buildAssemblySegments(
 
 async function buildAudioTrack(
   mediaAssets: MediaAsset[],
+  preferredAudioMediaAssetId: string | null,
 ): Promise<AssemblyAudioTrack | null> {
-  const audioAsset = mediaAssets.find(
-    (asset) =>
-      asset.type === "suno_audio" && asset.storageBucket && asset.storagePath,
-  );
+  // Prefer the audio asset explicitly linked on the composition; fall back to
+  // the first stored Suno audio if the user has not picked one yet (e.g. they
+  // uploaded a track but never opened the assembly screen).
+  const preferred = preferredAudioMediaAssetId
+    ? mediaAssets.find(
+        (asset) =>
+          asset.id === preferredAudioMediaAssetId &&
+          asset.type === "suno_audio" &&
+          asset.storageBucket &&
+          asset.storagePath,
+      )
+    : undefined;
+
+  const audioAsset =
+    preferred ??
+    mediaAssets.find(
+      (asset) =>
+        asset.type === "suno_audio" && asset.storageBucket && asset.storagePath,
+    );
 
   if (!audioAsset?.storageBucket || !audioAsset.storagePath) {
     return null;

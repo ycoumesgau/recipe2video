@@ -3,6 +3,7 @@ import {
   ingestRecipeWorkflow,
   logCostWorkflow,
 } from "./planning-stubs";
+import { generateReferencesWorkflow } from "./references-generation";
 import {
   applySegmentFeedbackRegeneration,
   persistSegmentOutput,
@@ -14,6 +15,7 @@ import {
 export const functions = [
   ingestRecipeWorkflow,
   generateStoryboardWorkflow,
+  generateReferencesWorkflow,
   requestSegmentGeneration,
   applySegmentFeedbackRegeneration,
   pollSegmentGeneration,

@@ -4,6 +4,10 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronRight,
+  PauseCircle,
+  PlayCircle,
+  RefreshCcw,
+  XCircle,
 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -26,16 +30,36 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
-import { getVideoDashboardData } from "@/modules/videos/get-video-dashboard-data";
-import { listVideoProjects } from "@/modules/videos/repositories/video.repository";
-import type { ActiveGenerationQueueItem } from "@/modules/videos/video-dashboard.types";
+import {
+  cancelGenerationAction,
+  retryGenerationAction,
+  setQueuePauseAction,
+} from "@/modules/generation/queue-actions";
+import { listActiveGenerations } from "@/modules/generation/repositories/generation.repository";
+import type { Generation } from "@/modules/generation/generation.types";
+import type { GenerationStatus } from "@/modules/generation/generation-status";
+import { getGenerationQueuePaused } from "@/modules/generation/repositories/queue-state.repository";
+import { getSegmentById } from "@/modules/storyboard/repositories/segment.repository";
+import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
 export const dynamic = "force-dynamic";
 
+interface ActiveTaskRow {
+  generationId: string;
+  segmentId: string;
+  segmentTitle: string;
+  videoId: string;
+  videoTitle: string;
+  model: string;
+  status: GenerationStatus;
+  costCredits: number | null;
+  startedAt: string;
+  triggeredBy: string | null;
+  runwayTaskId: string | null;
+}
+
 export default async function ActiveGenerationsPage() {
-  const projects = await loadProjects();
-  const data = getVideoDashboardData(projects);
-  const queue = data.activeQueue;
+  const { rows, paused, error } = await loadActiveGenerations();
 
   return (
     <div className="space-y-6">
@@ -48,23 +72,57 @@ export default async function ActiveGenerationsPage() {
             Active generations
           </h2>
           <p className="max-w-3xl text-muted-foreground">
-            Every queued, running, failed, or blocked generation across projects
-            stays visible here. Open a project to retry, cancel, or change the
-            selected model. No silent fallback runs without explicit user
-            approval.
+            Live view of every queued, processing, failed, or pending Runway
+            task across projects. Pause new generations, retry, or cancel
+            without leaving this screen.
           </p>
         </div>
+
+        <form action={setQueuePauseAction}>
+          <input
+            name="paused"
+            type="hidden"
+            value={paused ? "false" : "true"}
+          />
+          <Button
+            size="sm"
+            type="submit"
+            variant={paused ? "default" : "outline"}
+          >
+            {paused ? (
+              <>
+                <PlayCircle className="h-4 w-4" />
+                Resume queue
+              </>
+            ) : (
+              <>
+                <PauseCircle className="h-4 w-4" />
+                Pause queue
+              </>
+            )}
+          </Button>
+        </form>
       </section>
 
-      <Alert>
-        <Activity className="h-4 w-4" />
-        <AlertTitle>Read-only queue overview during the hackathon</AlertTitle>
-        <AlertDescription>
-          Per-task retry, cancel, and global pause controls live inside each
-          project segment review. This page is the cross-project visibility
-          layer required by the UX contract.
-        </AlertDescription>
-      </Alert>
+      {paused ? (
+        <Alert variant="destructive">
+          <PauseCircle className="h-4 w-4" />
+          <AlertTitle>New generations are paused</AlertTitle>
+          <AlertDescription>
+            New `segment.generation.requested` events keep their segment in the
+            `blocked` status until the queue is resumed. In-flight tasks
+            continue to poll until they reach a terminal state.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {error ? (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Active queue unavailable</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -78,7 +136,7 @@ export default async function ActiveGenerationsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {queue.length === 0 ? (
+          {rows.length === 0 ? (
             <Alert>
               <CheckCircle2 className="h-4 w-4" />
               <AlertTitle>No active tasks</AlertTitle>
@@ -92,27 +150,22 @@ export default async function ActiveGenerationsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Project</TableHead>
-                  <TableHead>Target</TableHead>
-                  <TableHead>Operation</TableHead>
+                  <TableHead>Segment</TableHead>
                   <TableHead>Model</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Progress</TableHead>
                   <TableHead className="text-right">Cost est.</TableHead>
-                  <TableHead>Triggered by</TableHead>
                   <TableHead>Started</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {queue.map((task) => (
-                  <TableRow key={task.id}>
+                {rows.map((task) => (
+                  <TableRow key={task.generationId}>
                     <TableCell className="font-medium">
-                      {task.projectTitle}
+                      {task.videoTitle}
                     </TableCell>
-                    <TableCell>{task.targetLabel}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {task.operation}
-                    </TableCell>
+                    <TableCell>{task.segmentTitle}</TableCell>
                     <TableCell>{task.model}</TableCell>
                     <TableCell>
                       <Badge variant={statusBadgeVariant(task.status)}>
@@ -120,19 +173,47 @@ export default async function ActiveGenerationsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="min-w-32">
-                      <Progress value={task.progress} />
+                      <Progress value={progressForStatus(task.status)} />
                     </TableCell>
                     <TableCell className="text-right">
-                      {formatCredits(task.costEstimateCredits)}
+                      {formatCredits(task.costCredits)}
                     </TableCell>
-                    <TableCell>{task.triggeredBy}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDateTime(task.startedAt)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="flex flex-wrap justify-end gap-2">
+                      <form action={retryGenerationAction}>
+                        <input
+                          name="generationId"
+                          type="hidden"
+                          value={task.generationId}
+                        />
+                        <Button
+                          size="sm"
+                          type="submit"
+                          variant="outline"
+                          disabled={paused || task.status === "queued" || task.status === "processing"}
+                        >
+                          <RefreshCcw className="h-4 w-4" />
+                          Retry
+                        </Button>
+                      </form>
+                      <form action={cancelGenerationAction}>
+                        <input
+                          name="generationId"
+                          type="hidden"
+                          value={task.generationId}
+                        />
+                        <Button size="sm" type="submit" variant="ghost">
+                          <XCircle className="h-4 w-4" />
+                          Cancel
+                        </Button>
+                      </form>
                       <Button asChild size="sm" variant="outline">
-                        <Link href={`/videos/${task.projectId}`}>
-                          Open project
+                        <Link
+                          href={`/videos/${task.videoId}/segments/${task.segmentId}`}
+                        >
+                          Open segment
                           <ChevronRight className="h-4 w-4" />
                         </Link>
                       </Button>
@@ -145,7 +226,7 @@ export default async function ActiveGenerationsPage() {
         </CardContent>
       </Card>
 
-      {hasFailedTasks(queue) ? (
+      {hasFailedTasks(rows) ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Failed task visible above</AlertTitle>
@@ -160,38 +241,89 @@ export default async function ActiveGenerationsPage() {
   );
 }
 
-async function loadProjects() {
+async function loadActiveGenerations() {
   try {
     const supabase = createSupabaseAdminClient();
-    return await listVideoProjects(supabase, { limit: 12 });
-  } catch {
-    return [];
+    const [generations, paused] = await Promise.all([
+      listActiveGenerations(supabase, { limit: 50 }),
+      getGenerationQueuePaused(supabase),
+    ]);
+
+    const rows = await Promise.all(
+      generations.map(async (generation) =>
+        decorateGeneration(supabase, generation),
+      ),
+    );
+
+    return { rows: rows.filter((row): row is ActiveTaskRow => Boolean(row)), paused, error: null as string | null };
+  } catch (error) {
+    return {
+      rows: [] as ActiveTaskRow[],
+      paused: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unable to load active generations.",
+    };
   }
+}
+
+async function decorateGeneration(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  generation: Generation,
+): Promise<ActiveTaskRow | null> {
+  const segment = await getSegmentById(supabase, generation.segmentId);
+  if (!segment) {
+    return null;
+  }
+
+  const video = await getVideoProjectById(supabase, segment.videoId);
+
+  return {
+    generationId: generation.id,
+    segmentId: segment.id,
+    segmentTitle: `S${segment.position}. ${segment.title}`,
+    videoId: segment.videoId,
+    videoTitle: video?.title ?? "Untitled project",
+    model: generation.model,
+    status: generation.status,
+    costCredits: generation.costCredits ?? null,
+    startedAt: generation.createdAt,
+    triggeredBy: generation.triggeredBy ?? null,
+    runwayTaskId: generation.runwayTaskId ?? null,
+  };
 }
 
 function statusBadgeVariant(
-  status: ActiveGenerationQueueItem["status"],
+  status: GenerationStatus,
 ): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "failed") {
+  if (status === "failed" || status === "cancelled" || status === "expired") {
     return "destructive";
   }
-
   if (status === "succeeded") {
     return "secondary";
   }
-
-  if (status === "queued") {
+  if (status === "queued" || status === "pending") {
     return "outline";
   }
-
   return "default";
 }
 
-function hasFailedTasks(queue: ActiveGenerationQueueItem[]) {
-  return queue.some((task) => task.status === "failed");
+function progressForStatus(status: GenerationStatus): number {
+  if (status === "succeeded") return 100;
+  if (status === "processing") return 65;
+  if (status === "queued" || status === "pending") return 25;
+  if (status === "failed" || status === "cancelled" || status === "expired")
+    return 100;
+  return 0;
 }
 
-function formatCredits(credits: number) {
+function hasFailedTasks(rows: ActiveTaskRow[]) {
+  return rows.some((row) => row.status === "failed");
+}
+
+function formatCredits(credits: number | null) {
+  if (credits == null) return "-";
   return `${credits.toLocaleString("en-US")} cr`;
 }
 

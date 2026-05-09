@@ -15,9 +15,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { loadProjectCostDashboardData } from "@/modules/costs/load-cost-dashboard-data";
 import { CostDashboard } from "@/modules/costs/ui/cost-dashboard";
+import type { CostDashboardData } from "@/modules/costs/cost.types";
+import { countActiveGenerationsForSegments } from "@/modules/generation/repositories/generation.repository";
 import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
+import type { RecipeSourceSummary, VideoProject } from "@/modules/videos/video.types";
+import { ProjectPipelineProgress } from "@/modules/videos/ui/project-pipeline-progress";
 
 export default async function VideoDetailPage({
   params,
@@ -32,7 +36,20 @@ export default async function VideoDetailPage({
     logicalScenes,
     seedanceSegments,
     storyboardError,
+    activeTaskCount,
   } = await loadProject(videoId);
+
+  const acceptedSegments = seedanceSegments.filter(
+    (segment) => segment.status === "accepted",
+  ).length;
+  const recipeSource = readRecipeSourceSummary(project);
+  const nextAction = project
+    ? computeNextAction({
+        project,
+        acceptedCount: acceptedSegments,
+        totalCount: seedanceSegments.length,
+      })
+    : null;
 
   return (
     <div className="space-y-6">
@@ -67,52 +84,101 @@ export default async function VideoDetailPage({
           <TabsTrigger value="costs">Costs and Logs</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
-          <Card>
-            <CardHeader>
-              <CardTitle>Next required action</CardTitle>
-              <CardDescription>
-                The draft is ready for recipe ingest once the planning workflow
-                is connected.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              {project ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  <OverviewItem label="Status" value={project.status} />
-                  <OverviewItem
-                    label="Video model"
-                    value={project.selectedVideoModel}
+          {project && nextAction ? (
+            <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Next required action</CardTitle>
+                  <CardDescription>{nextAction.detail}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  <ProjectPipelineProgress
+                    acceptedSegmentCount={acceptedSegments}
+                    activeTaskCount={activeTaskCount}
+                    status={project.status}
+                    totalSegmentCount={seedanceSegments.length}
                   />
-                  <OverviewItem
-                    label="Image model"
-                    value={project.selectedImageModel}
-                  />
-                  <OverviewItem
-                    label="TTS model"
-                    value={project.selectedTtsModel}
-                  />
-                  <OverviewItem
-                    label="SFX model"
-                    value={project.selectedSfxModel}
-                  />
-                  <OverviewItem
-                    label="Runway credits used"
-                    value={String(project.totalCostCredits)}
-                  />
-                </div>
-              ) : (
-                <p className="text-muted-foreground">
-                  No project data is loaded yet.
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                <Button asChild variant="outline">
-                  <Link href="/">Back to dashboard</Link>
-                </Button>
-                <Button disabled>Recipe ingest pending</Button>
+                  <div className="flex flex-wrap gap-2">
+                    {nextAction.href ? (
+                      <Button asChild>
+                        <Link href={nextAction.href}>{nextAction.cta}</Link>
+                      </Button>
+                    ) : (
+                      <Button disabled>{nextAction.cta}</Button>
+                    )}
+                    <Button asChild variant="outline">
+                      <Link href="/">Back to dashboard</Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Recipe source</CardTitle>
+                    <CardDescription>
+                      What the agent ingested for this project.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <OverviewItem label="Source type" value={recipeSource.label} />
+                    {recipeSource.detail ? (
+                      <OverviewItem label="Reference" value={recipeSource.detail} />
+                    ) : null}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Selected models</CardTitle>
+                    <CardDescription>
+                      No silent fallback: failures surface here instead of
+                      switching model behind the user.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <OverviewItem
+                        label="Video"
+                        value={project.selectedVideoModel}
+                      />
+                      <OverviewItem
+                        label="Image"
+                        value={project.selectedImageModel}
+                      />
+                      <OverviewItem
+                        label="TTS"
+                        value={project.selectedTtsModel}
+                      />
+                      <OverviewItem
+                        label="SFX"
+                        value={project.selectedSfxModel}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Cost summary</CardTitle>
+                    <CardDescription>
+                      Aggregated from `cost_logs` for this project.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ProjectCostSummary data={costData} />
+                  </CardContent>
+                </Card>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                No project data is loaded yet.
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
         <TabsContent value="storyboard">
           <StoryboardReview
@@ -242,6 +308,10 @@ async function loadProject(videoId: string) {
       getStoryboardReviewData(videoId),
       loadProjectCostDashboardData(videoId),
     ]);
+    const activeTaskCount = await countActiveGenerationsForSegments(
+      supabase,
+      seedanceSegments.map((segment) => segment.id),
+    );
 
     return {
       project,
@@ -250,6 +320,7 @@ async function loadProject(videoId: string) {
       logicalScenes,
       seedanceSegments,
       storyboardError: null,
+      activeTaskCount,
     };
   } catch (error) {
     return {
@@ -265,8 +336,128 @@ async function loadProject(videoId: string) {
         error instanceof Error
           ? error.message
           : "Unable to load storyboard data.",
+      activeTaskCount: 0,
     };
   }
+}
+
+function ProjectCostSummary({ data }: { data: CostDashboardData }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {data.summaryMetrics.slice(0, 4).map((metric) => (
+        <div
+          key={metric.label}
+          className="rounded-lg border bg-background/60 p-3"
+        >
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            {metric.label}
+          </p>
+          <p className="mt-1 font-semibold">{metric.value}</p>
+          <p className="text-xs text-muted-foreground">{metric.helper}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function readRecipeSourceSummary(project: VideoProject | null) {
+  const source = project?.recipeData as
+    | { source?: RecipeSourceSummary }
+    | null
+    | undefined;
+  const summary = source?.source;
+
+  if (!summary) {
+    return { label: "No source recorded yet", detail: null as string | null };
+  }
+
+  if (summary.type === "url") {
+    return {
+      label: "Recipe URL",
+      detail: summary.recipeUrl ?? null,
+    };
+  }
+  if (summary.type === "photos") {
+    return {
+      label: "Recipe photos",
+      detail: summary.uploadedFileNames?.length
+        ? `${summary.uploadedFileNames.length} files (${summary.uploadedFileNames.slice(0, 3).join(", ")}${summary.uploadedFileNames.length > 3 ? "..." : ""})`
+        : null,
+    };
+  }
+  if (summary.type === "text") {
+    return {
+      label: "Pasted text",
+      detail: summary.pastedTextPreview ?? null,
+    };
+  }
+  return {
+    label: "Demo fixture",
+    detail: summary.demoRecipeId ?? null,
+  };
+}
+
+function computeNextAction(input: {
+  project: VideoProject;
+  acceptedCount: number;
+  totalCount: number;
+}) {
+  const { project } = input;
+
+  if (project.status === "draft") {
+    return {
+      detail: "Recipe ingest is queued through Inngest.",
+      cta: "Awaiting recipe ingest",
+      href: null as string | null,
+    };
+  }
+  if (project.status === "clarification_needed") {
+    return {
+      detail: "Answer the clarifying questions before generating the storyboard.",
+      cta: "Open project storyboard",
+      href: `/videos/${project.id}/storyboard`,
+    };
+  }
+  if (project.status === "recipe_ingested" || project.status === "storyboard_ready") {
+    return {
+      detail: "Review the proposed storyboard and approve it before any Runway spend.",
+      cta: "Review storyboard",
+      href: `/videos/${project.id}/storyboard`,
+    };
+  }
+  if (project.status === "storyboard_approved") {
+    return {
+      detail: "Approve and upload the kitchen + recipe-state references.",
+      cta: "Open references",
+      href: `/videos/${project.id}/references`,
+    };
+  }
+  if (project.status === "references_ready" || project.status === "generating" || project.status === "review") {
+    return {
+      detail: `Review Seedance segment variants (${input.acceptedCount}/${input.totalCount} accepted).`,
+      cta: "Open segments",
+      href: `/videos/${project.id}#segments`,
+    };
+  }
+  if (project.status === "assembling") {
+    return {
+      detail: "Assemble accepted clips with Suno music and prepare the final export.",
+      cta: "Open assembly",
+      href: `/videos/${project.id}/assembly`,
+    };
+  }
+  if (project.status === "exported") {
+    return {
+      detail: "Final export delivered. Re-open the assembly to download the master.",
+      cta: "Open assembly",
+      href: `/videos/${project.id}/assembly`,
+    };
+  }
+  return {
+    detail: "A workflow step failed; inspect the logs and retry.",
+    cta: "Open costs and logs",
+    href: `/videos/${project.id}/costs`,
+  };
 }
 
 function OverviewItem({ label, value }: { label: string; value: string }) {

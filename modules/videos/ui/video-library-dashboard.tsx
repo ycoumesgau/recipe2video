@@ -327,14 +327,33 @@ function ProjectCard({ project }: { project: VideoDashboardProject }) {
 
   return (
     <Card className="min-w-0" size="sm">
-      <div
-        className={`mx-3 flex h-32 items-end rounded-lg bg-gradient-to-br p-3 ${thumbnailToneClasses[project.thumbnailTone]}`}
-      >
-        <div>
-          <Badge variant="secondary">{project.recipeSourceLabel}</Badge>
-          <p className="mt-2 text-lg font-semibold">{project.thumbnailLabel}</p>
+      {project.thumbnailUrl ? (
+        <div className="relative mx-3 h-32 overflow-hidden rounded-lg">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            alt={project.thumbnailLabel}
+            className="h-full w-full object-cover"
+            src={project.thumbnailUrl}
+          />
+          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/70 to-transparent p-3">
+            <div>
+              <Badge variant="secondary">{project.recipeSourceLabel}</Badge>
+              <p className="mt-2 text-lg font-semibold text-white drop-shadow">
+                {project.thumbnailLabel}
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div
+          className={`mx-3 flex h-32 items-end rounded-lg bg-gradient-to-br p-3 ${thumbnailToneClasses[project.thumbnailTone]}`}
+        >
+          <div>
+            <Badge variant="secondary">{project.recipeSourceLabel}</Badge>
+            <p className="mt-2 text-lg font-semibold">{project.thumbnailLabel}</p>
+          </div>
+        </div>
+      )}
       <CardHeader>
         <CardAction>
           <Badge variant={statusBadgeVariant[project.status]}>

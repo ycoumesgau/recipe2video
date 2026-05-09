@@ -8,9 +8,19 @@ import type {
 
 interface WorkflowAuthEventData {
   requestedByUserId: string;
-  isAllowlisted: boolean;
+  /**
+   * Legacy flag kept for backward compatibility. The real allowlist check is
+   * performed by each Inngest handler against Supabase before invoking the
+   * workflow. We never trust this field on the worker side.
+   */
+  isAllowlisted?: boolean;
 }
 
+// `composition.render.requested` was declared but never handled. Server-side
+// Remotion rendering is a post-hackathon item (see `docs/demo-runbook.md`
+// "Phase 5 follow-ups"). The current export path stores a user-uploaded MP4
+// directly through `uploadFinalExportAction`. Re-add the event when a real
+// render worker (Vercel Sandbox or @remotion/renderer) is wired.
 export const INNGEST_EVENTS = {
   videoRecipeIngestRequested: "video.recipe.ingest.requested",
   videoStoryboardGenerateRequested: "video.storyboard.generate.requested",
@@ -20,7 +30,6 @@ export const INNGEST_EVENTS = {
   segmentOutputPersistRequested: "segment.output.persist.requested",
   segmentMuxUploadRequested: "segment.mux.upload.requested",
   segmentFeedbackApplyRequested: "segment.feedback.apply.requested",
-  compositionRenderRequested: "composition.render.requested",
   costLogRequested: "cost.log.requested",
 } as const;
 
@@ -51,10 +60,6 @@ export interface FeedbackApplyRequestedData extends WorkflowAuthEventData {
   generationId: string;
 }
 
-export interface CompositionRenderRequestedData extends WorkflowAuthEventData {
-  compositionId: string;
-}
-
 export type CostLogRequestedData = WorkflowAuthEventData & CreateCostLogInput;
 
 export type Recipe2VideoEventPayloads = {
@@ -66,6 +71,5 @@ export type Recipe2VideoEventPayloads = {
   [INNGEST_EVENTS.segmentOutputPersistRequested]: SegmentOutputPersistRequestedData;
   [INNGEST_EVENTS.segmentMuxUploadRequested]: SegmentMuxUploadRequestedData;
   [INNGEST_EVENTS.segmentFeedbackApplyRequested]: FeedbackApplyRequestedData;
-  [INNGEST_EVENTS.compositionRenderRequested]: CompositionRenderRequestedData;
   [INNGEST_EVENTS.costLogRequested]: CostLogRequestedData;
 };

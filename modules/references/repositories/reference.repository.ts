@@ -112,6 +112,24 @@ export async function updateReferenceAssetMedia(
   return mapReferenceAsset(data);
 }
 
+export async function updateReferenceAssetPrompt(
+  supabase: SupabaseDataClient,
+  input: {
+    referenceId: string;
+    prompt: string | null;
+  },
+): Promise<ReferenceAsset> {
+  const { data, error } = await supabase
+    .from("reference_assets")
+    .update({ prompt: input.prompt })
+    .eq("id", input.referenceId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateReferenceAssetPrompt failed");
+  return mapReferenceAsset(data);
+}
+
 export async function updateReferenceAssetRunwayUri(
   supabase: SupabaseDataClient,
   input: {

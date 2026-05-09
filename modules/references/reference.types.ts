@@ -34,5 +34,11 @@ export interface ReferenceReviewData {
   globalReferences: ReferenceAssetReviewItem[];
   recipeReferences: ReferenceAssetReviewItem[];
   rejectedReferences: ReferenceAssetReviewItem[];
+  /**
+   * References that are still `planned`, `generating`, `failed`, or that
+   * do not yet have a `runwayUri`. Surfaces the work the user still has to
+   * do before a Seedance generation can be launched.
+   */
+  missingReferences: ReferenceAssetReviewItem[];
   segmentReadiness: SegmentReferenceReadiness[];
 }

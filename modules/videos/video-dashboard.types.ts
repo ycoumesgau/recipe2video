@@ -12,6 +12,13 @@ export interface VideoDashboardProject {
   status: VideoStatus;
   thumbnailLabel: string;
   thumbnailTone: "pink" | "amber" | "emerald" | "sky";
+  /**
+   * Mux thumbnail URL for the project's first accepted clip when available.
+   * Mux generates thumbnails on-demand from the public playback ID via
+   * `https://image.mux.com/{playbackId}/thumbnail.jpg`. Falls back to the
+   * gradient placeholder when no playback is available yet.
+   */
+  thumbnailUrl?: string | null;
   acceptedSegments: number;
   totalSegments: number;
   activeTaskCount: number;

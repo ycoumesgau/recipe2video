@@ -56,8 +56,31 @@ export async function getReferenceReviewData(
       (item) => item.reference.videoId === videoId && item.reference.status !== "rejected",
     ),
     rejectedReferences: items.filter((item) => item.reference.status === "rejected"),
+    missingReferences: items.filter((item) => isMissingReference(item)),
     segmentReadiness: buildSegmentReadiness(references, segments),
   };
+}
+
+function isMissingReference(item: ReferenceAssetReviewItem): boolean {
+  const { reference } = item;
+
+  if (reference.status === "rejected") {
+    return false;
+  }
+
+  if (reference.status === "planned" || reference.status === "generating") {
+    return true;
+  }
+
+  if (reference.status === "failed") {
+    return true;
+  }
+
+  if (!reference.runwayUri) {
+    return true;
+  }
+
+  return false;
 }
 
 function buildSegmentReadiness(

@@ -9,6 +9,7 @@ import {
 } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 
+import { updateReferenceAssetPrompt } from "./repositories/reference.repository";
 import {
   approveReferenceAsset,
   createManualReferenceUpload,
@@ -126,6 +127,35 @@ export async function uploadReferenceToRunwayAction(formData: FormData) {
 
     revalidateReferencePath(videoId);
     redirectWithNotice(videoId, "success", "Reference uploaded to Runway.");
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(videoId, "error", getActionErrorMessage(error));
+  }
+}
+
+export async function updateReferencePromptAction(formData: FormData) {
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    await assertCostlyActionAllowed();
+    const referenceId = requireString(formData, "referenceId");
+    const promptRaw = getString(formData, "prompt");
+    const prompt = promptRaw.length > 0 ? promptRaw : null;
+
+    await updateReferenceAssetPrompt(createSupabaseAdminClient(), {
+      referenceId,
+      prompt,
+    });
+
+    revalidateReferencePath(videoId);
+    redirectWithNotice(
+      videoId,
+      "success",
+      prompt ? "Reference prompt updated." : "Reference prompt cleared.",
+    );
   } catch (error) {
     if (isNextRedirectError(error)) {
       throw error;

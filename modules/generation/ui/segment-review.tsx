@@ -40,6 +40,7 @@ import type {
   SegmentReviewData,
   SegmentVariantReviewItem,
 } from "../use-cases/get-segment-review";
+import type { SegmentFeedback } from "@/modules/feedback/feedback.types";
 
 const generationStatusVariant: Record<
   GenerationStatus,
@@ -145,6 +146,10 @@ export function SegmentReview({
             segment={data.segment}
             videoId={videoId}
           />
+          <PromptHistoryCard
+            currentPrompt={data.segment.prompt}
+            feedbacks={data.feedbacks}
+          />
           <ReferencesPanel references={data.segment.references} />
         </div>
 
@@ -182,6 +187,10 @@ export function SegmentReview({
             project={data.project}
             segment={data.segment}
             videoId={videoId}
+          />
+          <PromptHistoryCard
+            currentPrompt={data.segment.prompt}
+            feedbacks={data.feedbacks}
           />
         </TabsContent>
         <TabsContent value="chat">
@@ -493,6 +502,79 @@ function RegenerationForm({
         Request regeneration
       </Button>
     </form>
+  );
+}
+
+function PromptHistoryCard({
+  currentPrompt,
+  feedbacks,
+}: {
+  currentPrompt: string;
+  feedbacks: SegmentFeedback[];
+}) {
+  const appliedHistory = feedbacks
+    .filter((feedback) => feedback.applied)
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Clock className="h-4 w-4" />
+          Prompt version history
+        </CardTitle>
+        <CardDescription>
+          Each applied feedback creates a new prompt version. The current prompt
+          stays at the top; older versions are auditable here.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-lg border bg-emerald-500/10 p-3 text-xs">
+          <p className="mb-1 font-medium">Current prompt</p>
+          <p className="line-clamp-6 whitespace-pre-wrap text-muted-foreground">
+            {currentPrompt}
+          </p>
+        </div>
+        {appliedHistory.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No prior prompt versions: this segment has not been edited through
+            the agent feedback loop yet.
+          </p>
+        ) : (
+          appliedHistory.map((feedback) => (
+            <details
+              key={feedback.id}
+              className="rounded-lg border bg-muted/20 p-3 text-xs"
+            >
+              <summary className="cursor-pointer font-medium">
+                Replaced on {new Date(feedback.createdAt).toLocaleString()}
+              </summary>
+              <div className="mt-2 space-y-2">
+                <p className="text-muted-foreground">
+                  Feedback: {feedback.message}
+                </p>
+                <div>
+                  <p className="font-medium">Prompt before</p>
+                  <p className="line-clamp-6 whitespace-pre-wrap text-muted-foreground">
+                    {feedback.promptBefore}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-medium">Prompt after</p>
+                  <p className="line-clamp-6 whitespace-pre-wrap text-muted-foreground">
+                    {feedback.promptAfter}
+                  </p>
+                </div>
+              </div>
+            </details>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

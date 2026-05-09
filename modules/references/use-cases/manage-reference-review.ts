@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
+import { logCost } from "@/modules/costs/repositories/cost.repository";
 import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.constants";
 import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
 import { downloadStorageObject } from "@/modules/media-assets/services/storage.service";
@@ -137,6 +138,25 @@ export async function uploadReferenceAssetToRunway(
       source: "recipe2video_reference_asset",
     },
   });
+
+  // Audit-only cost row. createEphemeral uploads do not consume credits today,
+  // but we keep a trace per Runway operation per the cost logging contract.
+  if (reference.videoId) {
+    await logCost(supabase, {
+      videoId: reference.videoId,
+      segmentId: null,
+      provider: "runway",
+      model: "uploads.create_ephemeral",
+      operation: "reference_uploaded_to_runway",
+      creditsUsed: 0,
+      metadata: {
+        referenceId: reference.id,
+        runwayUri,
+        mediaAssetId: mediaAsset.id,
+      },
+      createdBy: mediaAsset.createdBy,
+    });
+  }
 
   return updateReferenceAssetRunwayUri(supabase, {
     referenceId,

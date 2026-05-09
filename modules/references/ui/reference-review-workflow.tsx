@@ -34,6 +34,7 @@ import {
   approveReferenceAction,
   rejectReferenceAction,
   requestReferenceRegenerationAction,
+  updateReferencePromptAction,
   uploadManualReferenceAction,
   uploadReferenceToRunwayAction,
 } from "../actions";
@@ -84,6 +85,16 @@ export function ReferenceReviewWorkflow({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
         <div className="space-y-4">
+          {data.missingReferences.length > 0 ? (
+            <ReferenceSection
+              description="References that still need to be approved, generated, or uploaded to Runway before the next Seedance generation."
+              emptyCopy="No outstanding references."
+              items={data.missingReferences}
+              title="Missing references"
+              titleVariant="warning"
+              videoId={videoId}
+            />
+          ) : null}
           <ReferenceSection
             emptyCopy="Global kitchen, mascot, expression, pose, and utensil references will appear here once seeded."
             items={data.globalReferences}
@@ -114,22 +125,32 @@ export function ReferenceReviewWorkflow({
 }
 
 function ReferenceSection({
+  description,
   emptyCopy,
   items,
   title,
+  titleVariant,
   videoId,
 }: {
+  description?: string;
   emptyCopy: string;
   items: ReferenceAssetReviewItem[];
   title: string;
+  titleVariant?: "warning";
   videoId: string;
 }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          {titleVariant === "warning" ? (
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+          ) : null}
+          {title}
+        </CardTitle>
         <CardDescription>
-          Cards show storage status, Runway upload status, and segment usage.
+          {description ??
+            "Cards show storage status, Runway upload status, and segment usage."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -204,12 +225,30 @@ function ReferenceCard({
           </div>
         ) : null}
 
-        {reference.prompt ? (
-          <div className="rounded-lg border bg-background/60 p-3 text-xs">
-            <p className="font-medium">Prompt</p>
-            <p className="mt-1 text-muted-foreground">{reference.prompt}</p>
-          </div>
-        ) : null}
+        <details className="rounded-lg border bg-background/60 p-3 text-xs">
+          <summary className="cursor-pointer font-medium">
+            Prompt {reference.prompt ? "(edit)" : "(missing — set to enable agent regeneration)"}
+          </summary>
+          <p className="mt-2 text-muted-foreground">
+            {reference.prompt ?? "No prompt set yet."}
+          </p>
+          <form
+            action={updateReferencePromptAction}
+            className="mt-3 space-y-2"
+          >
+            <input name="videoId" type="hidden" value={videoId} />
+            <input name="referenceId" type="hidden" value={reference.id} />
+            <Textarea
+              defaultValue={reference.prompt ?? ""}
+              name="prompt"
+              placeholder="Describe what this reference must preserve in the Seedance prompt."
+              rows={3}
+            />
+            <Button size="sm" type="submit" variant="outline">
+              Save prompt
+            </Button>
+          </form>
+        </details>
 
         <div className="flex flex-wrap gap-2">
           <ReferenceActionButton

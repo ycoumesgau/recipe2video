@@ -25,7 +25,16 @@ const baseSegment: SeedanceSegment = {
     "Use @KitchenIslandDefault only as global kitchen. Generate exactly 2 shots with hard cuts, total duration 4 seconds, no speech, no voiceover, no music.",
   promptInitial:
     "Use @KitchenIslandDefault only as global kitchen. Generate exactly 2 shots with hard cuts, total duration 4 seconds, no speech, no voiceover, no music.",
-  references: [],
+  references: [
+    {
+      id: "ref-kitchen",
+      role: "global Licorn kitchen environment",
+      name: "KitchenIslandDefault",
+      label: "KitchenIslandDefault",
+      runwayUri: "runway://test/kitchen",
+      required: true,
+    },
+  ],
   beats: [],
   timing: [],
   continuity: "",

@@ -1,10 +1,19 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { AlertTriangle, CircleDollarSign, Database, ListFilter } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  CircleDollarSign,
+  Database,
+  Download,
+  ListFilter,
+} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -55,7 +64,16 @@ export function CostDashboard({ data }: { data: CostDashboardData }) {
             rejected or failed generation spend from append-only cost logs.
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="flex flex-col gap-3 md:items-end">
+          <Button asChild size="sm" variant="outline">
+            <a
+              href={`/api/costs/export.csv${data.projectId ? `?videoId=${data.projectId}` : ""}`}
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </a>
+          </Button>
+          <div className="grid gap-2 sm:grid-cols-2">
           <label className="space-y-1 text-sm">
             <span className="flex items-center gap-2 text-muted-foreground">
               <ListFilter className="h-4 w-4" />
@@ -89,6 +107,7 @@ export function CostDashboard({ data }: { data: CostDashboardData }) {
               ))}
             </Select>
           </label>
+          </div>
         </div>
       </section>
 
@@ -234,7 +253,25 @@ function RecentLogsCard({ logs }: { logs: CostLog[] }) {
               {logs.map((log) => (
                 <TableRow key={log.id}>
                   <TableCell>
-                    <p className="font-medium">{log.operation}</p>
+                    {log.videoId && log.segmentId ? (
+                      <Link
+                        className="inline-flex items-center gap-1 font-medium hover:underline"
+                        href={`/videos/${log.videoId}/segments/${log.segmentId}`}
+                      >
+                        {log.operation}
+                        <ChevronRight className="h-3 w-3" />
+                      </Link>
+                    ) : log.videoId ? (
+                      <Link
+                        className="inline-flex items-center gap-1 font-medium hover:underline"
+                        href={`/videos/${log.videoId}`}
+                      >
+                        {log.operation}
+                        <ChevronRight className="h-3 w-3" />
+                      </Link>
+                    ) : (
+                      <p className="font-medium">{log.operation}</p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       {formatDateTime(log.createdAt)}
                     </p>

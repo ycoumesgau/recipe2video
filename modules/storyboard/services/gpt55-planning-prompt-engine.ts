@@ -32,6 +32,13 @@ import {
   createOpenAiPlanningClient,
   type OpenAiPlanningClient,
 } from "./openai-planning-client";
+import {
+  LogicalScenesEnvelopeSchema,
+  PromptEditResultSchema,
+  RecipeAnalysisResultSchema,
+  SeedanceSegmentsEnvelopeSchema,
+  validatePlanningOutput,
+} from "./planning-output-schemas";
 
 type PlanningOperation =
   | "recipe_analysis"
@@ -53,26 +60,47 @@ export interface PlanningPromptEngine {
   editPromptFromFeedback(input: PromptEditInput): Promise<PromptEditResult>;
 }
 
+/**
+ * Resolves the planning mode. Default is `"live"` so that production paths hit
+ * OpenAI as the contract requires. Set `RECIPE2VIDEO_PLANNING_MODE=stub` in
+ * the environment to opt out (used for local rehearsals or CI without an
+ * OpenAI key). Tests can pass `mode` explicitly via options.
+ */
+function resolveDefaultPlanningMode(): "stub" | "live" {
+  const envMode = process.env.RECIPE2VIDEO_PLANNING_MODE;
+  if (envMode === "stub") {
+    return "stub";
+  }
+  return "live";
+}
+
 export function createGpt55PlanningPromptEngine(
   options: PlanningPromptEngineOptions = {},
 ): PlanningPromptEngine {
+  const mode = options.mode ?? resolveDefaultPlanningMode();
   const model = options.model ?? OPENAI_REASONING_MODEL;
   const costLogWriter = options.costLogWriter ?? noopCostLogWriter;
 
   assertConfiguredModel(model);
   const openAiClient =
-    options.mode === "live" ? options.openAiClient ?? createOpenAiPlanningClient() : null;
+    mode === "live" ? options.openAiClient ?? createOpenAiPlanningClient() : null;
 
   return {
     async analyzeRecipe(input) {
-      assertCostlyActionAllowed(input);
+      assertPlanningCallerProvided(input);
 
       const prompt = buildRecipeAnalysisPrompt(input);
       if (openAiClient) {
-        const result = await openAiClient.generateJson<RecipeAnalysisResult>({
+        const result = await openAiClient.generateJson<unknown>({
           operation: "recipe_analysis",
           prompt,
         });
+
+        const validated = validatePlanningOutput(
+          RecipeAnalysisResultSchema,
+          result.json,
+          "recipe_analysis",
+        ) as RecipeAnalysisResult;
 
         await logTokenUsage({
           costLogWriter,
@@ -84,7 +112,7 @@ export function createGpt55PlanningPromptEngine(
           metadata: { sourceType: input.sourceType },
         });
 
-        return result.json;
+        return validated;
       }
 
       const result = stubRecipeAnalysis(input);
@@ -103,14 +131,21 @@ export function createGpt55PlanningPromptEngine(
     },
 
     async generateLogicalScenes(input) {
-      assertCostlyActionAllowed(input);
+      assertPlanningCallerProvided(input);
 
       const prompt = buildStoryboardGenerationPrompt(input);
       if (openAiClient) {
-        const result = await openAiClient.generateJson<{ logicalScenes: LogicalScene[] }>({
+        const result = await openAiClient.generateJson<unknown>({
           operation: "storyboard_generation",
           prompt,
         });
+
+        const validated = validatePlanningOutput(
+          LogicalScenesEnvelopeSchema,
+          result.json,
+          "storyboard_generation",
+        );
+        const logicalScenes = validated.logicalScenes as LogicalScene[];
 
         await logTokenUsage({
           costLogWriter,
@@ -119,10 +154,10 @@ export function createGpt55PlanningPromptEngine(
           operation: "storyboard_generation",
           model,
           usage: result.usage,
-          metadata: { logicalSceneCount: result.json.logicalScenes.length },
+          metadata: { logicalSceneCount: logicalScenes.length },
         });
 
-        return result.json.logicalScenes;
+        return logicalScenes;
       }
 
       const scenes = stubLogicalScenes(input);
@@ -141,14 +176,21 @@ export function createGpt55PlanningPromptEngine(
     },
 
     async compressToSeedanceSegments(input) {
-      assertCostlyActionAllowed(input);
+      assertPlanningCallerProvided(input);
 
       const prompt = buildSeedanceSegmentationPrompt(input);
       if (openAiClient) {
-        const result = await openAiClient.generateJson<{ seedanceSegments: SeedanceSegment[] }>({
+        const result = await openAiClient.generateJson<unknown>({
           operation: "seedance_segmentation",
           prompt,
         });
+
+        const validated = validatePlanningOutput(
+          SeedanceSegmentsEnvelopeSchema,
+          result.json,
+          "seedance_segmentation",
+        );
+        const seedanceSegments = validated.seedanceSegments as SeedanceSegment[];
 
         await logTokenUsage({
           costLogWriter,
@@ -157,10 +199,10 @@ export function createGpt55PlanningPromptEngine(
           operation: "seedance_segmentation",
           model,
           usage: result.usage,
-          metadata: { segmentCount: result.json.seedanceSegments.length },
+          metadata: { segmentCount: seedanceSegments.length },
         });
 
-        return result.json.seedanceSegments;
+        return seedanceSegments;
       }
 
       const segments = stubSeedanceSegments(input);
@@ -179,14 +221,20 @@ export function createGpt55PlanningPromptEngine(
     },
 
     async editPromptFromFeedback(input) {
-      assertCostlyActionAllowed(input);
+      assertPlanningCallerProvided(input);
 
       const prompt = buildPromptEditPrompt(input);
       if (openAiClient) {
-        const result = await openAiClient.generateJson<PromptEditResult>({
+        const result = await openAiClient.generateJson<unknown>({
           operation: "prompt_edit",
           prompt,
         });
+
+        const validated = validatePlanningOutput(
+          PromptEditResultSchema,
+          result.json,
+          "prompt_edit",
+        ) as PromptEditResult;
 
         await logTokenUsage({
           costLogWriter,
@@ -199,7 +247,7 @@ export function createGpt55PlanningPromptEngine(
           metadata: { generationId: input.generationId },
         });
 
-        return result.json;
+        return validated;
       }
 
       const result = stubPromptEdit(input);
@@ -628,9 +676,15 @@ function assertConfiguredModel(model: string) {
   }
 }
 
-function assertCostlyActionAllowed(input: { requestedByUserId?: string | null; isAllowlisted: boolean }) {
-  if (!input.requestedByUserId || !input.isAllowlisted) {
-    throw new Error("OpenAI planning requires an authenticated allowlisted user.");
+/**
+ * Sanity check on the planning input shape. The caller (Inngest handler or
+ * server action) is responsible for the actual allowlist verification through
+ * `assertAllowlistedUser` or `assertCostlyActionAllowed`. Renamed to avoid the
+ * homonym with the auth helper of the same legacy name.
+ */
+function assertPlanningCallerProvided(input: { requestedByUserId?: string | null }) {
+  if (!input.requestedByUserId) {
+    throw new Error("Planning calls require a triggering user ID.");
   }
 }
 

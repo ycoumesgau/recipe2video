@@ -488,7 +488,7 @@ Document these for judges. They are framed as roadmap items, not failures, in li
 
 ### Live API integrations that require explicit configuration
 
-* `seedance2` availability is not yet listed on the public Runway Models page. Recipe2Video assumes it works, surfaces failures explicitly, and never silently switches model. If `seedance2` is web-app only at hackathon time, switch the project default to `gen4.5` in `/videos/new` before generating, and update the segment compression accordingly.
+* `seedance2` availability is not yet listed on the public Runway Models page. Recipe2Video assumes it works, surfaces failures explicitly, and never silently switches model. The wizard currently exposes only `seedance2` because it is the single video endpoint wired through the Inngest workflow. If Runway confirms another model at the hackathon kickoff, add it back to `VIDEO_MODEL_OPTIONS` in `modules/videos/video.constants.ts` AND extend `assertSeedance2Selected` (or the equivalent guard) so the workflow accepts it. There is no automatic fallback.
 * OpenAI GPT-5.5 High planning, prompt diff generation, and segment compression require `OPENAI_API_KEY` and `OPENAI_PLANNING_MODEL` set on the server.
 * Runway, Mux, and Supabase secrets must be set for the full live pipeline. The demo fixture path under `/demo` is fully functional without them.
 * Inngest workflows require `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` for production. Local development uses the Inngest dev server.
@@ -511,12 +511,17 @@ Document these for judges. They are framed as roadmap items, not failures, in li
 
 ### Post-hackathon work that should land first
 
-* Live recipe ingestion through the OpenAI planning client.
-* `Ask agent to revise` calling OpenAI for storyboard adjustments with diff approval.
-* Live `/active-generations` view backed by `generations`, `media_assets`, and Runway task polling state.
-* Embedding-backed feedback memory for cross-project prompt suggestions.
-* Server-side Remotion rendering fallback for longer videos.
-* Project-scoped collaboration metadata (last actor, lock state) when more than two internal users are active.
+This list mirrors **Phase 5** of `audit_critique_recipe2video_05cb7661.plan` and what the post-hackathon team should pick up next:
+
+* **TTS storyboard pitch.** The PRD lists "Optionally generate an audio pitch of the storyboard through Runway's ElevenLabs TTS model" as part of the storyboard tab. The button is intentionally hidden today and the workflow is not wired.
+* **Trim-lite per segment in assembly.** PRD Functional Requirements ("Trim-lite: Allow simple start/end selection for variants when feasible"). The current `AssemblySegmentClip` model has no `trimStart`/`trimEnd`; the Remotion composition uses the full duration of each clip.
+* **Server-side Remotion render.** `uploadFinalExportAction` accepts a user-uploaded MP4 today. A Phase 5 task is to wire either `@remotion/renderer` or a Vercel Sandbox worker to render the final master server-side, then store it in Supabase Storage and Mux as the contract requires.
+* **Embedding-backed RAG memory.** `scene_feedbacks.embedding` is reserved as `vector(1536)` but no embedding pipeline runs yet. Phase 5 adds an ingest step that embeds each applied feedback and a retrieval helper that surfaces relevant prior diffs when the agent generates a new prompt.
+* **PostHog tracking plan.** PRD lists 30+ events (`auth_magic_link_requested`, `seedance_segment_generation_succeeded`, `cost_logged`, `budget_threshold_reached`, ...). None are emitted today. Phase 5 should pick the smallest-meaningful subset (auth, segment generation lifecycle, cost log, budget threshold) and instrument them through `@posthog/node`.
+* **`composition.render.requested` event.** Removed from `inngest/events.ts` because nothing handled it. Reintroduce when the server-side Remotion render is wired so the assembly screen can fire the event instead of waiting on a manual upload.
+* **`/mux-test` route gating.** The route stays useful for verifying Mux ingest end-to-end, but should be hidden behind `process.env.NODE_ENV === "development"` (or a feature flag) before any public demo deploys it.
+* **Live recipe ingestion via vision when only photos are uploaded.** Today the wizard passes filenames as `photoDescriptions`. A Phase 5 task downloads each photo from Supabase Storage, sends them to GPT-5.5 vision, and persists the recipe normalized output.
+* **Project-scoped collaboration metadata.** When more than two internal users are active, surface `last actor` and a soft lock to avoid two users editing the same draft at the same time.
 
 ---
 

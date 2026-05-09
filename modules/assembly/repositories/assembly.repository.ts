@@ -64,6 +64,54 @@ export async function createComposition(
   return mapComposition(data);
 }
 
+/**
+ * Upsert the current draft composition for the given video. Used by
+ * `saveAssemblySettingsAction` to avoid stacking a new row on every save.
+ *
+ * Strategy:
+ *   - If a draft (export_status = 'pending') already exists for the video,
+ *     update it in place and keep the original `id` and `created_at`.
+ *   - Otherwise insert a new draft row.
+ *
+ * Final exports keep their own dedicated row created with `createComposition`
+ * so the history of completed exports is preserved.
+ */
+export async function upsertDraftComposition(
+  supabase: SupabaseDataClient,
+  input: SaveCompositionInput,
+): Promise<Composition> {
+  const { data: existing, error: fetchError } = await supabase
+    .from("compositions")
+    .select("*")
+    .eq("video_id", input.videoId)
+    .eq("export_status", "pending")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  throwIfSupabaseError(fetchError, "upsertDraftComposition lookup failed");
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from("compositions")
+      .update({
+        segment_order: toJson(input.segmentOrder),
+        audio_media_asset_id: input.audioMediaAssetId ?? null,
+        audio_sync: toJson(input.audioSync),
+        remotion_props: toJson(input.remotionProps),
+        export_status: input.exportStatus ?? "pending",
+      })
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+
+    throwIfSupabaseError(error, "upsertDraftComposition update failed");
+    return mapComposition(data);
+  }
+
+  return createComposition(supabase, input);
+}
+
 export async function linkCompositionAudio(
   supabase: SupabaseDataClient,
   input: {
