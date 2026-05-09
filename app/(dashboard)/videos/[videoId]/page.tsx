@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { loadProjectCostDashboardData } from "@/modules/costs/load-cost-dashboard-data";
+import { CostDashboard } from "@/modules/costs/ui/cost-dashboard";
 import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
@@ -23,8 +25,14 @@ export default async function VideoDetailPage({
   params: Promise<{ videoId: string }>;
 }) {
   const { videoId } = await params;
-  const { project, dataError, logicalScenes, seedanceSegments, storyboardError } =
-    await loadProject(videoId);
+  const {
+    project,
+    costData,
+    dataError,
+    logicalScenes,
+    seedanceSegments,
+    storyboardError,
+  } = await loadProject(videoId);
 
   return (
     <div className="space-y-6">
@@ -137,6 +145,9 @@ export default async function VideoDetailPage({
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="costs">
+          <CostDashboard data={costData} />
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -146,12 +157,14 @@ async function loadProject(videoId: string) {
   try {
     const supabase = createSupabaseAdminClient();
     const project = await getVideoProjectById(supabase, videoId);
-    const { logicalScenes, seedanceSegments } = await getStoryboardReviewData(
-      videoId,
-    );
+    const [{ logicalScenes, seedanceSegments }, costData] = await Promise.all([
+      getStoryboardReviewData(videoId),
+      loadProjectCostDashboardData(videoId),
+    ]);
 
     return {
       project,
+      costData,
       dataError: null,
       logicalScenes,
       seedanceSegments,
@@ -160,6 +173,7 @@ async function loadProject(videoId: string) {
   } catch (error) {
     return {
       project: null,
+      costData: await loadProjectCostDashboardData(videoId),
       logicalScenes: [],
       seedanceSegments: [],
       dataError:
