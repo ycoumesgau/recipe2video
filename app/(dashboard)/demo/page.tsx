@@ -349,7 +349,6 @@ function SegmentReviewSection({
       {generations.map((generation) => (
         <Card key={generation.id}>
           <div className="mx-3 overflow-hidden rounded-lg border bg-black">
-            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
             <video
               className="aspect-[9/16] h-80 w-full object-cover"
               controls
@@ -519,7 +518,6 @@ function AssemblySection({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="overflow-hidden rounded-lg border bg-black">
-            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
             <video
               className="aspect-[9/16] max-h-[520px] w-full object-cover"
               controls
