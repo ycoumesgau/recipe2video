@@ -1,0 +1,21 @@
+---
+description: Reference discipline, food physics, complex geometry, and Suno rules for Recipe2Video prompts
+alwaysApply: true
+---
+
+# Recipe2Video References, Physics, And Suno
+
+- Use real project reference names and roles. Do not invent canonical asset IDs, background names, utensil names, tables, or service contracts.
+- Separate global references from recipe-specific references. Global references cover kitchen, character, expressions, poses, and common utensils.
+- Recipe-specific references should cover states Seedance is likely to misread: raw, baked, filled, cut, glazed, broken, final, or other visually fragile stages.
+- For every reference in a Seedance prompt, say exactly what role it plays. Example: `Use @BakedChouxFrame only for the baked dome topology`.
+- Do not re-describe the Licorn character from scratch. Refer to the character reference and only specify pose, expression, and action when needed.
+- For non-standard food geometry, describe what it is and what it is not. Example: a Paris-Brest crown made of separate piped choux domes, not a smooth ring.
+- For repeated structures such as crowns, rosettes, layers, braids, or toppings, lock the visible topology with a reference when possible instead of relying on text alone.
+- For transformations that change geometry, such as choux puffing, pastry lamination, rising dough, glazing, cracking crust, or brittle caramel, use explicit state references and short hard cuts.
+- Name physical texture through visible evidence: color, surface, moisture, viscosity, density, shine, steam, crispness, cracks, crumbs, or flow.
+- Avoid generic adjectives alone. Prefer `smooth glossy cream with soft peaks` over `beautiful cream`.
+- If a scene needs a human agent, ensure the prompt includes visible hands holding or manipulating the relevant object. No floating tools or ingredients.
+- Suno remains a manual music workflow. Generate copy-ready Suno prompts and accept uploaded audio; do not imply an unsupported Suno API integration.
+- Keep Suno style, exclusions, title, lyric prompt, and short-version guidance separate. Do not ask Suno to imitate real artists, protected voices, brands, or recipe tutorial lyrics.
+- Video generation prompts should keep music out. Suno music is added later during assembly from uploaded audio stored in Supabase Storage.
