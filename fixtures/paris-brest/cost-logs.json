@@ -1,0 +1,102 @@
+[
+  {
+    "id": "cost-openai-storyboard",
+    "videoId": "paris-brest-demo",
+    "segmentId": null,
+    "provider": "openai",
+    "model": "gpt-5.5-high",
+    "operation": "storyboard_generated",
+    "creditsUsed": null,
+    "costDollars": 0.42,
+    "tokensInput": 0,
+    "tokensOutput": 8220,
+    "metadata": {
+      "fixture": true,
+      "source": "fixture:paris-brest-public-safe"
+    },
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "cost-openai-diff",
+    "videoId": "paris-brest-demo",
+    "segmentId": null,
+    "provider": "openai",
+    "model": "gpt-5.5-high",
+    "operation": "prompt_diff_generated",
+    "creditsUsed": null,
+    "costDollars": 0.08,
+    "tokensInput": 0,
+    "tokensOutput": 1840,
+    "metadata": {
+      "fixture": true,
+      "source": "fixture:paris-brest-public-safe"
+    },
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "cost-runway-segment-1",
+    "videoId": "paris-brest-demo",
+    "segmentId": null,
+    "provider": "runway",
+    "model": "seedance2",
+    "operation": "seedance_segment_generation_succeeded",
+    "creditsUsed": 432,
+    "costDollars": null,
+    "metadata": {
+      "fixture": true,
+      "source": "fixture:paris-brest-public-safe"
+    },
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "cost-runway-segment-2",
+    "videoId": "paris-brest-demo",
+    "segmentId": null,
+    "provider": "runway",
+    "model": "seedance2",
+    "operation": "seedance_segment_generation_succeeded",
+    "creditsUsed": 864,
+    "costDollars": null,
+    "metadata": {
+      "fixture": true,
+      "source": "fixture:paris-brest-public-safe"
+    },
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "cost-runway-reference",
+    "videoId": "paris-brest-demo",
+    "segmentId": null,
+    "provider": "runway",
+    "model": "gpt_image_2",
+    "operation": "reference_image_generated",
+    "creditsUsed": 120,
+    "costDollars": null,
+    "metadata": {
+      "fixture": true,
+      "source": "fixture:paris-brest-public-safe"
+    },
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "cost-mux-playback",
+    "videoId": "paris-brest-demo",
+    "segmentId": null,
+    "provider": "mux",
+    "model": "basic_on_demand",
+    "operation": "media_asset_uploaded_to_mux",
+    "creditsUsed": null,
+    "costDollars": 0.12,
+    "metadata": {
+      "fixture": true,
+      "source": "fixture:paris-brest-public-safe"
+    },
+    "createdBy": "fixture",
+    "createdAt": "2026-05-08T18:42:00.000Z"
+  }
+]

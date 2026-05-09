@@ -1,0 +1,24 @@
+{
+  "id": "paris-brest-demo",
+  "title": "Paris-Brest praline cream",
+  "source": {
+    "type": "demo",
+    "demoRecipeId": "paris-brest"
+  },
+  "status": "review",
+  "selectedModels": {
+    "video": "seedance2",
+    "image": "gpt_image_2",
+    "tts": "eleven_multilingual_v2",
+    "sfx": "eleven_text_to_sound_v2"
+  },
+  "recipeData": {
+    "source": {
+      "type": "demo",
+      "demoRecipeId": "paris-brest"
+    },
+    "title": "Paris-Brest with praline cream",
+    "servings": 6,
+    "publicSafeFixture": true
+  }
+}

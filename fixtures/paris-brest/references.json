@@ -1,0 +1,88 @@
+[
+  {
+    "id": "demo-reference-kitchen",
+    "canonicalName": "KitchenIslandDefault",
+    "role": "Global Licorn kitchen environment for all Seedance segments.",
+    "type": "global",
+    "source": "fixture_public_safe",
+    "status": "uploaded_to_runway",
+    "previewUrl": "/demo/paris-brest/reference-kitchen.svg",
+    "storageBucket": "reference-images",
+    "storagePath": "paris-brest-demo/kitchen-island-default.svg",
+    "runwayUri": "runway://fixture/kitchen-island-default",
+    "usedInSegments": [
+      "S1",
+      "S2",
+      "S3",
+      "S4",
+      "S5",
+      "S6"
+    ]
+  },
+  {
+    "id": "demo-reference-mascot",
+    "canonicalName": "LicornMascot",
+    "role": "Consistent mascot cook body, hands, expression, and scale.",
+    "type": "global",
+    "source": "fixture_public_safe",
+    "status": "uploaded_to_runway",
+    "previewUrl": "/demo/paris-brest/reference-mascot.svg",
+    "storageBucket": "reference-images",
+    "storagePath": "paris-brest-demo/licorn-mascot.svg",
+    "runwayUri": "runway://fixture/licorn-mascot",
+    "usedInSegments": [
+      "S1",
+      "S2",
+      "S4",
+      "S5",
+      "S6"
+    ]
+  },
+  {
+    "id": "demo-reference-raw-choux",
+    "canonicalName": "ParisBrestRawChoux",
+    "role": "Piped raw crown with separate domes touching in a ring.",
+    "type": "recipe_state",
+    "source": "fixture_public_safe",
+    "status": "uploaded_to_runway",
+    "previewUrl": "/demo/paris-brest/reference-raw.svg",
+    "storageBucket": "reference-images",
+    "storagePath": "paris-brest-demo/paris-brest-raw-choux.svg",
+    "runwayUri": "runway://fixture/paris-brest-raw-choux",
+    "usedInSegments": [
+      "S2"
+    ]
+  },
+  {
+    "id": "demo-reference-baked-crown",
+    "canonicalName": "ParisBrestBakedCrown",
+    "role": "Golden baked choux crown, airy ridges, not a smooth donut.",
+    "type": "recipe_state",
+    "source": "fixture_public_safe",
+    "status": "approved",
+    "previewUrl": "/demo/paris-brest/reference-baked.svg",
+    "storageBucket": "reference-images",
+    "storagePath": "paris-brest-demo/paris-brest-baked-crown.svg",
+    "runwayUri": null,
+    "usedInSegments": [
+      "S3",
+      "S5",
+      "S6"
+    ]
+  },
+  {
+    "id": "demo-reference-filled-slice",
+    "canonicalName": "ParisBrestFilledSlice",
+    "role": "Cut state showing praline cream ridges and airy choux interior.",
+    "type": "recipe_state",
+    "source": "fixture_public_safe",
+    "status": "uploaded_to_runway",
+    "previewUrl": "/demo/paris-brest/reference-final.svg",
+    "storageBucket": "reference-images",
+    "storagePath": "paris-brest-demo/paris-brest-filled-slice.svg",
+    "runwayUri": "runway://fixture/paris-brest-filled-slice",
+    "usedInSegments": [
+      "S6"
+    ]
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "feedbackMessage": "The caramel reads too soft. Make it crack into brittle shards and keep the Paris-Brest crown from becoming a smooth donut.",
+  "promptBefore": "Warm praline breaks apart near the Paris-Brest crown. Preserve the ring shape while the mascot works at the kitchen island.",
+  "promptAfter": "Amber praline cracks into brittle glass shards with a sharp ASMR snap beside the Paris-Brest crown. Preserve separate piped choux domes touching in a crown, not a smooth donut or continuous ring.",
+  "diff": {
+    "lines": [
+      {
+        "type": "removed",
+        "text": "Warm praline breaks apart near the Paris-Brest crown."
+      },
+      {
+        "type": "added",
+        "text": "Amber praline cracks into brittle glass shards with a sharp ASMR snap beside the Paris-Brest crown."
+      },
+      {
+        "type": "removed",
+        "text": "Preserve the ring shape while the mascot works at the kitchen island."
+      },
+      {
+        "type": "added",
+        "text": "Preserve separate piped choux domes touching in a crown, not a smooth donut or continuous ring."
+      }
+    ]
+  }
+}
