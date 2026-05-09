@@ -4,6 +4,7 @@ import {
   logCostWorkflow,
 } from "./planning-stubs";
 import {
+  applySegmentFeedbackRegeneration,
   persistSegmentOutput,
   pollSegmentGeneration,
   requestSegmentGeneration,
@@ -14,6 +15,7 @@ export const functions = [
   ingestRecipeWorkflow,
   generateStoryboardWorkflow,
   requestSegmentGeneration,
+  applySegmentFeedbackRegeneration,
   pollSegmentGeneration,
   persistSegmentOutput,
   uploadSegmentMux,

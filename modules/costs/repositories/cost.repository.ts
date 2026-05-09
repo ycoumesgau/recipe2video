@@ -46,6 +46,24 @@ export async function listCostLogsByVideoId(
   return data.map(mapCostLog);
 }
 
+export async function listCostLogs(
+  supabase: SupabaseDataClient,
+  options: { limit?: number } = {},
+): Promise<CostLog[]> {
+  let query = supabase
+    .from("cost_logs")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+  throwIfSupabaseError(error, "listCostLogs failed");
+  return data.map(mapCostLog);
+}
+
 export async function listCostLogsBySegmentId(
   supabase: SupabaseDataClient,
   segmentId: string,

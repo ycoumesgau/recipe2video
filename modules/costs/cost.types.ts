@@ -1,5 +1,7 @@
 import type { Json } from "@/shared/supabase/database.types";
 
+export type CostProvider = "runway" | "openai" | "mux";
+
 export interface OpenAiTokenUsage {
   inputTokens: number;
   outputTokens: number;
@@ -31,7 +33,7 @@ export interface CostLog {
   id: string;
   videoId: string;
   segmentId?: string | null;
-  provider: string;
+  provider: CostProvider | string;
   model: string;
   operation: string;
   creditsUsed?: number | null;
@@ -46,7 +48,7 @@ export interface CostLog {
 export interface CreateCostLogInput {
   videoId: string;
   segmentId?: string | null;
-  provider: string;
+  provider: CostProvider | string;
   model: string;
   operation: string;
   creditsUsed?: number | null;
@@ -55,4 +57,55 @@ export interface CreateCostLogInput {
   tokensOutput?: number | null;
   metadata?: Json | null;
   createdBy?: string | null;
+}
+
+export interface CostDashboardProjectRef {
+  id: string;
+  title: string;
+  status: string;
+}
+
+export interface CostBudgetState {
+  budgetCredits: number;
+  runwayCreditsUsed: number;
+  creditsRemaining: number;
+  percentRemaining: number;
+  warningLevel: 20 | 10 | null;
+}
+
+export interface CostSummaryMetric {
+  label: string;
+  value: string;
+  helper: string;
+}
+
+export interface CostBreakdownRow {
+  key: string;
+  label: string;
+  provider?: string;
+  model?: string;
+  segmentId?: string | null;
+  creditsUsed: number;
+  costDollars: number;
+  tokensInput: number;
+  tokensOutput: number;
+  logCount: number;
+  failedOrRejectedCredits: number;
+  failedOrRejectedCostDollars: number;
+}
+
+export interface CostDashboardData {
+  scope: "global" | "project";
+  projectId?: string;
+  projectTitle?: string;
+  logs: CostLog[];
+  recentLogs: CostLog[];
+  budget: CostBudgetState;
+  summaryMetrics: CostSummaryMetric[];
+  byProvider: CostBreakdownRow[];
+  byModel: CostBreakdownRow[];
+  bySegment: CostBreakdownRow[];
+  failedOrRejected: CostBreakdownRow;
+  providerOptions: string[];
+  modelOptions: string[];
 }

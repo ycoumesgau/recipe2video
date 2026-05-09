@@ -27,6 +27,17 @@ export interface PromptEditResult {
   diff: PromptDiff;
 }
 
+export interface CreateSegmentFeedbackInput {
+  segmentId: string;
+  generationId: string;
+  message: string;
+  promptBefore: string;
+  promptAfter: string;
+  diff: PromptDiff;
+  applied?: boolean;
+  createdBy?: string | null;
+}
+
 export interface SegmentFeedback {
   id: string;
   segmentId: string;

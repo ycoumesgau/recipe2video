@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type ReactNode, useMemo, useState } from "react";
 import {
   Activity,
+  AlertTriangle,
   ArrowDownUp,
   CheckCircle2,
   ChevronRight,
@@ -166,9 +167,17 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
         ))}
       </section>
 
-      <Alert>
-        <CircleDollarSign className="h-4 w-4" />
-        <AlertTitle>Budget visibility is part of the dashboard state.</AlertTitle>
+      <Alert variant={data.budgetWarningLevel ? "destructive" : "default"}>
+        {data.budgetWarningLevel ? (
+          <AlertTriangle className="h-4 w-4" />
+        ) : (
+          <CircleDollarSign className="h-4 w-4" />
+        )}
+        <AlertTitle>
+          {data.budgetWarningLevel
+            ? `Runway credits are below the ${data.budgetWarningLevel}% threshold.`
+            : "Budget visibility is part of the dashboard state."}
+        </AlertTitle>
         <AlertDescription>
           The seeded dashboard shows {formatCredits(data.creditsUsed)} credits
           used and {formatCredits(data.estimatedCreditsRemaining)} estimated
@@ -311,6 +320,10 @@ function DashboardRadioMenu({
 
 function ProjectCard({ project }: { project: VideoDashboardProject }) {
   const completion = getSegmentProgress(project);
+  const projectHref =
+    project.recipeSourceKind === "demo_fixture" && project.id === "paris-brest-demo"
+      ? "/demo"
+      : `/videos/${project.id}`;
 
   return (
     <Card className="min-w-0" size="sm">
@@ -356,13 +369,13 @@ function ProjectCard({ project }: { project: VideoDashboardProject }) {
 
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button asChild className="flex-1" variant="outline">
-            <Link href={`/videos/${project.id}`}>
+            <Link href={projectHref}>
               Open project
               <ChevronRight className="h-4 w-4" />
             </Link>
           </Button>
           <Button asChild className="flex-1">
-            <Link href={`/videos/${project.id}`}>
+            <Link href={projectHref}>
               Resume
               <PlayCircle className="h-4 w-4" />
             </Link>
@@ -517,7 +530,10 @@ function ProjectEmptyState({
         <Button asChild>
           <Link href="/videos/new">Create video</Link>
         </Button>
-        <Button onClick={onClearFilters} variant="outline">
+        <Button asChild variant="outline">
+          <Link href="/demo">Load demo project</Link>
+        </Button>
+        <Button onClick={onClearFilters} variant="ghost">
           Clear filters
         </Button>
       </div>
