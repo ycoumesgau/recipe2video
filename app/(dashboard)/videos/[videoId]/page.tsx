@@ -204,6 +204,26 @@ export default async function VideoDetailPage({
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="assembly">
+          <Card>
+            <CardHeader>
+              <CardTitle>Assembly and Suno music</CardTitle>
+              <CardDescription>
+                Generate the manual Suno prompt, copy it to Suno, and upload
+                the resulting audio file back into this project.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <p className="text-muted-foreground">
+                Uploaded audio is stored as a `suno_audio` media asset in
+                Supabase Storage and linked to the project composition.
+              </p>
+              <Button asChild>
+                <Link href={`/videos/${videoId}/assembly`}>Open assembly</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
         <TabsContent value="costs">
           <CostDashboard data={costData} />
         </TabsContent>
