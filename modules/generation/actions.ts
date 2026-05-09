@@ -1,0 +1,230 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+
+import { inngest } from "@/inngest/client";
+import { INNGEST_EVENTS } from "@/inngest/events";
+import {
+  assertCostlyActionAllowed,
+  isAuthAccessError,
+} from "@/modules/auth/assert-allowlisted-user";
+import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import {
+  getSegmentById,
+  setSelectedGenerationForSegment,
+  updateSegmentStatus,
+} from "@/modules/storyboard/repositories/segment.repository";
+import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
+import { VIDEO_MODEL_OPTIONS } from "@/modules/videos/video.constants";
+
+import { RUNWAY_DEFAULT_VIDEO_MODEL } from "./runway.constants";
+import { getGenerationById } from "./repositories/generation.repository";
+
+export async function acceptSegmentVariantAction(formData: FormData) {
+  const ids = getSegmentReviewIds(formData);
+
+  try {
+    await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const generation = await requireGenerationForSegment(
+      supabase,
+      ids.generationId,
+      ids.segmentId,
+    );
+
+    if (generation.status !== "succeeded") {
+      throw new Error("Only succeeded generations can be accepted.");
+    }
+
+    await setSelectedGenerationForSegment(
+      supabase,
+      ids.segmentId,
+      generation.id,
+    );
+    await updateSegmentStatus(supabase, ids.segmentId, "accepted");
+
+    revalidateSegmentReviewPaths(ids.videoId, ids.segmentId);
+    redirectWithNotice(ids, "success", "Variant accepted for this segment.");
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(ids, "error", getActionErrorMessage(error));
+  }
+}
+
+export async function rejectSegmentVariantAction(formData: FormData) {
+  const ids = getSegmentReviewIds(formData);
+
+  try {
+    await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const generation = await requireGenerationForSegment(
+      supabase,
+      ids.generationId,
+      ids.segmentId,
+    );
+    const segment = await requireSegment(supabase, ids.segmentId);
+
+    if (segment.selectedGenerationId === generation.id) {
+      await setSelectedGenerationForSegment(supabase, ids.segmentId, null);
+    }
+
+    await updateSegmentStatus(supabase, ids.segmentId, "rejected");
+
+    revalidateSegmentReviewPaths(ids.videoId, ids.segmentId);
+    redirectWithNotice(ids, "success", "Variant rejected for this segment.");
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(ids, "error", getActionErrorMessage(error));
+  }
+}
+
+export async function requestSegmentRegenerationAction(formData: FormData) {
+  const ids = {
+    videoId: requireString(formData, "videoId"),
+    segmentId: requireString(formData, "segmentId"),
+  };
+  const selectedVideoModel = requireString(formData, "selectedVideoModel");
+
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    assertKnownVideoModel(selectedVideoModel);
+
+    const supabase = createSupabaseAdminClient();
+    const segment = await requireSegment(supabase, ids.segmentId);
+    const project = await getVideoProjectById(supabase, ids.videoId);
+
+    if (!project || segment.videoId !== project.id) {
+      throw new Error("Project or segment was not found.");
+    }
+
+    if (selectedVideoModel !== project.selectedVideoModel) {
+      throw new Error(
+        `Selected model ${selectedVideoModel} is not the project generation model (${project.selectedVideoModel}). No fallback was used.`,
+      );
+    }
+
+    if (selectedVideoModel !== RUNWAY_DEFAULT_VIDEO_MODEL) {
+      throw new Error(
+        `Selected model ${selectedVideoModel} is not supported by the current Segment generation workflow. No fallback was used.`,
+      );
+    }
+
+    await updateSegmentStatus(supabase, ids.segmentId, "queued");
+    await inngest.send({
+      name: INNGEST_EVENTS.segmentGenerationRequested,
+      data: {
+        segmentId: ids.segmentId,
+        requestedByUserId: profile.id,
+        isAllowlisted: true,
+      },
+    });
+
+    revalidateSegmentReviewPaths(ids.videoId, ids.segmentId);
+    redirectWithNotice(
+      ids,
+      "success",
+      `Regeneration requested with ${selectedVideoModel}.`,
+    );
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(ids, "error", getActionErrorMessage(error));
+  }
+}
+
+async function requireGenerationForSegment(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  generationId: string,
+  segmentId: string,
+) {
+  const generation = await getGenerationById(supabase, generationId);
+
+  if (!generation || generation.segmentId !== segmentId) {
+    throw new Error("Generation was not found for this segment.");
+  }
+
+  return generation;
+}
+
+async function requireSegment(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  segmentId: string,
+) {
+  const segment = await getSegmentById(supabase, segmentId);
+
+  if (!segment) {
+    throw new Error("Segment was not found.");
+  }
+
+  return segment;
+}
+
+function getSegmentReviewIds(formData: FormData) {
+  return {
+    videoId: requireString(formData, "videoId"),
+    segmentId: requireString(formData, "segmentId"),
+    generationId: requireString(formData, "generationId"),
+  };
+}
+
+function assertKnownVideoModel(model: string) {
+  if (!VIDEO_MODEL_OPTIONS.some((option) => option.value === model)) {
+    throw new Error(`Unknown video model ${model}.`);
+  }
+}
+
+function revalidateSegmentReviewPaths(videoId: string, segmentId: string) {
+  revalidatePath(`/videos/${videoId}`);
+  revalidatePath(`/videos/${videoId}/segments/${segmentId}`);
+}
+
+function redirectWithNotice(
+  ids: { videoId: string; segmentId: string },
+  type: "success" | "error",
+  message: string,
+): never {
+  redirect(
+    `/videos/${ids.videoId}/segments/${
+      ids.segmentId
+    }?notice=${type}&message=${encodeURIComponent(message)}`,
+  );
+}
+
+function getActionErrorMessage(error: unknown) {
+  if (isAuthAccessError(error)) {
+    return error.code === "unauthenticated"
+      ? "Authentication is required before changing segment review state."
+      : "This user is not authorized to change segment review state.";
+  }
+
+  return error instanceof Error ? error.message : "Segment review action failed.";
+}
+
+function requireString(formData: FormData, key: string) {
+  const value = formData.get(key);
+
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${key} is required.`);
+  }
+
+  return value.trim();
+}
+
+function isNextRedirectError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "digest" in error &&
+    typeof error.digest === "string" &&
+    error.digest.startsWith("NEXT_REDIRECT")
+  );
+}

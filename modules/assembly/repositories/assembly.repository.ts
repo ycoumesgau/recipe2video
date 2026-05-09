@@ -1,5 +1,5 @@
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
-import type { Database } from "@/shared/supabase/database.types";
+import type { Database, Json } from "@/shared/supabase/database.types";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
 import { fromJson, toJson } from "@/shared/supabase/json";
 
@@ -64,6 +64,46 @@ export async function createComposition(
   return mapComposition(data);
 }
 
+export async function linkCompositionAudio(
+  supabase: SupabaseDataClient,
+  input: {
+    videoId: string;
+    audioMediaAssetId: string;
+    createdBy?: string | null;
+  },
+): Promise<Composition> {
+  const existing = await getLatestCompositionByVideoId(supabase, input.videoId);
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from("compositions")
+      .update({
+        audio_media_asset_id: input.audioMediaAssetId,
+      })
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+
+    throwIfSupabaseError(error, "linkCompositionAudio update failed");
+    return mapComposition(data);
+  }
+
+  const { data, error } = await supabase
+    .from("compositions")
+    .insert({
+      video_id: input.videoId,
+      audio_media_asset_id: input.audioMediaAssetId,
+      segment_order: toJson([]),
+      export_status: "pending",
+      created_by: input.createdBy ?? null,
+    })
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "linkCompositionAudio insert failed");
+  return mapComposition(data);
+}
+
 export async function updateCompositionExport(
   supabase: SupabaseDataClient,
   input: {
@@ -95,10 +135,10 @@ export function mapComposition(row: CompositionRow): Composition {
     id: row.id,
     videoId: row.video_id,
     exportMediaAssetId: row.export_media_asset_id,
-    segmentOrder: fromJson(row.segment_order) ?? [],
+    segmentOrder: fromJson<Json>(row.segment_order) ?? [],
     audioMediaAssetId: row.audio_media_asset_id,
-    audioSync: fromJson(row.audio_sync),
-    remotionProps: fromJson(row.remotion_props),
+    audioSync: fromJson<Json>(row.audio_sync),
+    remotionProps: fromJson<Json>(row.remotion_props),
     exportStatus: row.export_status as ExportStatus,
     createdBy: row.created_by,
     createdAt: row.created_at,

@@ -1,3 +1,5 @@
+import { getRunwayBudgetState } from "@/modules/costs/get-cost-dashboard-data";
+
 import { ACTIONABLE_VIDEO_STATUSES } from "./video-status";
 import type {
   ActiveGenerationQueueItem,
@@ -116,7 +118,8 @@ export function getVideoDashboardData(
     (total, project) => total + project.totalCostCredits,
     0,
   );
-  const estimatedCreditsRemaining = 50000 - creditsUsed;
+  const budget = getRunwayBudgetState(creditsUsed);
+  const estimatedCreditsRemaining = budget.creditsRemaining;
   const videosCompleted = projects.filter(
     (project) => project.status === "exported",
   ).length;
@@ -126,6 +129,8 @@ export function getVideoDashboardData(
     activeQueue: SEEDED_ACTIVE_QUEUE,
     creditsUsed,
     estimatedCreditsRemaining,
+    budgetWarningLevel: budget.warningLevel,
+    budgetPercentRemaining: budget.percentRemaining,
     kpis: [
       {
         label: "Active videos",
@@ -150,7 +155,7 @@ export function getVideoDashboardData(
       {
         label: "Estimated credits remaining",
         value: estimatedCreditsRemaining.toLocaleString("en-US"),
-        helper: "From 50,000 hackathon credits",
+        helper: `${budget.percentRemaining}% of hackathon credits left`,
       },
       {
         label: "Videos completed",

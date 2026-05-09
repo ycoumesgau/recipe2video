@@ -46,9 +46,12 @@ const DEFAULT_EXTENSION_BY_TYPE: Record<MediaAssetType, string> = {
 const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   "audio/aac": "aac",
   "audio/flac": "flac",
+  "audio/mp4": "m4a",
   "audio/mpeg": "mp3",
   "audio/mp3": "mp3",
   "audio/wav": "wav",
+  "audio/x-m4a": "m4a",
+  "audio/x-wav": "wav",
   "image/jpeg": "jpg",
   "image/png": "png",
   "image/webp": "webp",

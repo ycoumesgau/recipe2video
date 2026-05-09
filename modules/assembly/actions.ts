@@ -1,15 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import {
   assertCostlyActionAllowed,
   isAuthAccessError,
 } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { MEDIA_STORAGE_BUCKETS } from "@/modules/media-assets/media-asset.constants";
 import { insertStoredMediaAsset } from "@/modules/media-assets/repositories/media-asset.repository";
 import { uploadStorageObject } from "@/modules/media-assets/services/storage.service";
-import { MEDIA_STORAGE_BUCKETS } from "@/modules/media-assets/media-asset.constants";
 import { buildMediaStoragePath } from "@/modules/media-assets/storage-paths";
 import { uploadMediaAssetToMux } from "@/modules/media-assets/use-cases/upload-media-asset-to-mux";
 import { updateVideoProjectStatus } from "@/modules/videos/repositories/video.repository";
@@ -19,6 +20,7 @@ import {
   createComposition,
   updateCompositionExport,
 } from "./repositories/assembly.repository";
+import { uploadSunoAudio } from "./use-cases/upload-suno-audio";
 import {
   buildRemotionProps,
   getAssemblyPageData,
@@ -31,6 +33,35 @@ export interface AssemblyActionState {
   compositionId?: string;
   mediaAssetId?: string;
   muxPlaybackId?: string;
+}
+
+export async function uploadSunoAudioAction(formData: FormData) {
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    const file = formData.get("file");
+
+    if (!(file instanceof File)) {
+      throw new Error("Choose a Suno audio file before uploading.");
+    }
+
+    await uploadSunoAudio({
+      supabase: createSupabaseAdminClient(),
+      videoId,
+      file,
+      createdBy: profile.id,
+    });
+
+    revalidateAssemblyPaths(videoId);
+    redirectWithNotice(videoId, "success", "Suno audio uploaded and linked.");
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(videoId, "error", getSunoActionErrorMessage(error));
+  }
 }
 
 export async function saveAssemblySettingsAction(
@@ -76,8 +107,7 @@ export async function saveAssemblySettingsAction(
       "assembling",
     );
 
-    revalidatePath(`/videos/${videoId}/assembly`);
-    revalidatePath(`/videos/${videoId}`);
+    revalidateAssemblyPaths(videoId);
 
     return {
       status: "success",
@@ -85,7 +115,10 @@ export async function saveAssemblySettingsAction(
       compositionId: composition.id,
     };
   } catch (error) {
-    return formatActionError(error, "Unable to save assembly settings.");
+    return formatAssemblyActionError(
+      error,
+      "Unable to save assembly settings.",
+    );
   }
 }
 
@@ -198,8 +231,7 @@ export async function uploadFinalExportAction(
     });
     await updateVideoProjectStatus(supabase, videoId, "exported");
 
-    revalidatePath(`/videos/${videoId}/assembly`);
-    revalidatePath(`/videos/${videoId}`);
+    revalidateAssemblyPaths(videoId);
 
     return {
       status: "success",
@@ -214,11 +246,38 @@ export async function uploadFinalExportAction(
         compositionId,
         exportStatus: "failed",
       }).catch(() => undefined);
-      revalidatePath(`/videos/${videoId}/assembly`);
+      revalidateAssemblyPaths(videoId);
     }
 
-    return formatActionError(error, "Unable to store final export.");
+    return formatAssemblyActionError(error, "Unable to store final export.");
   }
+}
+
+function revalidateAssemblyPaths(videoId: string) {
+  revalidatePath(`/videos/${videoId}`);
+  revalidatePath(`/videos/${videoId}/assembly`);
+}
+
+function redirectWithNotice(
+  videoId: string,
+  type: "success" | "error",
+  message: string,
+): never {
+  redirect(
+    `/videos/${videoId}/assembly?notice=${type}&message=${encodeURIComponent(
+      message,
+    )}`,
+  );
+}
+
+function getSunoActionErrorMessage(error: unknown) {
+  if (isAuthAccessError(error)) {
+    return error.code === "unauthenticated"
+      ? "Authentication is required before uploading Suno audio."
+      : "This user is not authorized to upload Suno audio.";
+  }
+
+  return error instanceof Error ? error.message : "Suno audio upload failed.";
 }
 
 function orderClips<T extends { segmentId: string; position: number }>(
@@ -277,7 +336,7 @@ function requireString(formData: FormData, key: string) {
   const value = optionalString(formData, key);
 
   if (!value) {
-    throw new Error(`Missing required field: ${key}`);
+    throw new Error(`${key} is required.`);
   }
 
   return value;
@@ -288,7 +347,7 @@ function optionalString(formData: FormData, key: string) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function formatActionError(
+function formatAssemblyActionError(
   error: unknown,
   fallbackMessage: string,
 ): AssemblyActionState {
@@ -306,4 +365,14 @@ function formatActionError(
     status: "error",
     message: error instanceof Error ? error.message : fallbackMessage,
   };
+}
+
+function isNextRedirectError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "digest" in error &&
+    typeof error.digest === "string" &&
+    error.digest.startsWith("NEXT_REDIRECT")
+  );
 }

@@ -1,0 +1,3 @@
+export const RUNWAY_HACKATHON_CREDIT_BUDGET = 50_000;
+
+export const RUNWAY_BUDGET_WARNING_THRESHOLDS = [20, 10] as const;

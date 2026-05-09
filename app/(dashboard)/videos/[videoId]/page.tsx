@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { loadProjectCostDashboardData } from "@/modules/costs/load-cost-dashboard-data";
+import { CostDashboard } from "@/modules/costs/ui/cost-dashboard";
 import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
@@ -23,8 +25,14 @@ export default async function VideoDetailPage({
   params: Promise<{ videoId: string }>;
 }) {
   const { videoId } = await params;
-  const { project, dataError, logicalScenes, seedanceSegments, storyboardError } =
-    await loadProject(videoId);
+  const {
+    project,
+    costData,
+    dataError,
+    logicalScenes,
+    seedanceSegments,
+    storyboardError,
+  } = await loadProject(videoId);
 
   return (
     <div className="space-y-6">
@@ -137,26 +145,89 @@ export default async function VideoDetailPage({
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="segments">
+          <Card>
+            <CardHeader>
+              <CardTitle>Segment review</CardTitle>
+              <CardDescription>
+                Open a Seedance segment to compare variants, play Mux review
+                copies, submit feedback, and approve prompt diffs before
+                regeneration.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {seedanceSegments.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                  No Seedance segments are available yet. Load or generate a
+                  storyboard before reviewing variants.
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {seedanceSegments.map((segment) => (
+                    <Card key={segment.id} size="sm">
+                      <CardHeader>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <CardTitle>
+                            S{segment.position}. {segment.title}
+                          </CardTitle>
+                          <Badge variant="outline">{segment.status}</Badge>
+                        </div>
+                        <CardDescription>{segment.arc}</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="grid gap-2 text-sm md:grid-cols-3">
+                          <OverviewItem
+                            label="Duration"
+                            value={formatSeconds(segment.durationTarget)}
+                          />
+                          <OverviewItem
+                            label="References"
+                            value={String(segment.references.length)}
+                          />
+                          <OverviewItem
+                            label="Accepted"
+                            value={segment.selectedGenerationId ? "yes" : "no"}
+                          />
+                        </div>
+                        <Button asChild>
+                          <Link
+                            href={`/videos/${videoId}/segments/${segment.id}`}
+                          >
+                            Review segment
+                          </Link>
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
         <TabsContent value="assembly">
           <Card>
             <CardHeader>
-              <CardTitle>Final assembly</CardTitle>
+              <CardTitle>Assembly and Suno music</CardTitle>
               <CardDescription>
-                Preview accepted Supabase originals in Remotion, reorder clips,
-                align optional Suno audio, and preserve final exports.
+                Generate the manual Suno prompt, upload audio, preview accepted
+                Supabase originals in Remotion, and preserve final exports.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
               <p className="text-muted-foreground">
                 Remotion assembly uses Supabase Storage originals for preview
-                and export handoff. Mux is only used after the final MP4 is
-                stored for playback.
+                and export handoff. Uploaded Suno audio is stored as a
+                `suno_audio` media asset. Mux is only used after the final MP4
+                is stored for playback.
               </p>
               <Button asChild>
                 <Link href={`/videos/${videoId}/assembly`}>Open assembly</Link>
               </Button>
             </CardContent>
           </Card>
+        </TabsContent>
+        <TabsContent value="costs">
+          <CostDashboard data={costData} />
         </TabsContent>
       </Tabs>
     </div>
@@ -167,12 +238,14 @@ async function loadProject(videoId: string) {
   try {
     const supabase = createSupabaseAdminClient();
     const project = await getVideoProjectById(supabase, videoId);
-    const { logicalScenes, seedanceSegments } = await getStoryboardReviewData(
-      videoId,
-    );
+    const [{ logicalScenes, seedanceSegments }, costData] = await Promise.all([
+      getStoryboardReviewData(videoId),
+      loadProjectCostDashboardData(videoId),
+    ]);
 
     return {
       project,
+      costData,
       dataError: null,
       logicalScenes,
       seedanceSegments,
@@ -181,6 +254,7 @@ async function loadProject(videoId: string) {
   } catch (error) {
     return {
       project: null,
+      costData: await loadProjectCostDashboardData(videoId),
       logicalScenes: [],
       seedanceSegments: [],
       dataError:
@@ -204,4 +278,12 @@ function OverviewItem({ label, value }: { label: string; value: string }) {
       <p className="mt-1 font-medium">{value}</p>
     </div>
   );
+}
+
+function formatSeconds(seconds: number) {
+  if (seconds <= 0) {
+    return "-";
+  }
+
+  return `${Number(seconds.toFixed(1))}s`;
 }
