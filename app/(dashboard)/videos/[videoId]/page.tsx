@@ -209,14 +209,16 @@ export default async function VideoDetailPage({
             <CardHeader>
               <CardTitle>Assembly and Suno music</CardTitle>
               <CardDescription>
-                Generate the manual Suno prompt, copy it to Suno, and upload
-                the resulting audio file back into this project.
+                Generate the manual Suno prompt, upload audio, preview accepted
+                Supabase originals in Remotion, and preserve final exports.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
               <p className="text-muted-foreground">
-                Uploaded audio is stored as a `suno_audio` media asset in
-                Supabase Storage and linked to the project composition.
+                Remotion assembly uses Supabase Storage originals for preview
+                and export handoff. Uploaded Suno audio is stored as a
+                `suno_audio` media asset. Mux is only used after the final MP4
+                is stored for playback.
               </p>
               <Button asChild>
                 <Link href={`/videos/${videoId}/assembly`}>Open assembly</Link>
