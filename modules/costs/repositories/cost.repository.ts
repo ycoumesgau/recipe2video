@@ -78,6 +78,27 @@ export async function listCostLogsBySegmentId(
   return data.map(mapCostLog);
 }
 
+/**
+ * Sum every Runway credit ever logged in `cost_logs`. Lightweight enough to
+ * call from the dashboard layout to power the live "Credits used / remaining"
+ * badges without loading the full cost dashboard data.
+ */
+export async function sumRunwayCreditsUsed(
+  supabase: SupabaseDataClient,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("cost_logs")
+    .select("credits_used")
+    .eq("provider", "runway");
+
+  throwIfSupabaseError(error, "sumRunwayCreditsUsed failed");
+
+  return (data ?? []).reduce(
+    (total, row) => total + (row.credits_used ?? 0),
+    0,
+  );
+}
+
 export function mapCostLog(row: CostLogRow): CostLog {
   return {
     id: row.id,

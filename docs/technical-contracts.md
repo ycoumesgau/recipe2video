@@ -904,7 +904,7 @@ References:
 
 Default models:
 
-* Video: `seedance2` (announced by Runway as available via API; verify at hackathon kickoff because it is not yet listed on the public Models page; fallback `gen4.5` if Seedance 2 turns out to be web-app only)
+* Video: `seedance2` (announced by Runway as available via API; verify at hackathon kickoff because it is not yet listed on the public Models page; if Seedance 2 is web-app only at runtime, the workflow surfaces the failure and the user must explicitly switch to a manually wired alternative — there is no silent fallback)
 * Image: `gpt_image_2` (Runway-exposed image model with References mode)
 * TTS: `eleven_multilingual_v2`
 * SFX: `eleven_text_to_sound_v2`

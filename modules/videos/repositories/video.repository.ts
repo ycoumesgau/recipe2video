@@ -105,6 +105,60 @@ export async function updateVideoProjectStatus(
   return mapVideoProject(data);
 }
 
+/**
+ * Merge the existing `videos.recipe_data` JSON with the freshly ingested
+ * recipe payload. The wizard pre-populates `source` and `productionDefaults`
+ * at draft time; the ingest workflow adds `normalized` (structured recipe),
+ * `clarifyingQuestions`, and `ingestedAt`. We keep the previous keys so the
+ * UI can still show the original source even after re-ingest.
+ */
+export async function mergeVideoProjectRecipeData(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  patch: Record<string, unknown>,
+): Promise<VideoProject> {
+  const existing = await getVideoProjectById(supabase, videoId);
+  if (!existing) {
+    throw new Error(`Video ${videoId} not found.`);
+  }
+
+  const merged = {
+    ...(existing.recipeData ?? {}),
+    ...patch,
+  };
+
+  const { data, error } = await supabase
+    .from("videos")
+    .update({ recipe_data: toJson(merged) })
+    .eq("id", videoId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "mergeVideoProjectRecipeData failed");
+  return mapVideoProject(data);
+}
+
+/**
+ * Replace the `videos.storyboard` JSON column with a high-level summary of
+ * the storyboard plan (logical scene count, segment count, source).
+ * The actual `logical_scenes` and `segments` rows live in their own tables.
+ */
+export async function updateVideoProjectStoryboardSummary(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  summary: Record<string, unknown>,
+): Promise<VideoProject> {
+  const { data, error } = await supabase
+    .from("videos")
+    .update({ storyboard: toJson(summary) })
+    .eq("id", videoId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateVideoProjectStoryboardSummary failed");
+  return mapVideoProject(data);
+}
+
 export function mapVideoProject(row: VideoRow): VideoProject {
   return {
     id: row.id,

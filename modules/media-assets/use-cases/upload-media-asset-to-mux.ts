@@ -1,11 +1,12 @@
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { MUX_BASIC_ESTIMATED_USD_PER_SECOND } from "@/modules/costs/cost.constants";
 import { logCost } from "@/modules/costs/repositories/cost.repository";
 import { updateGenerationMediaAsset } from "@/modules/generation/repositories/generation.repository";
 
 import type { MediaAsset, MuxAssetResult } from "../media-asset.types";
 import {
   getMediaAssetById,
-  markMediaAssetFailed,
+  recordMuxUploadFailure,
   updateMediaAssetMuxPlayback,
 } from "../repositories/media-asset.repository";
 import { createMuxAssetFromUrl } from "../services/mux.service";
@@ -56,16 +57,21 @@ export async function uploadMediaAssetToMux(
     }
 
     if (mediaAsset.videoId) {
+      const estimatedDollars = estimateMuxCostDollars(mediaAsset.durationSeconds);
+
       await logCost(supabase, {
         videoId: mediaAsset.videoId,
         segmentId: mediaAsset.segmentId,
         provider: "mux",
         model: "basic-on-demand",
         operation: "media_asset_uploaded_to_mux",
+        costDollars: estimatedDollars,
         metadata: {
           mediaAssetId: mediaAsset.id,
           muxAssetId: muxAsset.muxAssetId,
           muxPlaybackId: muxAsset.muxPlaybackId,
+          estimatedDollarsPerSecond: MUX_BASIC_ESTIMATED_USD_PER_SECOND,
+          estimated: true,
         },
         createdBy: mediaAsset.createdBy,
       });
@@ -73,7 +79,10 @@ export async function uploadMediaAssetToMux(
 
     return muxAsset;
   } catch (error) {
-    await markMediaAssetFailed(supabase, {
+    // The Supabase original is intact; do NOT mark the media_asset as failed.
+    // Per docs/technical-contracts.md § Storage Contract, Supabase Storage
+    // remains the source of truth and the playback upload can be retried.
+    await recordMuxUploadFailure(supabase, {
       mediaAssetId: mediaAsset.id,
       metadata: {
         ...(mediaAsset.metadata ?? {}),
@@ -87,6 +96,23 @@ export async function uploadMediaAssetToMux(
 
     throw error;
   }
+}
+
+/**
+ * Estimate Mux Pay-as-you-go Basic delivery cost based on the asset duration.
+ * Returns null when the duration is unknown so the cost log keeps a null value
+ * rather than a misleading zero. The estimate is documented in
+ * `MUX_BASIC_ESTIMATED_USD_PER_SECOND`.
+ */
+function estimateMuxCostDollars(
+  durationSeconds: number | null | undefined,
+): number | null {
+  if (typeof durationSeconds !== "number" || durationSeconds <= 0) {
+    return null;
+  }
+  return Number(
+    (durationSeconds * MUX_BASIC_ESTIMATED_USD_PER_SECOND).toFixed(4),
+  );
 }
 
 async function createSignedStorageUrl(mediaAsset: MediaAsset) {

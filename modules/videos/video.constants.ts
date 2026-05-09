@@ -16,11 +16,14 @@ export const STYLE_PRESET_OPTIONS = [
   { value: "clean_instructional", label: "Clean instructional" },
 ] as const;
 
+// During the hackathon the segment generation workflow only supports
+// `seedance2` (see `assertSeedance2Selected` in
+// `modules/generation/use-cases/orchestrate-segment-generation.ts`). Exposing
+// other models in the wizard would let users save a project that the workflow
+// later refuses to generate. When more endpoints are wired (gen4.5 etc.),
+// re-add their entries here AND in the workflow contract.
 export const VIDEO_MODEL_OPTIONS = [
   { value: "seedance2", label: "Seedance 2" },
-  { value: "gen4.5", label: "Gen-4.5" },
-  { value: "gen4_turbo", label: "Gen-4 Turbo" },
-  { value: "veo3.1_fast", label: "Veo 3.1 Fast" },
 ] as const;
 
 export const IMAGE_MODEL_OPTIONS = [

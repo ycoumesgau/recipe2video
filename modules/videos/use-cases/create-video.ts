@@ -13,6 +13,9 @@ import type {
   RecipeSourceSummary,
   VideoProductionDefaults,
 } from "@/modules/videos/video.types";
+import { inngest } from "@/inngest/client";
+import { INNGEST_EVENTS } from "@/inngest/events";
+import type { RecipeIngestRequestedData } from "@/inngest/events";
 
 export interface CreateVideoDraftInput {
   recipeUrl?: string;
@@ -100,7 +103,71 @@ export async function createVideoDraft(
     });
   }
 
+  // Trigger the durable ingest workflow for url, photos, and text sources.
+  // Demo fixtures keep their dedicated load action and do not need OpenAI.
+  const ingestPayload = buildIngestPayload({
+    videoId: project.id,
+    profileId: profile.id,
+    sourceSummary,
+    pastedRecipeText,
+  });
+  if (ingestPayload) {
+    await inngest.send({
+      name: INNGEST_EVENTS.videoRecipeIngestRequested,
+      data: ingestPayload,
+    });
+  }
+
   return { videoId: project.id };
+}
+
+function buildIngestPayload(input: {
+  videoId: string;
+  profileId: string;
+  sourceSummary: RecipeSourceSummary;
+  pastedRecipeText?: string;
+}): RecipeIngestRequestedData | null {
+  const { videoId, profileId, sourceSummary, pastedRecipeText } = input;
+
+  if (sourceSummary.type === "demo") {
+    return null;
+  }
+
+  const baseData = {
+    videoId,
+    requestedByUserId: profileId,
+    isAllowlisted: true as const,
+  };
+
+  if (sourceSummary.type === "url") {
+    return {
+      ...baseData,
+      sourceType: "url",
+      recipeUrl: sourceSummary.recipeUrl ?? null,
+      recipeText: null,
+      photoDescriptions: null,
+    };
+  }
+
+  if (sourceSummary.type === "photos") {
+    return {
+      ...baseData,
+      sourceType: "photos",
+      recipeUrl: sourceSummary.recipeUrl ?? null,
+      recipeText: pastedRecipeText ?? null,
+      // Photo descriptions stay as filenames until vision-based extraction is
+      // wired. They give the planning prompt at least a hint about each shot.
+      photoDescriptions: sourceSummary.uploadedFileNames ?? [],
+    };
+  }
+
+  return {
+    ...baseData,
+    sourceType: "text",
+    recipeUrl: null,
+    recipeText: pastedRecipeText ?? null,
+    photoDescriptions: null,
+  };
 }
 
 function normalizeOptionalText(value: FormDataEntryValue | string | undefined) {

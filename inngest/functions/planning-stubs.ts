@@ -1,41 +1,97 @@
+import { assertAllowlistedUser } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { createSupabaseOpenAiCostLogWriter } from "@/modules/costs/log-openai-usage";
 import { logCost } from "@/modules/costs/repositories/cost.repository";
 import { ingestRecipe } from "@/modules/recipe-ingest/ingest-recipe";
-import { createGpt55PlanningPromptEngine } from "@/modules/storyboard/services/gpt55-planning-prompt-engine";
 import {
+  replaceLogicalScenesForVideo,
+  type CreateLogicalSceneInput,
+} from "@/modules/storyboard/repositories/logical-scene.repository";
+import { replaceSegmentsForVideo } from "@/modules/storyboard/repositories/segment.repository";
+import { createGpt55PlanningPromptEngine } from "@/modules/storyboard/services/gpt55-planning-prompt-engine";
+import type {
+  CreateSeedanceSegmentInput,
+  LogicalScene,
+  SeedanceSegment,
+} from "@/modules/storyboard/storyboard.types";
+import {
+  getVideoProjectById,
+  mergeVideoProjectRecipeData,
   updateVideoProjectStatus,
+  updateVideoProjectStoryboardSummary,
 } from "@/modules/videos/repositories/video.repository";
 
 import { inngest } from "../client";
-import { INNGEST_EVENTS, type CostLogRequestedData, type RecipeIngestRequestedData, type StoryboardGenerateRequestedData } from "../events";
+import {
+  INNGEST_EVENTS,
+  type CostLogRequestedData,
+  type RecipeIngestRequestedData,
+  type StoryboardGenerateRequestedData,
+} from "../events";
 import { workflowStatusForRecipeResult } from "@/modules/generation/use-cases/orchestrate-segment-generation";
 
 export const ingestRecipeWorkflow = inngest.createFunction(
   {
     id: "ingest-recipe-workflow",
+    // No retry: the workflow calls OpenAI which is paid, and the persistence
+    // step is not idempotent across reruns. The user retries explicitly via
+    // the project overview if anything fails.
+    retries: 0,
     triggers: [{ event: INNGEST_EVENTS.videoRecipeIngestRequested }],
   },
   async ({ event }) => {
     const supabase = createSupabaseAdminClient();
     const data = event.data as RecipeIngestRequestedData;
 
-    assertWorkflowAllowed(data);
+    await assertAllowlistedUser(data.requestedByUserId);
 
     try {
-      const result = await ingestRecipe({
-        videoId: data.videoId,
-        sourceType: data.sourceType,
-        recipeUrl: data.recipeUrl ?? undefined,
-        recipeText: data.recipeText ?? undefined,
-        photoDescriptions: data.photoDescriptions ?? undefined,
-        requestedByUserId: data.requestedByUserId,
-        isAllowlisted: true,
+      const result = await ingestRecipe(
+        {
+          videoId: data.videoId,
+          sourceType: data.sourceType,
+          recipeUrl: data.recipeUrl ?? undefined,
+          recipeText: data.recipeText ?? undefined,
+          photoDescriptions: data.photoDescriptions ?? undefined,
+          requestedByUserId: data.requestedByUserId,
+          isAllowlisted: true,
+        },
+        {
+          costLogWriter: createSupabaseOpenAiCostLogWriter(supabase),
+        },
+      );
+
+      // Persist the structured recipe alongside the original wizard metadata.
+      await mergeVideoProjectRecipeData(supabase, data.videoId, {
+        normalized: result.recipe,
+        clarifyingQuestions: result.clarifyingQuestions,
+        recipeExtractionRequested: true,
+        ingestedAt: new Date().toISOString(),
       });
+
       const status = workflowStatusForRecipeResult({
         clarifyingQuestionCount: result.clarifyingQuestions.length,
       });
 
       await updateVideoProjectStatus(supabase, data.videoId, status);
+
+      // If the agent does not need any clarification, chain into storyboard
+      // generation so the pipeline progresses without manual intervention.
+      if (result.clarifyingQuestions.length === 0) {
+        await inngest.send({
+          name: INNGEST_EVENTS.videoStoryboardGenerateRequested,
+          data: {
+            videoId: data.videoId,
+            recipeTitle: result.recipe.title,
+            recipeSteps: result.recipe.steps.map((step) => step.text),
+            targetDurationSeconds: extractTargetDurationSeconds(
+              await getVideoProjectById(supabase, data.videoId),
+            ),
+            requestedByUserId: data.requestedByUserId,
+            isAllowlisted: true,
+          },
+        });
+      }
 
       return {
         status,
@@ -51,17 +107,23 @@ export const ingestRecipeWorkflow = inngest.createFunction(
 export const generateStoryboardWorkflow = inngest.createFunction(
   {
     id: "generate-storyboard-workflow",
+    // Same rationale as ingestRecipeWorkflow: paid OpenAI calls, non-idempotent
+    // persistence (logical_scenes and segments are wiped before reinserting).
+    retries: 0,
     triggers: [{ event: INNGEST_EVENTS.videoStoryboardGenerateRequested }],
   },
   async ({ event }) => {
     const supabase = createSupabaseAdminClient();
     const data = event.data as StoryboardGenerateRequestedData;
 
-    assertWorkflowAllowed(data);
+    await assertAllowlistedUser(data.requestedByUserId);
 
     try {
-      const engine = createGpt55PlanningPromptEngine();
-      await engine.generateLogicalScenes({
+      const engine = createGpt55PlanningPromptEngine({
+        costLogWriter: createSupabaseOpenAiCostLogWriter(supabase),
+      });
+
+      const logicalScenes = await engine.generateLogicalScenes({
         videoId: data.videoId,
         recipeTitle: data.recipeTitle,
         recipeSteps: data.recipeSteps,
@@ -70,9 +132,44 @@ export const generateStoryboardWorkflow = inngest.createFunction(
         isAllowlisted: true,
       });
 
+      const persistedScenes = await replaceLogicalScenesForVideo(
+        supabase,
+        data.videoId,
+        logicalScenes.map(toCreateLogicalSceneInput),
+      );
+
+      const seedanceSegments = await engine.compressToSeedanceSegments({
+        videoId: data.videoId,
+        logicalScenes: persistedScenes,
+        requestedByUserId: data.requestedByUserId,
+        isAllowlisted: true,
+      });
+
+      const segmentInputs = mapSegmentsForPersistence(
+        data.videoId,
+        seedanceSegments,
+        persistedScenes,
+        data.requestedByUserId,
+      );
+      const persistedSegments = await replaceSegmentsForVideo(
+        supabase,
+        data.videoId,
+        segmentInputs,
+      );
+
+      await updateVideoProjectStoryboardSummary(supabase, data.videoId, {
+        source: "openai_planning_engine",
+        logicalSceneCount: persistedScenes.length,
+        segmentCount: persistedSegments.length,
+        generatedAt: new Date().toISOString(),
+      });
       await updateVideoProjectStatus(supabase, data.videoId, "storyboard_ready");
 
-      return { status: "storyboard_ready" };
+      return {
+        status: "storyboard_ready",
+        logicalSceneCount: persistedScenes.length,
+        segmentCount: persistedSegments.length,
+      };
     } catch (error) {
       await updateVideoProjectStatus(supabase, data.videoId, "failed");
       throw error;
@@ -89,7 +186,7 @@ export const logCostWorkflow = inngest.createFunction(
     const supabase = createSupabaseAdminClient();
     const data = event.data as CostLogRequestedData;
 
-    assertWorkflowAllowed(data);
+    await assertAllowlistedUser(data.requestedByUserId);
 
     return logCost(supabase, {
       videoId: data.videoId,
@@ -107,11 +204,80 @@ export const logCostWorkflow = inngest.createFunction(
   },
 );
 
-function assertWorkflowAllowed(data: {
-  requestedByUserId?: string | null;
-  isAllowlisted?: boolean;
-}) {
-  if (!data.requestedByUserId || !data.isAllowlisted) {
-    throw new Error("Workflow requires an authenticated allowlisted user.");
-  }
+function toCreateLogicalSceneInput(
+  scene: LogicalScene,
+): CreateLogicalSceneInput {
+  return {
+    position: scene.position,
+    sceneType: scene.sceneType,
+    arc: scene.arc,
+    description: scene.description,
+    bg: scene.bg ?? null,
+    zoom: scene.zoom ?? null,
+    durationTarget: scene.durationTarget ?? null,
+    note: scene.note ?? null,
+    segmentId: null,
+  };
 }
+
+function mapSegmentsForPersistence(
+  videoId: string,
+  segments: SeedanceSegment[],
+  persistedScenes: LogicalScene[],
+  createdBy: string,
+): CreateSeedanceSegmentInput[] {
+  // Translate the LLM-suggested logical scene IDs (which use the engine's
+  // identifier scheme) into the IDs we actually persisted in DB. We match
+  // by `position` because the engine assigns positions deterministically.
+  const sceneIdByPosition = new Map(
+    persistedScenes.map((scene) => [scene.position, scene.id]),
+  );
+
+  return segments.map((segment, index) => {
+    const mappedSceneIds = segment.logicalSceneIds
+      .map((sceneId) => extractPositionFromSceneId(sceneId))
+      .map((position) => (position == null ? null : sceneIdByPosition.get(position)))
+      .filter((id): id is string => Boolean(id));
+
+    return {
+      videoId,
+      position: segment.position ?? index + 1,
+      title: segment.title,
+      arc: segment.arc,
+      logicalSceneIds:
+        mappedSceneIds.length > 0
+          ? mappedSceneIds
+          : persistedScenes.map((scene) => scene.id),
+      description: segment.description,
+      prompt: segment.prompt,
+      promptInitial: segment.promptInitial ?? segment.prompt,
+      references: segment.references,
+      durationTarget: segment.durationTarget,
+      status: "ready",
+      createdBy,
+    };
+  });
+}
+
+/**
+ * The planning engine emits scene IDs like `videoId-scene-NN`. We extract the
+ * trailing position so we can match them back to the rows we just inserted.
+ */
+function extractPositionFromSceneId(sceneId: string): number | null {
+  const match = /scene-(\d+)$/.exec(sceneId);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function extractTargetDurationSeconds(
+  project: { recipeData?: Record<string, unknown> | null } | null,
+): number | undefined {
+  const recipeData = project?.recipeData as
+    | { productionDefaults?: { targetDurationSeconds?: number } }
+    | undefined;
+  return recipeData?.productionDefaults?.targetDurationSeconds;
+}
+

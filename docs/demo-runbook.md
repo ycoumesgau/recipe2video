@@ -21,6 +21,87 @@ The demo should communicate four points quickly:
 
 ---
 
+## Local Setup and Verification
+
+Run these steps before recording or rehearsing the demo. They are written so a fresh internal Licorn collaborator can reproduce a working demo path locally.
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure environment variables
+
+Copy `.env.example` to `.env.local` and fill in:
+
+```txt
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+SUPABASE_SECRET_KEY=
+RUNWAYML_API_SECRET=
+OPENAI_API_KEY=
+OPENAI_PLANNING_MODEL=
+MUX_TOKEN_ID=
+MUX_TOKEN_SECRET=
+INNGEST_EVENT_KEY=
+INNGEST_SIGNING_KEY=
+APP_BASE_URL=http://localhost:3000
+```
+
+`OPENAI_PLANNING_MODEL` must be the exact API identifier for GPT-5.5 High on the account. Recipe2Video does not silently fall back to a different model if this variable is missing or invalid.
+
+For an offline-only demo, only `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY` are strictly required. `/demo` runs entirely against the Paris-Brest public-safe fixture.
+
+### 3. Apply Supabase migrations
+
+Run the migrations under `supabase/migrations/` against the hackathon Supabase project, in chronological order:
+
+* `20260508192500_auth_allowlist.sql`
+* `20260508195300_create_core_schema.sql`
+* `20260508195500_new_video_wizard_core.sql`
+
+Then insert the demo email into the allowlist:
+
+```sql
+insert into allowed_users (email, role) values ('demo@licorn.example', 'admin');
+```
+
+### 4. Verify code health
+
+```bash
+npm run lint
+npm run build
+npm test
+```
+
+All three commands must succeed before you record a demo. The integration QA pass (Issue #20) confirmed all three are green at the time the runbook was last updated.
+
+### 5. Start the app
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000`. You will be redirected to `/login` if you are not authenticated. Use Magic Link with the allowlisted email.
+
+### 6. Smoke test the demo path
+
+In this order:
+
+* `/login` → request magic link → confirm authenticated session lands on `/`.
+* `/` → confirm dashboard shows seeded projects, active queue, and budget warning state.
+* `/demo` → confirm Paris-Brest fixture renders storyboard, references, segments, prompt diff, costs, and assembly preview.
+* `/active-generations` → confirm the read-only cross-project queue renders.
+* `/videos/new` → confirm the wizard accepts a recipe source and creates a draft video.
+* `/videos/[videoId]/storyboard` → confirm the storyboard tab loads and the Paris-Brest fixture button works.
+* `/videos/[videoId]/segments/[segmentId]` → confirm the segment review screen loads (use a seeded segment from a real project).
+* `/videos/[videoId]/assembly` → confirm Suno + Remotion preview screens load.
+
+If any of these screens 404 or show an unhandled error, fix it before recording.
+
+---
+
 ## Target Demo Length
 
 Recommended length: 2 to 3 minutes.
@@ -304,6 +385,46 @@ The output can be downloaded and reused for Licorn’s social channels. The work
 
 ---
 
+## QA Verification Matrix
+
+This matrix maps the Issue #20 acceptance checklist to the actual implementation state and the screens that must work for the demo. It is the deliverable for the integration QA pass.
+
+| Capability | Status | Where to verify | Notes |
+| --- | --- | --- | --- |
+| Magic Link auth | Implemented | `/login` + `modules/auth/auth.actions.ts` | Allowlist enforced server-side. `getCurrentProfile` redirects unauthorized users to `/auth/sign-out?status=unauthorized`. |
+| Allowlist guard on costly actions | Implemented | `assertCostlyActionAllowed` used in `generation`, `feedback`, `assembly`, `references`, `media-assets`, `videos`, `storyboard`, and `app/api/workflows/segments/generate/route.ts` | No costly action runs without an authenticated allowlisted user. |
+| Dashboard library | Implemented | `/` + `modules/videos/ui/video-library-dashboard.tsx` | Seeded fixture + persisted projects merged. KPIs, active queue, recently updated, and budget warnings render. |
+| Active generations cross-project view | Read-only stub | `/active-generations` | Reuses dashboard queue data. Per-task retry/cancel actions stay inside each project segment review. |
+| Settings | Read-only stub | `/settings` | Shows authenticated profile and default models. Server secrets remain in environment variables. |
+| New video wizard | Implemented | `/videos/new` | Accepts URL, photos, pasted text, demo recipe, and selectable models. Draft is created immediately. |
+| Recipe ingest (live) | Deferred | `modules/recipe-ingest/ingest-recipe.ts` | Wizard creates a draft and stores source files. Live OpenAI extraction is not wired in this milestone. |
+| Storyboard logical scenes | Implemented | `/videos/[videoId]/storyboard` | Paris-Brest fixture loadable from the storyboard actions. |
+| Storyboard Seedance segments | Implemented | Same screen | Logical scene to segment mapping is preserved. |
+| Storyboard live revision via OpenAI | Partial | `requestStoryboardRevisionAction` captures the revision request without spending OpenAI credits in this branch. The planning client is unit-tested separately. |
+| References review | Implemented | `/videos/[videoId]/references` | Approve, reject, regenerate, manual upload, and Runway upload actions persist through `manage-reference-review`. |
+| Reference image generation | Wired | `modules/references/use-cases/manage-reference-review.ts` | Requires `RUNWAYML_API_SECRET`. |
+| Segment generation workflow | Implemented | `inngest/functions/segment-generation.ts` + `orchestrate-segment-generation.ts` | `assertSeedance2Selected` enforces the no-silent-fallback rule. Tested in `orchestrate-segment-generation.test.ts`. |
+| Runway output persistence | Implemented | `modules/media-assets/use-cases/persist-media-asset.ts` | Originals stored in Supabase Storage before any Mux upload. |
+| Mux playback | Implemented | `modules/media-assets/services/mux.service.ts` + `RecipeMuxPlayer` | Fallback message when no playback ID is available. |
+| Segment review UI | Implemented | `/videos/[videoId]/segments/[segmentId]` | Variants, prompt, references, model selector, accept/reject/regenerate actions. |
+| Prompt feedback and diff | Implemented | `modules/feedback/actions.ts` + `prompt-diff-viewer.tsx` | OpenAI prompt diff generation, persisted in `scene_feedbacks`, requires explicit approval. |
+| Cost tracking | Implemented | `modules/costs/*` + `/costs` and `/videos/[videoId]/costs` | Aggregations by provider, model, segment, plus 20% / 10% Runway warnings. |
+| Suno prompt | Implemented | `modules/assembly/suno-prompt.ts` + `/videos/[videoId]/assembly` | Copy-ready prompt, no unsupported Suno API call. |
+| Suno audio upload | Implemented | `modules/assembly/use-cases/upload-suno-audio.ts` | Stored as `suno_audio` media asset in Supabase Storage. |
+| Remotion preview | Implemented | `remotion/compositions/recipe-assembly.tsx` + `assembly-workspace.tsx` | Uses Supabase originals; no Mux HLS dependency for assembly. |
+| Final export persistence | Implemented | `uploadFinalExportAction` | Final MP4 stored in Supabase Storage, then uploaded to Mux for playback. |
+| Demo Mode fixture | Implemented | `/demo` | Paris-Brest public-safe fixture with storyboard, references, segments, prompt diff, costs, and assembly preview. |
+| In-repo Runway skills | Tracked | `.cursor/skills/use-runway-api/SKILL.md` and companion `rw-*` skills | Cursor agents use these as the authoritative low-level reference. |
+
+### Confirmed during the QA pass
+
+* `npm run lint` passes with 0 errors and 0 warnings.
+* `npm run build` succeeds and emits every route listed in the smoke test above.
+* `npm test` passes 12 of 12 unit tests covering planning, generation orchestration, and cost aggregation.
+* The sidebar links `/active-generations` and `/settings` no longer 404.
+
+---
+
 ## Demo Fallback Plan
 
 ### If Magic Link is slow
@@ -358,6 +479,49 @@ The preview is the core workflow. Export can be performed client-side or through
 Use seeded cost logs.
 
 Do not fake provider-specific exact billing. Call it estimated cost tracking if needed.
+
+---
+
+## Known Limitations and Honest Roadmap
+
+Document these for judges. They are framed as roadmap items, not failures, in line with `docs/agent-workflow.md`.
+
+### Live API integrations that require explicit configuration
+
+* `seedance2` availability is not yet listed on the public Runway Models page. Recipe2Video assumes it works, surfaces failures explicitly, and never silently switches model. The wizard currently exposes only `seedance2` because it is the single video endpoint wired through the Inngest workflow. If Runway confirms another model at the hackathon kickoff, add it back to `VIDEO_MODEL_OPTIONS` in `modules/videos/video.constants.ts` AND extend `assertSeedance2Selected` (or the equivalent guard) so the workflow accepts it. There is no automatic fallback.
+* OpenAI GPT-5.5 High planning, prompt diff generation, and segment compression require `OPENAI_API_KEY` and `OPENAI_PLANNING_MODEL` set on the server.
+* Runway, Mux, and Supabase secrets must be set for the full live pipeline. The demo fixture path under `/demo` is fully functional without them.
+* Inngest workflows require `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` for production. Local development uses the Inngest dev server.
+
+### Workflows that are deferred or partial
+
+* Recipe ingestion does not yet call the live OpenAI extraction. The wizard creates a draft and stores recipe sources; structured recipe data is filled in by future work.
+* `Ask agent to revise` on the storyboard captures the revision request in the UI but does not yet call OpenAI from this milestone. Use the Paris-Brest fixture for the demo storyboard story.
+* TTS storyboard pitch (P1) is not implemented. The button is intentionally hidden.
+* Embedding-based RAG retrieval over feedback (P1) is not implemented. The `scene_feedbacks.embedding` column is nullable and reserved for the post-hackathon iteration.
+* Server-side Remotion render (Vercel Sandbox backup) is not implemented. The current export path is client-side; if rendering fails, fall back to demonstrating the Remotion preview only.
+* `/active-generations` and `/settings` are read-only stubs at the time of the QA pass. Per-task retry, cancel, global pause, and writable settings live inside their parent flows.
+
+### Architectural reminders for the demo
+
+* Supabase Storage is the durable source of truth for original media. Mux is playback only. If Mux upload fails, the original file is still recoverable.
+* Runway output URLs are temporary. Successful generations are downloaded immediately into Supabase Storage before being uploaded to Mux.
+* Authentication is internal-only. Public self-serve signup is not exposed and never should be re-enabled in this product.
+* `media_assets` is the canonical metadata layer for source uploads, references, Runway outputs, accepted clips, Suno audio, and final exports.
+
+### Post-hackathon work that should land first
+
+This list mirrors **Phase 5** of `audit_critique_recipe2video_05cb7661.plan` and what the post-hackathon team should pick up next:
+
+* **TTS storyboard pitch.** The PRD lists "Optionally generate an audio pitch of the storyboard through Runway's ElevenLabs TTS model" as part of the storyboard tab. The button is intentionally hidden today and the workflow is not wired.
+* **Trim-lite per segment in assembly.** PRD Functional Requirements ("Trim-lite: Allow simple start/end selection for variants when feasible"). The current `AssemblySegmentClip` model has no `trimStart`/`trimEnd`; the Remotion composition uses the full duration of each clip.
+* **Server-side Remotion render.** `uploadFinalExportAction` accepts a user-uploaded MP4 today. A Phase 5 task is to wire either `@remotion/renderer` or a Vercel Sandbox worker to render the final master server-side, then store it in Supabase Storage and Mux as the contract requires.
+* **Embedding-backed RAG memory.** `scene_feedbacks.embedding` is reserved as `vector(1536)` but no embedding pipeline runs yet. Phase 5 adds an ingest step that embeds each applied feedback and a retrieval helper that surfaces relevant prior diffs when the agent generates a new prompt.
+* **PostHog tracking plan.** PRD lists 30+ events (`auth_magic_link_requested`, `seedance_segment_generation_succeeded`, `cost_logged`, `budget_threshold_reached`, ...). None are emitted today. Phase 5 should pick the smallest-meaningful subset (auth, segment generation lifecycle, cost log, budget threshold) and instrument them through `@posthog/node`.
+* **`composition.render.requested` event.** Removed from `inngest/events.ts` because nothing handled it. Reintroduce when the server-side Remotion render is wired so the assembly screen can fire the event instead of waiting on a manual upload.
+* **`/mux-test` route gating.** The route stays useful for verifying Mux ingest end-to-end, but should be hidden behind `process.env.NODE_ENV === "development"` (or a feature flag) before any public demo deploys it.
+* **Live recipe ingestion via vision when only photos are uploaded.** Today the wizard passes filenames as `photoDescriptions`. A Phase 5 task downloads each photo from Supabase Storage, sends them to GPT-5.5 vision, and persists the recipe normalized output.
+* **Project-scoped collaboration metadata.** When more than two internal users are active, surface `last actor` and a soft lock to avoid two users editing the same draft at the same time.
 
 ---
 

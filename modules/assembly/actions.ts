@@ -19,6 +19,7 @@ import type { AssemblyAudioSync } from "./assembly.types";
 import {
   createComposition,
   updateCompositionExport,
+  upsertDraftComposition,
 } from "./repositories/assembly.repository";
 import { uploadSunoAudio } from "./use-cases/upload-suno-audio";
 import {
@@ -87,19 +88,24 @@ export async function saveAssemblySettingsAction(
       };
     }
 
-    const composition = await createComposition(createSupabaseAdminClient(), {
-      videoId,
-      segmentOrder,
-      audioMediaAssetId,
-      audioSync,
-      remotionProps: buildRemotionProps({
-        segments: orderedSegments,
-        audioTrack: assemblyData.audioTrack,
+    // Use upsertDraftComposition so repeated saves update the same row
+    // instead of stacking a new composition history every click.
+    const composition = await upsertDraftComposition(
+      createSupabaseAdminClient(),
+      {
+        videoId,
+        segmentOrder,
+        audioMediaAssetId,
         audioSync,
-      }),
-      exportStatus: "pending",
-      createdBy: profile.id,
-    });
+        remotionProps: buildRemotionProps({
+          segments: orderedSegments,
+          audioTrack: assemblyData.audioTrack,
+          audioSync,
+        }),
+        exportStatus: "pending",
+        createdBy: profile.id,
+      },
+    );
 
     await updateVideoProjectStatus(
       createSupabaseAdminClient(),

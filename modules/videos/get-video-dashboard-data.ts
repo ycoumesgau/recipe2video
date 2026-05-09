@@ -103,8 +103,14 @@ const SEEDED_ACTIVE_QUEUE: ActiveGenerationQueueItem[] = [
 
 export function getVideoDashboardData(
   persistedProjects: VideoProject[] = [],
+  thumbnailByProjectId: Map<string, string> = new Map(),
 ): VideoDashboardData {
-  const projects = [...persistedProjects.map(mapPersistedProject), ...SEEDED_PROJECTS];
+  const projects = [
+    ...persistedProjects.map((project) =>
+      mapPersistedProject(project, thumbnailByProjectId.get(project.id) ?? null),
+    ),
+    ...SEEDED_PROJECTS,
+  ];
   const activeVideos = projects.filter(
     (project) => project.status !== "exported" && project.status !== "failed",
   ).length;
@@ -166,7 +172,10 @@ export function getVideoDashboardData(
   };
 }
 
-function mapPersistedProject(project: VideoProject): VideoDashboardProject {
+function mapPersistedProject(
+  project: VideoProject,
+  thumbnailUrl: string | null,
+): VideoDashboardProject {
   const source = project.recipeData?.source as
     | { type?: string; demoRecipeId?: string | null; uploadedFileNames?: string[] }
     | undefined;
@@ -180,6 +189,7 @@ function mapPersistedProject(project: VideoProject): VideoDashboardProject {
     status: project.status,
     thumbnailLabel: project.title,
     thumbnailTone: recipeSourceKind === "demo_fixture" ? "amber" : "sky",
+    thumbnailUrl,
     acceptedSegments: 0,
     totalSegments: 0,
     activeTaskCount: 0,

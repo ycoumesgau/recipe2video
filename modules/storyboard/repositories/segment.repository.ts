@@ -39,6 +39,53 @@ export async function createSeedanceSegment(
   return mapSeedanceSegment(data);
 }
 
+/**
+ * Replace every Seedance segment row for the given video with the supplied
+ * batch. Used by the storyboard generation workflow when a fresh storyboard
+ * has just been compressed by GPT-5.5; the previous draft is wiped to avoid
+ * stale rows.
+ */
+export async function replaceSegmentsForVideo(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  segments: CreateSeedanceSegmentInput[],
+): Promise<SeedanceSegment[]> {
+  const { error: deleteError } = await supabase
+    .from("segments")
+    .delete()
+    .eq("video_id", videoId);
+
+  throwIfSupabaseError(deleteError, "replaceSegmentsForVideo delete failed");
+
+  if (segments.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("segments")
+    .insert(
+      segments.map((segment) => ({
+        video_id: segment.videoId,
+        position: segment.position,
+        title: segment.title,
+        arc: segment.arc,
+        logical_scene_ids: toJson(segment.logicalSceneIds),
+        description: segment.description,
+        prompt: segment.prompt,
+        prompt_initial: segment.promptInitial,
+        references: toJson(segment.references ?? []),
+        duration_target: segment.durationTarget,
+        status: segment.status ?? "pending",
+        created_by: segment.createdBy ?? null,
+      })),
+    )
+    .select("*")
+    .order("position", { ascending: true });
+
+  throwIfSupabaseError(error, "replaceSegmentsForVideo insert failed");
+  return data.map(mapSeedanceSegment);
+}
+
 export async function listSegmentsByVideoId(
   supabase: SupabaseDataClient,
   videoId: string,

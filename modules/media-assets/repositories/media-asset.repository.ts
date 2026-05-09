@@ -222,6 +222,40 @@ export async function listMuxPlayableMediaAssets(
   return data.map(mapMediaAsset);
 }
 
+/**
+ * Build a map of `videoId -> mux_playback_id` so the dashboard can show a
+ * Mux-generated thumbnail per project card. We pick the first accepted clip
+ * with a Mux playback ID per video; runway_output rows are ignored to favour
+ * user-validated content.
+ */
+export async function getProjectThumbnailPlaybackIds(
+  supabase: SupabaseDataClient,
+  videoIds: string[],
+): Promise<Map<string, string>> {
+  if (videoIds.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("video_id,mux_playback_id,type,updated_at")
+    .in("video_id", videoIds)
+    .eq("type", "accepted_clip")
+    .not("mux_playback_id", "is", null)
+    .order("updated_at", { ascending: false });
+
+  throwIfSupabaseError(error, "getProjectThumbnailPlaybackIds failed");
+
+  const result = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (!row.video_id || !row.mux_playback_id) continue;
+    if (!result.has(row.video_id)) {
+      result.set(row.video_id, row.mux_playback_id);
+    }
+  }
+  return result;
+}
+
 export async function updateMediaAssetMuxPlayback(
   supabase: SupabaseDataClient,
   input: {
@@ -265,6 +299,34 @@ export async function markMediaAssetFailed(
     .single();
 
   throwIfSupabaseError(error, "markMediaAssetFailed failed");
+  return mapMediaAsset(data);
+}
+
+/**
+ * Record a Mux upload failure WITHOUT changing the media asset status. The
+ * Supabase Storage original is still the durable source of truth per
+ * `docs/technical-contracts.md` § Storage Contract: "If Mux upload fails, the
+ * Supabase Storage original remains the source of truth and can be re-uploaded
+ * later." Only metadata.mux is updated so we keep the failure trace and can
+ * retry the playback upload later.
+ */
+export async function recordMuxUploadFailure(
+  supabase: SupabaseDataClient,
+  input: {
+    mediaAssetId: string;
+    metadata: Record<string, unknown>;
+  },
+): Promise<MediaAsset> {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .update({
+      metadata: toJson(input.metadata),
+    })
+    .eq("id", input.mediaAssetId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "recordMuxUploadFailure failed");
   return mapMediaAsset(data);
 }
 

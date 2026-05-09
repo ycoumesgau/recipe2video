@@ -5,7 +5,6 @@ import {
   BookOpen,
   FlaskConical,
   LayoutDashboard,
-  Library,
   PlusCircle,
   Settings,
 } from "lucide-react";
@@ -19,7 +18,6 @@ const navigationItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/videos/new", label: "New Video", icon: PlusCircle },
   { href: "/active-generations", label: "Active Generations", icon: Activity },
-  { href: "/", label: "Library", icon: Library },
   { href: "/costs", label: "Costs", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/demo", label: "Demo Mode", icon: FlaskConical },
@@ -27,10 +25,16 @@ const navigationItems = [
 ];
 
 export function AppShell({
+  activeTaskCount,
   children,
+  creditsRemaining,
+  creditsUsed,
   userEmail,
 }: {
+  activeTaskCount: number;
   children: React.ReactNode;
+  creditsRemaining: number;
+  creditsUsed: number;
   userEmail: string;
 }) {
   return (
@@ -74,8 +78,12 @@ export function AppShell({
               <p className="text-lg font-semibold">Runway API Hackathon</p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge variant="secondary">Credits: pending</Badge>
-              <Badge variant="outline">0 active tasks</Badge>
+              <Badge variant="secondary" title={`${formatCredits(creditsUsed)} used`}>
+                Credits left: {formatCredits(creditsRemaining)}
+              </Badge>
+              <Badge variant={activeTaskCount > 0 ? "default" : "outline"}>
+                {activeTaskCount} active task{activeTaskCount === 1 ? "" : "s"}
+              </Badge>
               <Badge className="hidden md:inline-flex" variant="outline">
                 {userEmail}
               </Badge>
@@ -91,4 +99,8 @@ export function AppShell({
       </div>
     </div>
   );
+}
+
+function formatCredits(value: number) {
+  return `${value.toLocaleString("en-US")} cr`;
 }

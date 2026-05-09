@@ -20,7 +20,13 @@ const SEEDANCE2_CREDITS_PER_SECOND = 36;
 
 interface WorkflowAuthData {
   requestedByUserId: string;
-  isAllowlisted: boolean;
+  /**
+   * Legacy flag kept for backward compatibility with existing event payloads
+   * and unit tests. The real allowlist check must be performed by the Inngest
+   * handler via `assertAllowlistedUser(data.requestedByUserId)` before this
+   * use-case is invoked. We never trust this field in production code.
+   */
+  isAllowlisted?: boolean;
 }
 
 export interface SegmentGenerationRequestedData extends WorkflowAuthData {
@@ -71,6 +77,12 @@ export interface PollSegmentGenerationDeps extends SegmentWorkflowBaseDeps {
   getSegmentById(segmentId: string): Promise<SeedanceSegment | null>;
   getRunwayTask(taskId: string): Promise<RunwayTaskStatus>;
   updateGenerationStatus(input: UpdateGenerationStatusInput): Promise<Generation>;
+  /**
+   * Optional cost logger so the workflow can record the actual Runway credits
+   * spent when a Seedance task reaches `SUCCEEDED`. The Inngest handler wires
+   * the real Supabase-backed implementation; tests can omit it.
+   */
+  logCost?(input: CreateCostLogInput): Promise<CostLog>;
   now(): string;
 }
 
@@ -109,6 +121,16 @@ export async function requestSegmentGenerationWorkflow(
   }
 
   assertSeedance2Selected(video);
+
+  // Block instead of "failed" when references are not ready: this is a user
+  // checkpoint (approve + upload kitchen reference), not a Runway failure.
+  try {
+    assertSegmentReferencesReady(segment);
+  } catch (referenceError) {
+    await deps.updateSegmentStatus(segment.id, "blocked");
+    throw referenceError;
+  }
+
   await deps.updateSegmentStatus(segment.id, "queued");
 
   try {
@@ -209,6 +231,28 @@ export async function pollSegmentGenerationWorkflow(
       });
       await deps.updateSegmentStatus(segment.id, "failed");
       throw new Error("Succeeded Runway task did not include an output URL.");
+    }
+
+    // Persist a "succeeded" cost log so the dashboard can distinguish the
+    // estimated-at-launch cost from the realised credits. Runway does not
+    // expose the actual credit consumption per task today, so we re-use the
+    // estimate (`generation.costCredits`) and tag the metadata accordingly.
+    if (deps.logCost) {
+      await deps.logCost({
+        videoId: segment.videoId,
+        segmentId: segment.id,
+        provider: "runway",
+        model: generation.model,
+        operation: "seedance_segment_generation_succeeded",
+        creditsUsed: generation.costCredits ?? null,
+        metadata: {
+          generationId: generation.id,
+          runwayTaskId: taskId,
+          actualCreditsAvailable: false,
+          estimated: true,
+        },
+        createdBy: data.requestedByUserId,
+      });
     }
 
     await deps.sendEvent({
@@ -329,8 +373,11 @@ function buildRunwayReferences(segment: SeedanceSegment): RunwaySeedanceReferenc
 }
 
 function assertWorkflowAllowed(data: WorkflowAuthData) {
-  if (!data.requestedByUserId || !data.isAllowlisted) {
-    throw new Error("Workflow requires an authenticated allowlisted user.");
+  // Sanity check on the event payload only. The Inngest handler must call
+  // assertAllowlistedUser(data.requestedByUserId) against Supabase before
+  // invoking this workflow; we no longer trust the `isAllowlisted` flag.
+  if (!data.requestedByUserId) {
+    throw new Error("Workflow requires a triggering user ID.");
   }
 }
 
@@ -374,6 +421,43 @@ function assertSeedance2Selected(video: VideoProject) {
   if (video.selectedVideoModel !== "seedance2") {
     throw new Error(
       `Selected video model ${video.selectedVideoModel} is not supported by this Seedance workflow. No fallback was used.`,
+    );
+  }
+}
+
+/**
+ * Enforce the references discipline from `.cursor/rules/recipe2video-seedance-segments.mdc`
+ * and the PRD: every Seedance segment needs at least one reference uploaded
+ * to Runway, and a global kitchen reference (typically `@KitchenIslandDefault`)
+ * is mandatory. If any of these is missing, the segment must be blocked rather
+ * than generated without references.
+ */
+function assertSegmentReferencesReady(segment: SeedanceSegment) {
+  const referencesWithUri = segment.references.filter((reference) =>
+    Boolean(reference.runwayUri),
+  );
+
+  if (referencesWithUri.length === 0) {
+    throw new Error(
+      `Segment ${segment.id} has no references uploaded to Runway. Approve and upload the kitchen reference (and recipe-state references) before generation.`,
+    );
+  }
+
+  const hasKitchenReference = referencesWithUri.some((reference) => {
+    const haystack = [
+      reference.name ?? "",
+      reference.label ?? "",
+      reference.role ?? "",
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes("kitchen") || haystack.includes("island");
+  });
+
+  if (!hasKitchenReference) {
+    throw new Error(
+      `Segment ${segment.id} is missing a global kitchen reference (e.g. @KitchenIslandDefault). Upload it to Runway before generation.`,
     );
   }
 }
