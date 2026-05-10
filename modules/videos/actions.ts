@@ -26,6 +26,8 @@ export async function createVideoDraftAction(
       selectedImageModel: getString(formData, "selectedImageModel"),
       selectedTtsModel: getString(formData, "selectedTtsModel"),
       selectedSfxModel: getString(formData, "selectedSfxModel"),
+      cursorAgentModel: getString(formData, "cursorAgentModel"),
+      cursorAgentReasoning: getString(formData, "cursorAgentReasoning"),
       intent: normalizeIntent(getString(formData, "intent")),
     });
 

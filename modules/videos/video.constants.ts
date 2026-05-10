@@ -2,12 +2,64 @@ export const DEFAULT_VIDEO_MODEL = "seedance2";
 export const DEFAULT_IMAGE_MODEL = "gpt_image_2";
 export const DEFAULT_TTS_MODEL = "eleven_multilingual_v2";
 export const DEFAULT_SFX_MODEL = "eleven_text_to_sound_v2";
+export const DEFAULT_CURSOR_AGENT_MODEL = "gpt-5.5";
+export const DEFAULT_CURSOR_AGENT_REASONING = "high";
 
 export const TARGET_DURATION_OPTIONS = [
+  { value: "auto", label: "Auto (model decides)" },
   { value: "45", label: "45 seconds" },
   { value: "60", label: "60 seconds" },
   { value: "90", label: "90 seconds" },
 ] as const;
+
+export const CURSOR_AGENT_MODEL_OPTIONS = [
+  { value: "gpt-5.5", label: "GPT-5.5" },
+  { value: "composer-2", label: "Composer 2" },
+  { value: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+  { value: "claude-opus-4-7", label: "Opus 4.7" },
+  { value: "gemini-3.1-pro", label: "Gemini 3.1 Pro" },
+] as const;
+
+export const CURSOR_AGENT_REASONING_OPTIONS = {
+  "gpt-5.5": [
+    { value: "none", label: "None" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "extra-high", label: "Extra High" },
+  ],
+  "composer-2": [],
+  "claude-sonnet-4-6": [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "max", label: "Max" },
+  ],
+  "claude-opus-4-7": [
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+    { value: "xhigh", label: "Extra High" },
+    { value: "max", label: "Max" },
+  ],
+  "gemini-3.1-pro": [],
+} as const;
+
+export const CURSOR_AGENT_FAST_BY_MODEL = {
+  "gpt-5.5": "false",
+  "composer-2": "true",
+  "claude-sonnet-4-6": "false",
+  "claude-opus-4-7": "false",
+  "gemini-3.1-pro": "false",
+} as const;
+
+export const CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL = {
+  "gpt-5.5": "high",
+  "composer-2": undefined,
+  "claude-sonnet-4-6": "medium",
+  "claude-opus-4-7": "high",
+  "gemini-3.1-pro": undefined,
+} as const;
 
 export const STYLE_PRESET_OPTIONS = [
   { value: "asmr_food", label: "ASMR food" },
