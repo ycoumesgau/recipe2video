@@ -10,6 +10,16 @@ The fastest path is not to launch many agents immediately. The fastest path is t
 
 Agents must not invent architecture, UI flows, status names, or data models independently. They must follow the PRD, the UX contract, and the technical contracts.
 
+## Two Kinds of Agents
+
+Recipe2Video uses the word "agent" in two distinct contexts:
+
+1. **Build agents** (Cursor Cloud Agents): work on feature branches to implement application code during the hackathon. They follow GitHub Issues, branch boundaries, and merge rules described in this document.
+
+2. **Recipe agents** (Cursor SDK agents): persistent creative planning workers, one per recipe video project. They are created and managed programmatically through the `@cursor/sdk` TypeScript library. They do not contribute code, create branches, or open PRs. They produce structured recipe artifacts in a dedicated workspace repository (`recipe2video-agent-workspace`).
+
+The rest of this document covers **build agents**. The recipe agent architecture is documented in `docs/technical-contracts.md` under "Cursor Recipe Agent Contract".
+
 ---
 
 ## Build Phases
@@ -381,3 +391,40 @@ Setup rules:
 
 * Agents must follow the feature-first, modular architecture boundaries specified in the technical contract. Shared types and contracts must be changed with care and clearly called out in PRs.
 * If live systems fail during a demo path (Seedance generation, Mux upload, Magic Link auth, Remotion export, or similar), agents must preserve and surface a fixture-backed demo path so the demo remains reproducible.
+
+---
+
+## Recipe Agent Workspace Repository
+
+Recipe2Video uses a dedicated GitHub repository (`recipe2video-agent-workspace`) as the filesystem for persistent Cursor SDK recipe agents.
+
+### Purpose
+
+The workspace repository is NOT an application repository. It exists so that Cursor SDK cloud agents have a filesystem to read from and write to. The application creates agents that clone this repo, instructs them to write structured artifacts, then downloads and validates those artifacts.
+
+### Repository contents
+
+```txt
+.cursor/
+  rules/          — Cursor rules inherited by recipe agents
+  skills/         — Cursor skills available to recipe agents
+agent-recipes/    — Root directory for per-recipe workspaces
+  {videoId}/
+    recipe-analysis.json
+    decisions.md
+    logical-scenes.json
+    seedance-segments.json
+    reference-plan.json
+    suno-prompt.md
+    changelog.md
+```
+
+### Rules
+
+* The workspace repo is referenced by `CURSOR_AGENT_REPO_URL` environment variable.
+* Cloud agents clone it at `CURSOR_AGENT_STARTING_REF` (default: `main`).
+* Agents may only write inside `agent-recipes/{videoId}/`.
+* The application never pushes, merges, or commits into this repository directly.
+* Artifacts produced by agents are downloaded via the Cursor SDK, not via git.
+* The workspace repo may contain Cursor rules and skills that guide recipe agent behavior.
+* The workspace repo should NOT contain application source code, migrations, or secrets.

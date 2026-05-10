@@ -47,9 +47,17 @@ MUX_TOKEN_SECRET=
 INNGEST_EVENT_KEY=
 INNGEST_SIGNING_KEY=
 APP_BASE_URL=http://localhost:3000
+CURSOR_API_KEY=
+CURSOR_AGENT_REPO_URL=
+CURSOR_AGENT_STARTING_REF=main
+CURSOR_AGENT_MODEL=gpt-5.5
+CURSOR_AGENT_MODEL_THINKING=high
+CURSOR_AGENT_RUNTIME=cloud
 ```
 
 `OPENAI_PLANNING_MODEL` must be the exact API identifier for GPT-5.5 High on the account. Recipe2Video does not silently fall back to a different model if this variable is missing or invalid.
+
+For a demo without live Cursor agent interaction, the `CURSOR_*` variables are optional. The Paris-Brest fixture path works without them.
 
 For an offline-only demo, only `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY` are strictly required. `/demo` runs entirely against the Paris-Brest public-safe fixture.
 
@@ -97,6 +105,7 @@ In this order:
 * `/videos/[videoId]/storyboard` → confirm the storyboard tab loads and the Paris-Brest fixture button works.
 * `/videos/[videoId]/segments/[segmentId]` → confirm the segment review screen loads (use a seeded segment from a real project).
 * `/videos/[videoId]/assembly` → confirm Suno + Remotion preview screens load.
+* Verify Recipe Agent panel shows on project overview with agent status indicator.
 
 If any of these screens 404 or show an unhandled error, fix it before recording.
 
@@ -230,6 +239,27 @@ A project can start from a recipe URL, uploaded photos, pasted text, or a prepar
 ```
 
 If live recipe ingest is slow, use the prepared project.
+
+---
+
+### Scene 2b — Recipe Agent Analysis
+
+Goal: show the persistent Cursor SDK agent analyzing a recipe.
+
+Show:
+
+* Recipe Agent panel on the project overview
+* Agent status changing from idle to running
+* Agent producing artifacts (recipe-analysis.json, decisions.md)
+* Artifacts being validated and synced to the project
+
+Voiceover:
+
+```txt
+When a project is created, Recipe2Video provisions a persistent Cursor SDK agent dedicated to this recipe. The agent analyzes the recipe, identifies visual complexity, and produces structured planning artifacts. These artifacts are validated and synced back into the project state.
+```
+
+If live agent is slow, skip to the fixture storyboard and mention the agent workflow.
 
 ---
 
@@ -415,6 +445,7 @@ This matrix maps the Issue #20 acceptance checklist to the actual implementation
 | Final export persistence | Implemented | `uploadFinalExportAction` | Final MP4 stored in Supabase Storage, then uploaded to Mux for playback. |
 | Demo Mode fixture | Implemented | `/demo` | Paris-Brest public-safe fixture with storyboard, references, segments, prompt diff, costs, and assembly preview. |
 | In-repo Runway skills | Tracked | `.cursor/skills/use-runway-api/SKILL.md` and companion `rw-*` skills | Cursor agents use these as the authoritative low-level reference. |
+| Recipe Agent lifecycle | Implemented | Project overview + `modules/recipe-agent/*` | Create, resume, send message, validate artifacts, sync to Supabase. Agent panel shows status. |
 
 ### Confirmed during the QA pass
 
@@ -501,6 +532,8 @@ Document these for judges. They are framed as roadmap items, not failures, in li
 * Embedding-based RAG retrieval over feedback (P1) is not implemented. The `scene_feedbacks.embedding` column is nullable and reserved for the post-hackathon iteration.
 * Server-side Remotion render (Vercel Sandbox backup) is not implemented. The current export path is client-side; if rendering fails, fall back to demonstrating the Remotion preview only.
 * `/active-generations` and `/settings` are read-only stubs at the time of the QA pass. Per-task retry, cancel, global pause, and writable settings live inside their parent flows.
+* The Cursor SDK recipe agent requires `CURSOR_API_KEY` and `CURSOR_AGENT_REPO_URL` for live operation. Without these, the agent panel shows "not configured" and the fixture path should be used.
+* Agent artifact sync is one-way (agent -> app). The agent does not read back from Supabase after sync.
 
 ### Architectural reminders for the demo
 
@@ -522,6 +555,7 @@ This list mirrors **Phase 5** of `audit_critique_recipe2video_05cb7661.plan` and
 * **`/mux-test` route gating.** The route stays useful for verifying Mux ingest end-to-end, but should be hidden behind `process.env.NODE_ENV === "development"` (or a feature flag) before any public demo deploys it.
 * **Live recipe ingestion via vision when only photos are uploaded.** Today the wizard passes filenames as `photoDescriptions`. A Phase 5 task downloads each photo from Supabase Storage, sends them to GPT-5.5 vision, and persists the recipe normalized output.
 * **Project-scoped collaboration metadata.** When more than two internal users are active, surface `last actor` and a soft lock to avoid two users editing the same draft at the same time.
+* **Two-way agent context.** Currently the recipe agent does not receive the latest Supabase state before each message. A Phase 5 task is to inject current recipe_data, storyboard summary, and reference status into the agent message context so the agent can make decisions based on the latest approved state.
 
 ---
 

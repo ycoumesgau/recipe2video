@@ -3,7 +3,7 @@
 
 ### TL;DR
 
-Recipe2Video is an internal Licorn production tool that turns a food recipe into a repeatable, agent-assisted workflow for producing short vertical cooking videos featuring the Licorn mascot. It uses the Runway API with Seedance 2 as the default video generation model, GPT-Image 2 for recipe-specific reference images, GPT-5.5 High for planning and prompt iteration, Inngest for durable workflows, Supabase Auth/Postgres/Storage for access control, state and original media masters, Mux Pay-as-you-go Basic for playback and review, Remotion for assembly preview/export, and shadcn/ui for fast interface delivery.
+Recipe2Video is an internal Licorn production tool that turns a food recipe into a repeatable, agent-assisted workflow for producing short vertical cooking videos featuring the Licorn mascot. It uses the Runway API with Seedance 2 as the default video generation model, GPT-Image 2 for recipe-specific reference images, Cursor SDK with persistent per-recipe agents for creative planning, GPT-5.5 High for prompt diffs and narrow utilities, Inngest for durable workflows, Supabase Auth/Postgres/Storage for access control, state and original media masters, Mux Pay-as-you-go Basic for playback and review, Remotion for assembly preview/export, and shadcn/ui for fast interface delivery.
 
 The hackathon goal is to ship a real internal production workflow for Licorn, not a generic model wrapper or throwaway proof of concept. The first milestone focuses on the highest-value end-to-end path: recipe input, storyboard, Seedance segment planning, reference validation, Runway generation, durable storage, Mux playback, feedback-driven prompt diffs, cost tracking, and final assembly preview.
 
@@ -441,7 +441,8 @@ Primary stack:
 * Workflow orchestration: Inngest.
 * Video media architecture: Supabase Storage as durable media master storage; Mux Pay-as-you-go Basic for playback, thumbnails, review, and streaming.
 * Video assembly: Remotion Player and client-side rendering for hackathon export, with Vercel Sandbox as backup.
-* LLM: OpenAI GPT-5.5 High through direct OpenAI API.
+* Creative planning runtime: Cursor TypeScript SDK (`@cursor/sdk`) with persistent per-recipe agents running against a dedicated workspace repository (`recipe2video-agent-workspace`). Each agent maintains structured artifacts that are validated and synchronized into Supabase by the application.
+* LLM (fallback and narrow utilities): OpenAI GPT-5.5 High through direct OpenAI API, used for feedback prompt diffs and narrow planning utilities when the Cursor recipe agent is not involved.
 * Runway API: Seedance 2, GPT-Image 2, ElevenLabs TTS/SFX, uploads, task polling.
 * Work management: GitHub Issues and GitHub branches, not Linear.
 
@@ -449,6 +450,9 @@ Architecture approach:
 
 * Use a feature-first modular architecture with lightweight application and infrastructure boundaries.
 * Do not implement full DDD, full hexagonal architecture, or strict Clean Architecture. The project needs clear boundaries without excessive ceremony.
+* Two-repository architecture:
+  * **`recipe2video`** (this repository): the Next.js application, all modules, UI, Inngest workflows, Supabase schema, and documentation.
+  * **`recipe2video-agent-workspace`**: a separate GitHub repository that Cursor SDK cloud agents clone as their working filesystem. Each recipe agent writes structured artifacts inside `agent-recipes/{videoId}/` in this workspace. The application validates and synchronizes those artifacts back into Supabase. This repository does not contain application code.
 * Recommended top-level structure:
 
 ```txt
@@ -470,6 +474,8 @@ modules/
   feedback/
   costs/
   assembly/
+  recipe-agent/
+  demo/
 shared/
   config/
   errors/
@@ -496,6 +502,8 @@ Key architecture rules:
 * Use cases orchestrate domain operations.
 * Inngest functions call application-level use cases.
 * Media persistence is centralized in the `media-assets` module.
+* The `recipe-agent` module encapsulates all Cursor SDK interactions, agent lifecycle, artifact validation, and Supabase synchronization. No other module should import `@cursor/sdk` directly.
+* Recipe agents are creative workers, not code contributors. They must not open PRs, create branches, or modify application source code.
 
 Core Supabase data model:
 
@@ -528,6 +536,12 @@ videos
   total_cost_credits integer
   total_cost_openai numeric
   created_by uuid references profiles(id)
+  cursor_agent_id text nullable
+  cursor_agent_runtime text nullable
+  agent_workspace_path text nullable
+  last_agent_run_id text nullable
+  last_agent_sync_at timestamptz nullable
+  agent_status text
   created_at timestamptz
   updated_at timestamptz
 
@@ -653,6 +667,34 @@ compositions
   created_at timestamptz
   updated_at timestamptz
 
+agent_runs
+  id uuid primary key
+  video_id uuid references videos(id)
+  cursor_agent_id text
+  cursor_run_id text nullable
+  stage text
+  user_message text
+  status text
+  result_summary text nullable
+  error text nullable
+  created_by uuid references profiles(id) nullable
+  started_at timestamptz
+  completed_at timestamptz nullable
+  created_at timestamptz
+  updated_at timestamptz
+
+agent_artifacts
+  id uuid primary key
+  video_id uuid references videos(id)
+  artifact_name text
+  artifact_path text
+  content text
+  content_hash text nullable
+  validation_status text
+  validation_errors jsonb
+  created_at timestamptz
+  updated_at timestamptz
+
 ```
 
 Important data model clarification:
@@ -661,6 +703,9 @@ Important data model clarification:
 * `segments` are the actual Seedance generation units, usually around 5-10 per final video.
 * `generations` are individual generated variants for a segment.
 * `media_assets` is the central media metadata table for source uploads, references, Runway outputs, accepted clips, Suno audio, and final exports.
+* `agent_runs` track every message sent to a persistent Cursor recipe agent, including stage, status, and result summary.
+* `agent_artifacts` store validated artifact contents (recipe analysis, decisions, scenes, segments, reference plan, Suno prompt, changelog) with content hash and validation status.
+* The primary creative planning path uses Cursor SDK agents orchestrated through the `recipe-agent` module; GPT-5.5 High is reserved for prompt diffs and narrow utilities.
 * The historical repo’s first-frame / last-frame / Kling workflow must not become the production path, but its useful recipe understanding, food physics, asset reference, TikTok pacing, Suno, and Seedance rules should be ported.
 
 ### Integration Points
@@ -673,6 +718,11 @@ Important data model clarification:
 * New public hackathon repo:
   * Host README, PRD, UX contract, technical contracts, GitHub Issues backlog, demo runbook, fixture data, branches, and implementation code.
   * Use GitHub Issues for task orchestration and public execution trace.
+* Agent workspace repository `recipe2video-agent-workspace`:
+  * Dedicated filesystem for Cursor SDK recipe agents, separate from the application repository.
+  * Contains only agent-produced artifacts under `agent-recipes/{videoId}/`.
+  * Rules, skills, and Cursor settings from the main repository are available to cloud agents through the `CURSOR_AGENT_REPO_URL` configuration.
+  * The application never merges or commits agent artifacts into this workspace. Artifacts are downloaded, validated with Zod, and synchronized into Supabase.
 * Runway API:
   * Upload references and input media, generate Seedance video segments, GPT-Image 2 reference images, TTS, and SFX.
   * Treat Runway outputs as temporary API output URLs; download and persist to Supabase Storage quickly.
@@ -681,6 +731,7 @@ Important data model clarification:
   * Pricing page: https://docs.dev.runwayml.com/guides/pricing/.
   * Use the official Node.js SDK `@runwayml/sdk`.
   * Required environment variable: `RUNWAYML_API_SECRET`.
+  * Cursor SDK environment variables: `CURSOR_API_KEY`, `CURSOR_AGENT_REPO_URL`, `CURSOR_AGENT_STARTING_REF`, `CURSOR_AGENT_MODEL`, `CURSOR_AGENT_MODEL_THINKING`, `CURSOR_AGENT_RUNTIME`, `CURSOR_AGENT_LOCAL_CWD`. See the Cursor SDK Agent Workspace Repository section for details.
   * Note on Seedance 2: announced by Runway as available via API but not yet listed on the public Models page at the time of writing. Verify availability at hackathon kickoff. If Seedance 2 is web-app only, fall back to `gen4.5` as the default video model.
 * Runway agent skill (Cursor):
   * The official Runway API skills are hosted at https://github.com/runwayml/skills under `skills/`, in the same SKILL.md format used by Claude Code skills.
@@ -703,6 +754,44 @@ Important data model clarification:
 * Remotion:
   * Preview selected segments with optional music using original files from Supabase Storage.
   * Store final MP4 in Supabase Storage and upload a playback copy to Mux.
+
+### Cursor SDK Agent Workspace Repository
+
+The `recipe2video-agent-workspace` GitHub repository is the dedicated workspace for Cursor SDK cloud agents. It is a separate repository from the main application and does not contain application code.
+
+**Lifecycle:**
+
+1. When a recipe video is created, the `recipe-agent` module provisions a persistent Cursor SDK agent.
+2. Cloud agents clone `recipe2video-agent-workspace` at `CURSOR_AGENT_STARTING_REF` (default: `main`).
+3. Each recipe agent writes structured artifacts in `agent-recipes/{videoId}/` within the workspace.
+4. The application downloads artifacts, validates them with Zod schemas, and synchronizes content into Supabase.
+5. Agents are resumed with follow-up messages as the video progresses through stages.
+
+**Contractual artifacts (7 files per recipe):**
+
+| File | Purpose |
+|---|---|
+| `recipe-analysis.json` | Structured recipe understanding: ingredients, steps, transformations, visual opportunities |
+| `decisions.md` | Creative decisions and rationale for the video plan |
+| `logical-scenes.json` | 30-48 editorial scenes with arc, description, timing |
+| `seedance-segments.json` | 5-10 Seedance generation units with prompts and reference roles |
+| `reference-plan.json` | Required reference images with roles and generation prompts |
+| `suno-prompt.md` | Copy-ready Suno music generation prompt |
+| `changelog.md` | Running log of agent decisions and iterations |
+
+**Required environment variables:**
+
+| Variable | Purpose |
+|---|---|
+| `CURSOR_API_KEY` | Cursor SDK authentication |
+| `CURSOR_AGENT_REPO_URL` | Git URL for the agent workspace repository |
+| `CURSOR_AGENT_STARTING_REF` | Branch or ref agents clone from (default: `main`) |
+| `CURSOR_AGENT_MODEL` | Primary model for agent tasks |
+| `CURSOR_AGENT_MODEL_THINKING` | Thinking model for complex reasoning |
+| `CURSOR_AGENT_RUNTIME` | `cloud` or `local` runtime selector |
+| `CURSOR_AGENT_LOCAL_CWD` | Local filesystem path for local-mode agents |
+
+---
 
 ### Data Storage & Privacy
 
