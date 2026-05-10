@@ -1018,10 +1018,18 @@ CURSOR_API_KEY=
 CURSOR_AGENT_REPO_URL=
 CURSOR_AGENT_STARTING_REF=main
 CURSOR_AGENT_MODEL=gpt-5.5
-CURSOR_AGENT_MODEL_THINKING=high
+CURSOR_AGENT_MODEL_REASONING=high
+CURSOR_AGENT_MODEL_CONTEXT=272k
+CURSOR_AGENT_MODEL_FAST=false
 CURSOR_AGENT_RUNTIME=cloud
 CURSOR_AGENT_LOCAL_CWD=
+RECIPE_AGENT_GITHUB_TOKEN=
 ```
+
+Optional: `RECIPE_AGENT_GITHUB_TOKEN` (or `GITHUB_TOKEN` in dev) is a fine-grained PAT
+with read access to `CURSOR_AGENT_REPO_URL`. The app uses the GitHub Contents API to
+fetch `checkpoint-manifest.json` and large recipe artifacts at the exact commit SHA
+after a run. Without it, artifact recovery falls back to the Cursor SDK payloads only.
 
 Runtime rules:
 
@@ -1029,8 +1037,13 @@ Runtime rules:
 * Cloud agents clone `CURSOR_AGENT_REPO_URL` at `CURSOR_AGENT_STARTING_REF`.
 * Local runtime is reserved for development and uses `CURSOR_AGENT_LOCAL_CWD` or
   `process.cwd()`.
-* `CURSOR_AGENT_MODEL_THINKING` is optional and maps to the Cursor SDK model
-  parameter `{ id: "thinking", value }` for models that support it.
+* `CURSOR_AGENT_MODEL_REASONING` is optional and maps to the Cursor SDK model
+  reasoning/effort parameter for models that support it. For `gpt-5.5`, the
+  app sends a complete Cursor model variant with `context`, `reasoning`, and
+  `fast`; default context is `272k`, with `1m` reserved for exceptional long
+  context jobs.
+* `CURSOR_AGENT_MODEL_THINKING` remains accepted as a legacy alias for
+  `CURSOR_AGENT_MODEL_REASONING`.
 * The app stores the persistent Cursor `agentId` per video project in a later
   data-model issue.
 * The app resumes the same agent for follow-up messages so recipe decisions are

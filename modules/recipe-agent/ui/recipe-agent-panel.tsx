@@ -41,9 +41,12 @@ import {
 import type {
   AgentArtifact,
   AgentRun,
+  AgentRunTimelineEvent,
   RecipeAgentStage,
   RecipeAgentStatus,
 } from "../recipe-agent.types";
+
+import { AgentRunTimeline } from "./agent-run-timeline";
 
 const initialState: RecipeAgentActionState = {};
 
@@ -66,16 +69,19 @@ const statusVariant: Record<
   needs_sync: "outline",
   validation_failed: "destructive",
   failed: "destructive",
+  needs_input: "outline",
 };
 
 export function RecipeAgentPanel({
   artifacts,
   project,
   runs,
+  latestRunTimelineEvents,
 }: {
   artifacts: AgentArtifact[];
   project: VideoProject;
   runs: AgentRun[];
+  latestRunTimelineEvents: AgentRunTimelineEvent[];
 }) {
   const [messageState, messageAction] = useActionState(
     submitRecipeAgentMessageAction,
@@ -110,7 +116,7 @@ export function RecipeAgentPanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
           <Metric label="Agent ID" value={project.cursorAgentId ?? "Not created"} />
           <Metric label="Workspace" value={project.agentWorkspacePath ?? "-"} />
           <Metric
@@ -121,7 +127,37 @@ export function RecipeAgentPanel({
                 : "No sync yet"
             }
           />
+          <Metric
+            label="Git branch"
+            value={project.agentGitBranch ?? "—"}
+          />
+          <Metric
+            label="Checkpoint SHA"
+            value={
+              project.agentGitCommitSha
+                ? project.agentGitCommitSha.slice(0, 7)
+                : "—"
+            }
+          />
         </div>
+
+        <AgentRunTimeline
+          agentStatus={project.agentStatus}
+          initialEvents={latestRunTimelineEvents}
+          latestRunId={latestRun?.id ?? null}
+          videoId={project.id}
+        />
+
+        {project.agentStatus === "needs_input" ? (
+          <Alert>
+            <MessageSquareText className="h-4 w-4" />
+            <AlertTitle>Agent is waiting for your reply</AlertTitle>
+            <AlertDescription>
+              Cursor emitted a request during the last run. Send a follow-up message
+              below so the agent can continue.
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
         {invalidArtifacts.length > 0 ? (
           <Alert variant="destructive">
@@ -210,10 +246,15 @@ function RunHistoryCard({
           ) : null}
           {runs.slice(0, 4).map((run) => (
             <div className="rounded-md border bg-muted/20 p-3 text-sm" key={run.id}>
-              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                <Badge variant={run.status === "error" ? "destructive" : "outline"}>
-                  {run.status}
-                </Badge>
+              <div className="mb-1 flex flex-wrap items-start justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={run.status === "error" ? "destructive" : "outline"}>
+                    {run.status}
+                  </Badge>
+                  {run.needsUserInput ? (
+                    <Badge variant="secondary">needs input</Badge>
+                  ) : null}
+                </div>
                 <span className="text-xs text-muted-foreground">
                   {formatDate(run.createdAt)}
                 </span>
@@ -222,6 +263,12 @@ function RunHistoryCard({
               <p className="mt-1 line-clamp-2 text-muted-foreground">
                 {run.userMessage}
               </p>
+              {run.agentGitCommitSha ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Checkpoint {run.agentGitCommitSha.slice(0, 7)}
+                  {run.agentGitBranch ? ` · ${run.agentGitBranch}` : ""}
+                </p>
+              ) : null}
               {run.error ? (
                 <p className="mt-2 text-destructive">{run.error}</p>
               ) : null}

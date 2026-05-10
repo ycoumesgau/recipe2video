@@ -31,6 +31,9 @@ test("mapAgentRun maps database rows to domain shape", () => {
       completed_at: "2026-05-10T00:01:00.000Z",
       created_at: "2026-05-10T00:00:00.000Z",
       updated_at: "2026-05-10T00:01:00.000Z",
+      agent_git_branch: null,
+      agent_git_commit_sha: null,
+      needs_user_input: false,
     }),
     {
       id: "run-row-1",
@@ -47,6 +50,9 @@ test("mapAgentRun maps database rows to domain shape", () => {
       completedAt: "2026-05-10T00:01:00.000Z",
       createdAt: "2026-05-10T00:00:00.000Z",
       updatedAt: "2026-05-10T00:01:00.000Z",
+      agentGitBranch: null,
+      agentGitCommitSha: null,
+      needsUserInput: false,
     },
   );
 });

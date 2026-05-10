@@ -41,7 +41,19 @@ test("resolveRecipeAgentConfig supports local dev runtime", () => {
   assert.equal(config.model, "composer-2");
 });
 
-test("resolveRecipeAgentConfig carries optional model thinking parameter", () => {
+test("resolveRecipeAgentConfig carries optional model reasoning parameter", () => {
+  const config = resolveRecipeAgentConfig({
+    CURSOR_API_KEY: "cursor-test",
+    CURSOR_AGENT_REPO_URL: "https://github.com/ycoumesgau/recipe2video.git",
+    CURSOR_AGENT_MODEL: "gpt-5.5",
+    CURSOR_AGENT_MODEL_REASONING: "high",
+  });
+
+  assert.equal(config.model, "gpt-5.5");
+  assert.equal(config.modelReasoning, "high");
+});
+
+test("resolveRecipeAgentConfig accepts legacy model thinking env as reasoning", () => {
   const config = resolveRecipeAgentConfig({
     CURSOR_API_KEY: "cursor-test",
     CURSOR_AGENT_REPO_URL: "https://github.com/ycoumesgau/recipe2video.git",
@@ -49,8 +61,7 @@ test("resolveRecipeAgentConfig carries optional model thinking parameter", () =>
     CURSOR_AGENT_MODEL_THINKING: "high",
   });
 
-  assert.equal(config.model, "gpt-5.5");
-  assert.equal(config.modelThinking, "high");
+  assert.equal(config.modelReasoning, "high");
 });
 
 test("buildRecipeAgentWorkspace scopes artifacts under one recipe folder", () => {
@@ -82,7 +93,7 @@ test("createRecipeAgent creates a cloud Cursor agent without PR automation", asy
       apiKey: "cursor-test",
       runtime: "cloud",
       model: "gpt-5.5",
-      modelThinking: "high",
+      modelReasoning: "high",
       repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
       startingRef: "main",
     },
@@ -99,8 +110,47 @@ test("createRecipeAgent creates a cloud Cursor agent without PR automation", asy
   assert.equal(sdk.createdOptions?.cloud?.skipReviewerRequest, true);
   assert.deepEqual(sdk.createdOptions?.model, {
     id: "gpt-5.5",
-    params: [{ id: "thinking", value: "high" }],
+    params: [
+      { id: "context", value: "272k" },
+      { id: "reasoning", value: "high" },
+      { id: "fast", value: "false" },
+    ],
   });
+  assert.equal(sdk.createdAgent.disposed, true);
+});
+
+test("createRecipeAgentAndSendMessage sends the first message before disposing", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  const createdSessions: unknown[] = [];
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  const result = await service.createRecipeAgentAndSendMessage({
+    videoId: "video-1",
+    title: "Paris-Brest",
+    stage: "recipe_ingest",
+    message: "Analyze recipe.",
+    includeArtifactContents: true,
+    onSessionCreated: async (session) => {
+      createdSessions.push(session);
+    },
+  });
+
+  assert.equal(sdk.createdAgent.sentMessage?.includes("Stage: recipe_ingest"), true);
+  assert.equal(sdk.resumedAgentId, undefined);
+  assert.equal(result.session.agentId, "agent-created");
+  assert.equal(result.result.agentId, "agent-created");
+  assert.equal(result.result.runId, "run-1");
+  assert.equal(result.result.artifacts[0]?.content, "{\"ok\":true}");
+  assert.deepEqual(createdSessions, [result.session]);
   assert.equal(sdk.createdAgent.disposed, true);
 });
 
@@ -112,7 +162,7 @@ test("sendMessage resumes the same agent and returns recipe artifacts", async ()
       apiKey: "cursor-test",
       runtime: "cloud",
       model: "gpt-5.5",
-      modelThinking: "high",
+      modelReasoning: "high",
       repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
       startingRef: "main",
     },
@@ -129,7 +179,11 @@ test("sendMessage resumes the same agent and returns recipe artifacts", async ()
   assert.equal(sdk.resumedAgentId, "bc-existing");
   assert.deepEqual(sdk.resumedOptions?.model, {
     id: "gpt-5.5",
-    params: [{ id: "thinking", value: "high" }],
+    params: [
+      { id: "context", value: "272k" },
+      { id: "reasoning", value: "high" },
+      { id: "fast", value: "false" },
+    ],
   });
   assert.equal(result.runId, "run-1");
   assert.equal(result.status, "finished");
@@ -137,6 +191,50 @@ test("sendMessage resumes the same agent and returns recipe artifacts", async ()
   assert.equal(result.artifacts[0]?.content, "{\"ok\":true}");
   assert.match(sdk.resumedAgent.sentMessage ?? "", /Stage: storyboard_revision/);
   assert.equal(sdk.resumedAgent.disposed, true);
+});
+
+test("sendMessage falls back to conversation file reads when cloud artifacts are empty", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  sdk.resumedAgent.artifacts = [];
+  sdk.resumedAgent.conversationArtifacts = [
+    {
+      path: "/workspace/agent-recipes/video-1/decisions.md",
+      content: "# Decisions\n\n- Diagnostic artifact test.",
+      fileSize: 39,
+    },
+    {
+      path: "/workspace/unrelated.md",
+      content: "Ignore me.",
+      fileSize: 10,
+    },
+  ];
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  const result = await service.sendMessage({
+    agentId: "bc-existing",
+    videoId: "video-1",
+    stage: "general",
+    message: "Write diagnostic files.",
+    includeArtifactContents: true,
+  });
+
+  assert.deepEqual(result.artifacts, [
+    {
+      name: "decisions.md",
+      path: "agent-recipes/video-1/decisions.md",
+      sizeBytes: 39,
+      content: "# Decisions\n\n- Diagnostic artifact test.",
+    },
+  ]);
 });
 
 class FakeCursorSdkAdapter implements CursorAgentSdkAdapter {
@@ -162,12 +260,29 @@ class FakeSdkAgent implements SDKAgent {
   readonly model = { id: "composer-2" };
   disposed = false;
   sentMessage?: string;
+  artifacts = [
+    {
+      path: "agent-recipes/video-1/recipe-analysis.json",
+      sizeBytes: 11,
+      updatedAt: "2026-05-10T00:00:00.000Z",
+    },
+    {
+      path: "elsewhere/ignored.json",
+      sizeBytes: 2,
+      updatedAt: "2026-05-10T00:00:00.000Z",
+    },
+  ];
+  conversationArtifacts: Array<{
+    path: string;
+    content: string;
+    fileSize: number;
+  }> = [];
 
   constructor(readonly agentId: string) {}
 
   async send(message: string): Promise<Run> {
     this.sentMessage = message;
-    return new FakeRun(this.agentId);
+    return new FakeRun(this.agentId, this.conversationArtifacts);
   }
 
   close(): void {}
@@ -175,18 +290,7 @@ class FakeSdkAgent implements SDKAgent {
   async reload(): Promise<void> {}
 
   async listArtifacts() {
-    return [
-      {
-        path: "agent-recipes/video-1/recipe-analysis.json",
-        sizeBytes: 11,
-        updatedAt: "2026-05-10T00:00:00.000Z",
-      },
-      {
-        path: "elsewhere/ignored.json",
-        sizeBytes: 2,
-        updatedAt: "2026-05-10T00:00:00.000Z",
-      },
-    ];
+    return this.artifacts;
   }
 
   async downloadArtifact(path: string): Promise<Buffer> {
@@ -203,10 +307,17 @@ class FakeRun implements Run {
   readonly id = "run-1";
   readonly status = "finished";
 
-  constructor(readonly agentId: string) {}
+  constructor(
+    readonly agentId: string,
+    private readonly conversationArtifacts: Array<{
+      path: string;
+      content: string;
+      fileSize: number;
+    }> = [],
+  ) {}
 
-  supports(): boolean {
-    return false;
+  supports(operation?: string): boolean {
+    return operation === "conversation" && this.conversationArtifacts.length > 0;
   }
 
   unsupportedReason(): string | undefined {
@@ -216,7 +327,29 @@ class FakeRun implements Run {
   async *stream() {}
 
   async conversation() {
-    return [];
+    return [
+      {
+        type: "agentConversationTurn",
+        turn: {
+          steps: this.conversationArtifacts.map((artifact) => ({
+            type: "toolCall",
+            message: {
+              type: "read",
+              args: {
+                path: artifact.path,
+              },
+              result: {
+                status: "success",
+                value: {
+                  content: artifact.content,
+                  fileSize: artifact.fileSize,
+                },
+              },
+            },
+          })),
+        },
+      },
+    ] as unknown as Awaited<ReturnType<Run["conversation"]>>;
   }
 
   async wait(): Promise<RunResult> {

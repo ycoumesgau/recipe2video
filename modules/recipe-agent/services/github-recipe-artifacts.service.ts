@@ -1,0 +1,193 @@
+import { z } from "zod";
+
+import type { RecipeAgentArtifact } from "../recipe-agent.types";
+import {
+  RECIPE_AGENT_ARTIFACT_NAMES,
+  RECIPE_AGENT_CHECKPOINT_MANIFEST,
+} from "../recipe-agent.constants";
+
+const CheckpointManifestSchema = z
+  .object({
+    branch: z.string().min(1),
+    commitSha: z.string().min(7),
+    artifactPaths: z.array(z.string()).optional(),
+    completedAt: z.string().optional(),
+  })
+  .strict();
+
+export type RecipeAgentCheckpointManifest = z.infer<typeof CheckpointManifestSchema>;
+
+export function parseGithubRepoFromUrl(
+  repoUrl: string,
+): { owner: string; repo: string } | null {
+  const normalized = repoUrl.trim();
+  const sshMatch = normalized.match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?$/i);
+  const httpsMatch = normalized.match(
+    /github\.com\/([^/]+)\/([^/?#]+)(?:\.git)?(?:\?|#|$)/i,
+  );
+  const match = sshMatch ?? httpsMatch;
+
+  if (!match) {
+    return null;
+  }
+
+  const repo = match[2].replace(/\.git$/i, "");
+
+  return { owner: match[1], repo };
+}
+
+interface GithubContentFileResponse {
+  type: string;
+  encoding?: string;
+  content?: string;
+  sha?: string;
+}
+
+export async function fetchGithubRepositoryFileText(input: {
+  owner: string;
+  repo: string;
+  path: string;
+  ref: string;
+  token: string;
+}): Promise<string | null> {
+  const slug = `${input.owner}/${input.repo}`;
+  const encodedPath = input.path
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  const url = `https://api.github.com/repos/${slug}/contents/${encodedPath}?ref=${encodeURIComponent(
+    input.ref,
+  )}`;
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${input.token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "recipe2video-agent-sync",
+    },
+    next: { revalidate: 0 },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `GitHub contents request failed (${response.status}): ${body.slice(0, 500)}`,
+    );
+  }
+
+  const json = (await response.json()) as GithubContentFileResponse;
+
+  if (json.type !== "file" || json.encoding !== "base64" || !json.content) {
+    return null;
+  }
+
+  return Buffer.from(json.content, "base64").toString("utf8");
+}
+
+export async function fetchCheckpointManifestFromGithub(input: {
+  owner: string;
+  repo: string;
+  workspacePath: string;
+  ref: string;
+  token: string;
+}): Promise<RecipeAgentCheckpointManifest | null> {
+  const path = `${input.workspacePath}/${RECIPE_AGENT_CHECKPOINT_MANIFEST}`;
+  const raw = await fetchGithubRepositoryFileText({
+    owner: input.owner,
+    repo: input.repo,
+    path,
+    ref: input.ref,
+    token: input.token,
+  });
+
+  if (!raw) {
+    return null;
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  const result = CheckpointManifestSchema.safeParse(parsed);
+
+  return result.success ? result.data : null;
+}
+
+export async function supplementRecipeAgentArtifactsFromGithub(input: {
+  workspacePath: string;
+  artifacts: RecipeAgentArtifact[];
+  artifactPaths?: string[];
+  preferGithub?: boolean;
+  owner: string;
+  repo: string;
+  ref: string;
+  token: string;
+}): Promise<RecipeAgentArtifact[]> {
+  const byName = new Map<string, RecipeAgentArtifact>();
+  const pathsByName = new Map<string, string>();
+
+  for (const artifact of input.artifacts) {
+    byName.set(String(artifact.name), { ...artifact });
+  }
+
+  for (const name of RECIPE_AGENT_ARTIFACT_NAMES) {
+    pathsByName.set(name, `${input.workspacePath}/${name}`);
+  }
+
+  for (const artifactPath of input.artifactPaths ?? []) {
+    const normalizedPath = artifactPath.replace(/\\/g, "/");
+
+    if (!normalizedPath.startsWith(`${input.workspacePath}/`)) {
+      continue;
+    }
+
+    const name = normalizedPath.split("/").at(-1);
+
+    if (name) {
+      pathsByName.set(name, normalizedPath);
+    }
+  }
+
+  for (const [name, path] of pathsByName) {
+    const current = byName.get(name);
+    const needsFill =
+      input.preferGithub === true ||
+      !current ||
+      current.content === undefined ||
+      current.content.trim() === "";
+
+    if (!needsFill) {
+      continue;
+    }
+
+    const text = await fetchGithubRepositoryFileText({
+      owner: input.owner,
+      repo: input.repo,
+      path,
+      ref: input.ref,
+      token: input.token,
+    });
+
+    if (!text) {
+      continue;
+    }
+
+    byName.set(name, {
+      name,
+      path,
+      content: text,
+      sizeBytes: Buffer.byteLength(text, "utf8"),
+    });
+  }
+
+  return [...byName.values()];
+}
