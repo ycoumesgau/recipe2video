@@ -72,6 +72,51 @@ export async function insertReferenceAsset(
   return mapReferenceAsset(data);
 }
 
+export async function replaceAgentReferenceAssetsForVideo(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  references: CreateReferenceAssetInput[],
+): Promise<ReferenceAsset[]> {
+  const { error: deleteError } = await supabase
+    .from("reference_assets")
+    .delete()
+    .eq("video_id", videoId)
+    .eq("source", "agent_reference_plan");
+
+  throwIfSupabaseError(
+    deleteError,
+    "replaceAgentReferenceAssetsForVideo delete failed",
+  );
+
+  if (references.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("reference_assets")
+    .insert(
+      references.map((reference) => ({
+        id: reference.id,
+        video_id: videoId,
+        media_asset_id: reference.mediaAssetId ?? null,
+        type: reference.type,
+        canonical_name: reference.canonicalName,
+        source: "agent_reference_plan",
+        runway_uri: reference.runwayUri ?? null,
+        prompt: reference.prompt ?? null,
+        status: reference.status ?? "planned",
+      })),
+    )
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  throwIfSupabaseError(
+    error,
+    "replaceAgentReferenceAssetsForVideo insert failed",
+  );
+  return data.map(mapReferenceAsset);
+}
+
 export async function updateReferenceAssetStatus(
   supabase: SupabaseDataClient,
   input: {

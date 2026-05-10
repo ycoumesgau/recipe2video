@@ -3,6 +3,11 @@ import {
   ingestRecipeWorkflow,
   logCostWorkflow,
 } from "./planning-stubs";
+import {
+  createRecipeAgentWorkflow,
+  sendRecipeAgentMessageWorkflow,
+  syncRecipeAgentArtifactsWorkflow,
+} from "./recipe-agent";
 import { generateReferencesWorkflow } from "./references-generation";
 import {
   applySegmentFeedbackRegeneration,
@@ -22,4 +27,7 @@ export const functions = [
   persistSegmentOutput,
   uploadSegmentMux,
   logCostWorkflow,
+  createRecipeAgentWorkflow,
+  sendRecipeAgentMessageWorkflow,
+  syncRecipeAgentArtifactsWorkflow,
 ];
