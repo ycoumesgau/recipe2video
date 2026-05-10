@@ -950,6 +950,11 @@ Default models:
 * TTS: `eleven_multilingual_v2`
 * SFX: `eleven_text_to_sound_v2`
 
+Default Seedance output:
+
+* Ratio: `1080:1920` for 9:16 vertical 1080p output. The Runway Seedance guide lists 720p ratios plus “1080p equivalents”; `1080:1920` is the 1080p equivalent of `720:1280`.
+* Cost estimate: 40 credits per second for Seedance 2 1080p generation. Treat this as the product-side estimate used before launch and in dashboards.
+
 Rules:
 
 * No silent fallback.

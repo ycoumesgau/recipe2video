@@ -392,7 +392,8 @@ function SegmentReadinessCard({
       <CardHeader>
         <CardTitle>Segment readiness</CardTitle>
         <CardDescription>
-          Detects missing approved references and missing Runway upload URIs.
+          Checks Seedance reference inputs before generation. The count maps to
+          `promptImage + references[]` and must stay within the 9 image limit.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -419,14 +420,15 @@ function SegmentReadinessCard({
                   : "All segments have reference coverage"}
               </AlertTitle>
               <AlertDescription>
-                The Runway limit remains 9 references per Seedance segment.
+                Seedance References mode uses the first uploaded image as
+                `promptImage` and the remaining images as `references[]`.
               </AlertDescription>
             </Alert>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Segment</TableHead>
-                  <TableHead>Refs</TableHead>
+                  <TableHead>Seedance inputs</TableHead>
                   <TableHead>Missing</TableHead>
                 </TableRow>
               </TableHeader>

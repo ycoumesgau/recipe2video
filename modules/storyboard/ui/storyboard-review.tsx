@@ -20,6 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VIDEO_STATUS_LABELS } from "@/modules/videos/video-status";
 import type { VideoProject } from "@/modules/videos/video.types";
+import { RUNWAY_SEEDANCE2_CREDITS_PER_SECOND } from "@/modules/generation/runway.constants";
 
 import type { LogicalScene, SeedanceSegment } from "../storyboard.types";
 import { StoryboardActions } from "./storyboard-actions";
@@ -370,7 +371,7 @@ function QaBadge({ checked, label }: { checked: boolean; label: string }) {
 }
 
 function estimateSeedanceCredits(durationSeconds: number) {
-  return Math.ceil(durationSeconds * 36);
+  return Math.ceil(durationSeconds * RUNWAY_SEEDANCE2_CREDITS_PER_SECOND);
 }
 
 function formatSeconds(seconds: number) {

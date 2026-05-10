@@ -1,7 +1,7 @@
 export const OPENAI_REASONING_MODEL = "GPT-5.5 High";
 
 export const DEFAULT_SEEDANCE_VIDEO_MODEL = "seedance2";
-export const DEFAULT_VERTICAL_RATIO = "720:1280";
+export const DEFAULT_VERTICAL_RATIO = "1080:1920";
 export const MAX_SEEDANCE_REFERENCES = 9;
 export const MAX_SEEDANCE_PROMPT_CHARACTERS = 3500;
 export const MIN_LOGICAL_SCENES = 30;

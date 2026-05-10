@@ -9,15 +9,17 @@ import {
 } from "@/modules/media-assets/repositories/media-asset.repository";
 import { listSegmentsByVideoId } from "@/modules/storyboard/repositories/segment.repository";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
-import { RUNWAY_MAX_SEEDANCE_REFERENCES } from "@/modules/generation/runway.constants";
 
 import type {
   ReferenceAsset,
   ReferenceAssetReviewItem,
   ReferenceReviewData,
-  SegmentReferenceReadiness,
 } from "../reference.types";
 import { listReferenceAssetsForVideo } from "../repositories/reference.repository";
+import {
+  buildSegmentReadiness,
+  doesSegmentReferenceMatch,
+} from "./reference-readiness";
 
 export async function getReferenceReviewData(
   supabase: SupabaseDataClient,
@@ -83,35 +85,6 @@ function isMissingReference(item: ReferenceAssetReviewItem): boolean {
   return false;
 }
 
-function buildSegmentReadiness(
-  references: ReferenceAsset[],
-  segments: SeedanceSegment[],
-): SegmentReferenceReadiness[] {
-  return segments.map((segment) => {
-    const requiredReferences = segment.references.filter(
-      (reference) => reference.required !== false,
-    );
-    const matchedReferences = requiredReferences.map((segmentReference) => ({
-      segmentReference,
-      asset: findMatchingReferenceAsset(references, segmentReference),
-    }));
-
-    return {
-      segmentId: segment.id,
-      segmentTitle: segment.title,
-      referenceCount: segment.references.length,
-      exceedsReferenceLimit:
-        segment.references.length > RUNWAY_MAX_SEEDANCE_REFERENCES,
-      missingApprovedReferences: matchedReferences
-        .filter(({ asset }) => !isApprovedReference(asset))
-        .map(({ segmentReference }) => segmentReference.label || segmentReference.name),
-      missingRunwayUploads: matchedReferences
-        .filter(({ asset }) => isApprovedReference(asset) && !asset?.runwayUri)
-        .map(({ segmentReference }) => segmentReference.label || segmentReference.name),
-    };
-  });
-}
-
 function getUsedInSegments(
   reference: ReferenceAsset,
   segments: SeedanceSegment[],
@@ -123,44 +96,6 @@ function getUsedInSegments(
       ),
     )
     .map((segment) => segment.title);
-}
-
-function findMatchingReferenceAsset(
-  references: ReferenceAsset[],
-  segmentReference: SeedanceSegment["references"][number],
-) {
-  return references.find((reference) =>
-    doesSegmentReferenceMatch(reference, segmentReference),
-  );
-}
-
-function doesSegmentReferenceMatch(
-  reference: ReferenceAsset,
-  segmentReference: SeedanceSegment["references"][number],
-) {
-  if (segmentReference.id && segmentReference.id === reference.id) {
-    return true;
-  }
-
-  const referenceKeys = [
-    reference.canonicalName,
-    reference.type,
-    reference.id,
-  ].map(normalizeReferenceKey);
-  const segmentKeys = [
-    segmentReference.name,
-    segmentReference.label,
-    segmentReference.role,
-  ].map(normalizeReferenceKey);
-
-  return segmentKeys.some((key) => key.length > 0 && referenceKeys.includes(key));
-}
-
-function isApprovedReference(reference: ReferenceAsset | undefined) {
-  return (
-    reference?.status === "approved" ||
-    reference?.status === "uploaded_to_runway"
-  );
 }
 
 async function createPreviewUrl(
@@ -176,12 +111,4 @@ async function createPreviewUrl(
     path: mediaAsset.storagePath,
     expiresInSeconds: 60 * 15,
   });
-}
-
-function normalizeReferenceKey(value: string | null | undefined) {
-  return (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
