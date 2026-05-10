@@ -119,6 +119,7 @@ export interface RecipeAgentRunResult {
 
 export interface RecipeAgentRunStreamMeta {
   needsUserInput: boolean;
+  assistantText?: string;
 }
 
 export interface CursorAgentSdkAdapter {
@@ -127,6 +128,57 @@ export interface CursorAgentSdkAdapter {
 }
 
 export type CursorSdkArtifact = SDKArtifact;
+
+export type RecipeAgentChatRole = "user" | "assistant" | "system";
+
+export type RecipeAgentChatMessageStatus =
+  | "streaming"
+  | "complete"
+  | "error"
+  | "cancelled";
+
+export type RecipeAgentStepType =
+  | "thinking"
+  | "tool_call"
+  | "status"
+  | "request"
+  | "unknown";
+
+export type RecipeAgentStepState = "pending" | "running" | "done" | "error";
+
+export interface RecipeAgentThread {
+  id: string;
+  videoId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecipeAgentChatMessage {
+  id: string;
+  threadId: string;
+  agentRunId: string | null;
+  role: RecipeAgentChatRole;
+  content: string;
+  status: RecipeAgentChatMessageStatus;
+  summary: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RecipeAgentStep {
+  id: string;
+  agentRunId: string;
+  seq: number;
+  stepType: RecipeAgentStepType;
+  state: RecipeAgentStepState;
+  label: string | null;
+  detail: string | null;
+  payload: Record<string, unknown>;
+  sourceEventSeq: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface AgentRun {
   id: string;
@@ -146,6 +198,8 @@ export interface AgentRun {
   agentGitBranch?: string | null;
   agentGitCommitSha?: string | null;
   needsUserInput: boolean;
+  userChatMessageId?: string | null;
+  assistantChatMessageId?: string | null;
 }
 
 export interface CreateAgentRunInput {
@@ -163,6 +217,8 @@ export interface CreateAgentRunInput {
   agentGitBranch?: string | null;
   agentGitCommitSha?: string | null;
   needsUserInput?: boolean;
+  userChatMessageId?: string | null;
+  assistantChatMessageId?: string | null;
 }
 
 export interface UpdateAgentRunInput {
@@ -174,6 +230,8 @@ export interface UpdateAgentRunInput {
   agentGitBranch?: string | null;
   agentGitCommitSha?: string | null;
   needsUserInput?: boolean;
+  userChatMessageId?: string | null;
+  assistantChatMessageId?: string | null;
 }
 
 export interface AgentArtifact {

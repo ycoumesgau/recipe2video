@@ -431,7 +431,7 @@ async function sendMessageWithAgent(input: {
     agentId: input.agentId,
     runId: result.id,
     status: result.status,
-    result: result.result,
+    result: result.result ?? streamMeta.assistantText,
     durationMs: result.durationMs,
     workspacePath: input.workspacePath,
     artifacts,
@@ -449,6 +449,7 @@ async function consumeAgentRunStream(
 
   let seq = 0;
   let needsUserInput = false;
+  let assistantText = "";
 
   for await (const event of run.stream()) {
     seq += 1;
@@ -458,10 +459,20 @@ async function consumeAgentRunStream(
       needsUserInput = true;
     }
 
+    if (
+      summarized.eventType === "assistant" &&
+      typeof summarized.payload.textPreview === "string"
+    ) {
+      assistantText += summarized.payload.textPreview;
+    }
+
     await onStreamEvent?.(summarized);
   }
 
-  return { needsUserInput };
+  return {
+    needsUserInput,
+    assistantText: assistantText.length > 0 ? assistantText : undefined,
+  };
 }
 
 function buildAgentName(input: CreateRecipeAgentInput) {

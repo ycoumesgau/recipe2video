@@ -18,6 +18,11 @@ import { CostDashboard } from "@/modules/costs/ui/cost-dashboard";
 import type { CostDashboardData } from "@/modules/costs/cost.types";
 import { countActiveGenerationsForSegments } from "@/modules/generation/repositories/generation.repository";
 import {
+  getRecipeAgentThreadByVideoId,
+  listRecipeAgentMessagesByThreadId,
+  listRecipeAgentStepsByRunId,
+} from "@/modules/recipe-agent/repositories/recipe-agent-chat.repository";
+import {
   listAgentArtifactsByVideoId,
   listAgentRunEventsByAgentRunId,
   listAgentRunsByVideoId,
@@ -46,6 +51,8 @@ export default async function VideoDetailPage({
     agentRuns,
     agentArtifacts,
     latestRunTimelineEvents,
+    chatMessages,
+    latestRunSteps,
   } = await loadProject(videoId);
 
   const acceptedSegments = seedanceSegments.filter(
@@ -125,6 +132,8 @@ export default async function VideoDetailPage({
 
                 <RecipeAgentPanel
                   artifacts={agentArtifacts}
+                  chatMessages={chatMessages}
+                  latestRunSteps={latestRunSteps}
                   latestRunTimelineEvents={latestRunTimelineEvents}
                   project={project}
                   runs={agentRuns}
@@ -330,18 +339,27 @@ async function loadProject(videoId: string) {
       supabase,
       seedanceSegments.map((segment) => segment.id),
     );
-    const [agentRuns, agentArtifacts, latestRunTimelineEvents] = project
-      ? await (async () => {
-          const runs = await listAgentRunsByVideoId(supabase, videoId);
-          const artifacts = await listAgentArtifactsByVideoId(supabase, videoId);
-          const latestRunId = runs[0]?.id;
-          const timeline =
-            latestRunId !== undefined
-              ? await listAgentRunEventsByAgentRunId(supabase, latestRunId)
+    const [agentRuns, agentArtifacts, latestRunTimelineEvents, chatMessages, latestRunSteps] =
+      project
+        ? await (async () => {
+            const runs = await listAgentRunsByVideoId(supabase, videoId);
+            const artifacts = await listAgentArtifactsByVideoId(supabase, videoId);
+            const latestRunId = runs[0]?.id;
+            const timeline =
+              latestRunId !== undefined
+                ? await listAgentRunEventsByAgentRunId(supabase, latestRunId)
+                : [];
+            const thread = await getRecipeAgentThreadByVideoId(supabase, videoId);
+            const messages = thread
+              ? await listRecipeAgentMessagesByThreadId(supabase, thread.id)
               : [];
-          return [runs, artifacts, timeline] as const;
-        })()
-      : [[], [], []];
+            const steps =
+              latestRunId !== undefined
+                ? await listRecipeAgentStepsByRunId(supabase, latestRunId)
+                : [];
+            return [runs, artifacts, timeline, messages, steps] as const;
+          })()
+        : [[], [], [], [], []];
 
     return {
       project,
@@ -354,6 +372,8 @@ async function loadProject(videoId: string) {
       agentRuns,
       agentArtifacts,
       latestRunTimelineEvents,
+      chatMessages,
+      latestRunSteps,
     };
   } catch (error) {
     return {
@@ -373,6 +393,8 @@ async function loadProject(videoId: string) {
       agentRuns: [],
       agentArtifacts: [],
       latestRunTimelineEvents: [],
+      chatMessages: [],
+      latestRunSteps: [],
     };
   }
 }

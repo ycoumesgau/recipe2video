@@ -12,8 +12,10 @@ const CheckpointManifestSchema = z
     commitSha: z.string().min(7),
     artifactPaths: z.array(z.string()).optional(),
     completedAt: z.string().optional(),
+    manifestPath: z.string().optional(),
+    workspace: z.string().optional(),
   })
-  .strict();
+  .passthrough();
 
 export type RecipeAgentCheckpointManifest = z.infer<typeof CheckpointManifestSchema>;
 
@@ -41,6 +43,12 @@ interface GithubContentFileResponse {
   encoding?: string;
   content?: string;
   sha?: string;
+}
+
+interface GithubRefResponse {
+  object?: {
+    sha?: string;
+  };
 }
 
 export async function fetchGithubRepositoryFileText(input: {
@@ -87,6 +95,45 @@ export async function fetchGithubRepositoryFileText(input: {
   }
 
   return Buffer.from(json.content, "base64").toString("utf8");
+}
+
+export async function fetchGithubBranchHeadSha(input: {
+  owner: string;
+  repo: string;
+  branch: string;
+  token: string;
+}): Promise<string | null> {
+  const slug = `${input.owner}/${input.repo}`;
+  const encodedBranch = input.branch
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  const url = `https://api.github.com/repos/${slug}/git/ref/heads/${encodedBranch}`;
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${input.token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "recipe2video-agent-sync",
+    },
+    next: { revalidate: 0 },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `GitHub ref request failed (${response.status}): ${body.slice(0, 500)}`,
+    );
+  }
+
+  const json = (await response.json()) as GithubRefResponse;
+
+  return json.object?.sha ?? null;
 }
 
 export async function fetchCheckpointManifestFromGithub(input: {

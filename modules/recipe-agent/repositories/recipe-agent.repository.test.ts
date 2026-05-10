@@ -34,6 +34,8 @@ test("mapAgentRun maps database rows to domain shape", () => {
       agent_git_branch: null,
       agent_git_commit_sha: null,
       needs_user_input: false,
+      user_chat_message_id: null,
+      assistant_chat_message_id: null,
     }),
     {
       id: "run-row-1",
@@ -53,6 +55,8 @@ test("mapAgentRun maps database rows to domain shape", () => {
       agentGitBranch: null,
       agentGitCommitSha: null,
       needsUserInput: false,
+      userChatMessageId: null,
+      assistantChatMessageId: null,
     },
   );
 });

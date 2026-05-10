@@ -42,11 +42,13 @@ import type {
   AgentArtifact,
   AgentRun,
   AgentRunTimelineEvent,
+  RecipeAgentChatMessage,
   RecipeAgentStage,
   RecipeAgentStatus,
+  RecipeAgentStep,
 } from "../recipe-agent.types";
 
-import { AgentRunTimeline } from "./agent-run-timeline";
+import { RecipeAgentChat } from "./recipe-agent-chat";
 
 const initialState: RecipeAgentActionState = {};
 
@@ -77,11 +79,15 @@ export function RecipeAgentPanel({
   project,
   runs,
   latestRunTimelineEvents,
+  chatMessages,
+  latestRunSteps,
 }: {
   artifacts: AgentArtifact[];
   project: VideoProject;
   runs: AgentRun[];
   latestRunTimelineEvents: AgentRunTimelineEvent[];
+  chatMessages: RecipeAgentChatMessage[];
+  latestRunSteps: RecipeAgentStep[];
 }) {
   const [messageState, messageAction] = useActionState(
     submitRecipeAgentMessageAction,
@@ -141,10 +147,12 @@ export function RecipeAgentPanel({
           />
         </div>
 
-        <AgentRunTimeline
+        <RecipeAgentChat
           agentStatus={project.agentStatus}
-          initialEvents={latestRunTimelineEvents}
+          initialMessages={chatMessages}
+          initialSteps={latestRunSteps}
           latestRunId={latestRun?.id ?? null}
+          rawTimelineEvents={latestRunTimelineEvents}
           videoId={project.id}
         />
 

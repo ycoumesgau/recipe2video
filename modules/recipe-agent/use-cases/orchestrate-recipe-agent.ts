@@ -11,6 +11,9 @@ import {
   updateAgentRun,
   updateVideoAgentSession,
 } from "../repositories/recipe-agent.repository";
+import { applyRecipeAgentStreamToChat } from "../services/recipe-agent-chat-ingest";
+import { finalizeRecipeAgentChatTurn } from "./finalize-recipe-agent-chat-turn";
+import { seedRecipeAgentChatTurn } from "./seed-recipe-agent-chat-turn";
 import type {
   AgentRun,
   CreateAgentRunInput,
@@ -26,6 +29,7 @@ import { extractAssistantCheckpoint } from "../services/checkpoint-parse";
 import type { CursorRecipeAgentService } from "../services/cursor-agent.service";
 import { createCursorRecipeAgentService } from "../services/cursor-agent.service";
 import {
+  fetchGithubBranchHeadSha,
   fetchCheckpointManifestFromGithub,
   parseGithubRepoFromUrl,
   supplementRecipeAgentArtifactsFromGithub,
@@ -68,6 +72,7 @@ export interface RecipeAgentOrchestrationDependencies {
     seq: number;
     eventType: string;
     payload: Record<string, unknown>;
+    assistantMessageId?: string;
   }) => Promise<void>;
 }
 
@@ -120,6 +125,25 @@ export async function sendRecipeAgentMessage(
   const currentProject = project;
   let run: AgentRun | undefined;
   let session: RecipeAgentSession | undefined;
+  let chatAssistantMessageId: string | undefined;
+
+  async function attachChatTurnToRun(current: AgentRun): Promise<AgentRun> {
+    if (!input.supabase) {
+      return current;
+    }
+
+    const ids = await seedRecipeAgentChatTurn(input.supabase, {
+      videoId: input.videoId,
+      agentRunId: current.id,
+      userMessage: input.message,
+      stage: input.stage,
+    });
+    chatAssistantMessageId = ids.assistantMessageId;
+    return deps.updateAgentRun(current.id, {
+      userChatMessageId: ids.userMessageId,
+      assistantChatMessageId: ids.assistantMessageId,
+    });
+  }
 
   const handleStreamEvent: RecipeAgentStreamEventHandler = async (event) => {
     const runId = run?.id;
@@ -133,6 +157,7 @@ export async function sendRecipeAgentMessage(
       seq: event.seq,
       eventType: event.eventType,
       payload: event.payload,
+      assistantMessageId: chatAssistantMessageId,
     });
   };
 
@@ -182,6 +207,21 @@ export async function sendRecipeAgentMessage(
           : "validation_failed",
     });
 
+    if (input.supabase && chatAssistantMessageId) {
+      await finalizeRecipeAgentChatTurn(input.supabase, {
+        run: updatedRun,
+        assistantMessageId: chatAssistantMessageId,
+        runStatus,
+        resultSummary: result.result ?? updatedRun.resultSummary,
+        error:
+          runStatus === "error"
+            ? (updatedRun.error ??
+                result.result ??
+                "Cursor agent run failed.")
+            : null,
+      });
+    }
+
     return {
       session,
       run: updatedRun,
@@ -199,6 +239,15 @@ export async function sendRecipeAgentMessage(
         })
       : undefined;
 
+    if (input.supabase && chatAssistantMessageId && updatedRun) {
+      await finalizeRecipeAgentChatTurn(input.supabase, {
+        run: updatedRun,
+        assistantMessageId: chatAssistantMessageId,
+        runStatus: "error",
+        error: message,
+      });
+    }
+
     await deps.updateVideoAgentSession(input.videoId, {
       agentStatus: "failed",
     });
@@ -214,6 +263,7 @@ export async function sendRecipeAgentMessage(
     if (existingSession) {
       session = existingSession;
       run = await createRunningAgentRun(existingSession);
+      run = await attachChatTurnToRun(run);
 
       await deps.updateVideoAgentSession(input.videoId, {
         agentStatus: "running",
@@ -234,11 +284,20 @@ export async function sendRecipeAgentMessage(
           throw error;
         }
 
-        await deps.updateAgentRun(run.id, {
+        const failedRun = await deps.updateAgentRun(run.id, {
           status: "error",
           error: error instanceof Error ? error.message : "Cursor agent not found.",
           completedAt: new Date().toISOString(),
         });
+
+        if (input.supabase && chatAssistantMessageId) {
+          await finalizeRecipeAgentChatTurn(input.supabase, {
+            run: failedRun,
+            assistantMessageId: chatAssistantMessageId,
+            runStatus: "error",
+            error: failedRun.error ?? "Cursor agent not found.",
+          });
+        }
 
         await deps.updateVideoAgentSession(input.videoId, {
           cursorAgentId: null,
@@ -269,6 +328,7 @@ export async function sendRecipeAgentMessage(
         });
 
         run = await createRunningAgentRun(createdSession);
+        run = await attachChatTurnToRun(run);
       },
       onStreamEvent: handleStreamEvent,
     });
@@ -332,49 +392,137 @@ async function enrichArtifactsWithGithub(input: {
   }
 
   const workspacePath = input.result.workspacePath;
-  const ref = gitSha ?? gitBranch;
+  const candidateRefs = await buildGithubArtifactRefs({
+    gitBranch,
+    gitSha,
+    owner: repo.owner,
+    repo: repo.repo,
+    token,
+  });
 
-  if (!ref) {
+  if (candidateRefs.length === 0) {
     return { artifacts, gitBranch, gitSha };
   }
 
-  try {
-    const manifest = await fetchCheckpointManifestFromGithub({
-      owner: repo.owner,
-      repo: repo.repo,
-      workspacePath,
-      ref,
-      token,
-    });
+  for (const candidate of candidateRefs) {
+    try {
+      const manifest = await fetchCheckpointManifestFromGithub({
+        owner: repo.owner,
+        repo: repo.repo,
+        workspacePath,
+        ref: candidate.ref,
+        token,
+      });
 
-    const supplementRef = manifest?.commitSha ?? ref;
+      if (!manifest) {
+        throw new Error(`Checkpoint manifest not found at ref ${candidate.ref}`);
+      }
 
-    artifacts = await supplementRecipeAgentArtifactsFromGithub({
-      workspacePath,
-      artifacts,
-      artifactPaths: manifest?.artifactPaths,
-      preferGithub: true,
-      owner: repo.owner,
-      repo: repo.repo,
-      ref: supplementRef,
-      token,
-    });
+      const supplementRef = candidate.preferRefOverManifestSha
+        ? candidate.ref
+        : manifest?.commitSha ?? candidate.ref;
 
-    if (manifest?.branch) {
-      gitBranch = manifest.branch;
+      artifacts = await supplementRecipeAgentArtifactsFromGithub({
+        workspacePath,
+        artifacts,
+        artifactPaths: manifest?.artifactPaths,
+        preferGithub: true,
+        owner: repo.owner,
+        repo: repo.repo,
+        ref: supplementRef,
+        token,
+      });
+
+      if (manifest?.branch) {
+        gitBranch = manifest.branch;
+      }
+
+      if (manifest?.commitSha) {
+        gitSha = manifest.commitSha;
+      }
+
+      if (candidate.persistedSha) {
+        gitSha = candidate.persistedSha;
+      }
+
+      return { artifacts, gitBranch, gitSha };
+    } catch (error) {
+      console.warn(
+        "[recipe-agent] GitHub artifact sync failed for ref; trying next fallback:",
+        candidate.ref,
+        error instanceof Error ? error.message : error,
+      );
     }
-
-    if (manifest?.commitSha) {
-      gitSha = manifest.commitSha;
-    }
-  } catch (error) {
-    console.warn(
-      "[recipe-agent] GitHub artifact sync failed; falling back to Cursor SDK artifacts:",
-      error instanceof Error ? error.message : error,
-    );
   }
 
+  console.warn(
+    "[recipe-agent] GitHub artifact sync failed for all refs; falling back to Cursor SDK artifacts.",
+  );
+
   return { artifacts, gitBranch, gitSha };
+}
+
+async function buildGithubArtifactRefs(input: {
+  gitBranch: string | null;
+  gitSha: string | null;
+  owner: string;
+  repo: string;
+  token: string;
+}) {
+  const refs: Array<{
+    ref: string;
+    persistedSha?: string;
+    preferRefOverManifestSha?: boolean;
+  }> = [];
+  const seen = new Set<string>();
+  const add = (entry: {
+    ref: string | null | undefined;
+    persistedSha?: string;
+    preferRefOverManifestSha?: boolean;
+  }) => {
+    if (!entry.ref || seen.has(entry.ref)) {
+      return;
+    }
+
+    seen.add(entry.ref);
+    refs.push({
+      ref: entry.ref,
+      persistedSha: entry.persistedSha,
+      preferRefOverManifestSha: entry.preferRefOverManifestSha,
+    });
+  };
+
+  add({
+    ref: input.gitSha,
+    persistedSha: input.gitSha ?? undefined,
+    preferRefOverManifestSha: true,
+  });
+
+  if (input.gitBranch) {
+    try {
+      const branchHeadSha = await fetchGithubBranchHeadSha({
+        owner: input.owner,
+        repo: input.repo,
+        branch: input.gitBranch,
+        token: input.token,
+      });
+
+      add({
+        ref: branchHeadSha,
+        persistedSha: branchHeadSha ?? undefined,
+        preferRefOverManifestSha: true,
+      });
+    } catch (error) {
+      console.warn(
+        "[recipe-agent] Unable to resolve GitHub branch HEAD; trying branch ref:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+
+    add({ ref: input.gitBranch });
+  }
+
+  return refs;
 }
 
 function getExistingRecipeAgentSession(
@@ -429,14 +577,30 @@ function createDefaultDependencies(
       syncRecipeAgentArtifacts(syncSupabase ?? supabase, syncInput),
     persistAgentRunStreamEvent: async (event) => {
       try {
-        await insertAgentRunEvent(supabase, event);
+        await insertAgentRunEvent(supabase, {
+          agentRunId: event.agentRunId,
+          seq: event.seq,
+          eventType: event.eventType,
+          payload: event.payload,
+        });
+        if (event.assistantMessageId) {
+          await applyRecipeAgentStreamToChat(supabase, {
+            agentRunId: event.agentRunId,
+            assistantMessageId: event.assistantMessageId,
+            event: {
+              seq: event.seq,
+              eventType: event.eventType,
+              payload: event.payload,
+            },
+          });
+        }
       } catch (err) {
         if (process.env.NODE_ENV !== "development") {
           throw err;
         }
 
         console.warn(
-          "[recipe-agent] Skipping agent_run_events row in development (table missing or RLS):",
+          "[recipe-agent] Skipping agent_run_events / chat ingest in development (table missing or RLS):",
           err instanceof Error ? err.message : err,
         );
       }

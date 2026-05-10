@@ -322,6 +322,74 @@ test("sendRecipeAgentMessage falls back to SDK artifacts when GitHub sync fails"
   assert.equal(deps.updatedRuns.at(-1)?.patch.agentGitCommitSha, "abc1234567");
 });
 
+test("sendRecipeAgentMessage recovers artifacts from the branch head when manifest SHA is stale", async () => {
+  const restore = installRecipeAgentEnv();
+  const originalFetch = globalThis.fetch;
+  const branchHeadSha = "def7654321";
+  const staleSha = "abc1234567";
+  const deps = createDeps({
+    project: {
+      ...baseProject,
+      cursorAgentId: "bc-existing",
+      cursorAgentRuntime: "cloud",
+      agentWorkspacePath: "agent-recipes/video-1",
+    },
+    agentArtifacts: [],
+    resultText:
+      'Done\n```json\n{"recipe2videoCheckpoint":{"branch":"cursor/checkpoint-test","commitSha":"abc1234567","workspace":"agent-recipes/video-1","status":"completed"}}\n```',
+  });
+
+  globalThis.fetch = (async (url) => {
+    const href = String(url);
+
+    if (href.includes("/git/ref/heads/cursor/checkpoint-test")) {
+      return Response.json({ object: { sha: branchHeadSha } });
+    }
+
+    if (href.includes("checkpoint-manifest.json") && href.includes(staleSha)) {
+      return new Response(null, { status: 404 });
+    }
+
+    if (href.includes("checkpoint-manifest.json") && href.includes(branchHeadSha)) {
+      return jsonFileResponse({
+        workspace: "agent-recipes/video-1",
+        branch: "cursor/checkpoint-test",
+        commitSha: staleSha,
+        manifestPath: "agent-recipes/video-1/checkpoint-manifest.json",
+        artifactPaths: ["agent-recipes/video-1/decisions.md"],
+      });
+    }
+
+    if (href.includes("decisions.md") && href.includes(branchHeadSha)) {
+      return textFileResponse("# Decisions\n\n- GitHub branch head version.");
+    }
+
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+
+  try {
+    await sendRecipeAgentMessage(
+      {
+        videoId: "video-1",
+        requestedByUserId: "user-1",
+        stage: "general",
+        message: "Write checkpoint.",
+      },
+      deps,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+
+  const synced = deps.syncedArtifactBatches[0] as Array<{ name: string; content?: string }>;
+  const decisions = synced.find((artifact) => artifact.name === "decisions.md");
+
+  assert.equal(decisions?.content, "# Decisions\n\n- GitHub branch head version.");
+  assert.equal(deps.updatedRuns.at(-1)?.patch.agentGitCommitSha, branchHeadSha);
+  assert.equal(deps.sessionUpdates.at(-1)?.agentGitBranch, "cursor/checkpoint-test");
+});
+
 const baseProject: VideoProject = {
   id: "video-1",
   title: "Paris-Brest",

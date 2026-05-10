@@ -70,6 +70,8 @@ export async function createAgentRun(
       agent_git_branch: input.agentGitBranch ?? undefined,
       agent_git_commit_sha: input.agentGitCommitSha ?? undefined,
       needs_user_input: input.needsUserInput ?? undefined,
+      user_chat_message_id: input.userChatMessageId ?? undefined,
+      assistant_chat_message_id: input.assistantChatMessageId ?? undefined,
     }))
     .select("*")
     .single();
@@ -94,6 +96,8 @@ export async function updateAgentRun(
       agent_git_branch: input.agentGitBranch,
       agent_git_commit_sha: input.agentGitCommitSha,
       needs_user_input: input.needsUserInput,
+      user_chat_message_id: input.userChatMessageId,
+      assistant_chat_message_id: input.assistantChatMessageId,
     }))
     .eq("id", agentRunId)
     .select("*")
@@ -115,6 +119,20 @@ export async function listAgentRunsByVideoId(
 
   throwIfSupabaseError(error, "listAgentRunsByVideoId failed");
   return data.map(mapAgentRun);
+}
+
+export async function getAgentRunById(
+  supabase: SupabaseDataClient,
+  agentRunId: string,
+): Promise<AgentRun | null> {
+  const { data, error } = await supabase
+    .from("agent_runs")
+    .select("*")
+    .eq("id", agentRunId)
+    .maybeSingle();
+
+  throwIfSupabaseError(error, "getAgentRunById failed");
+  return data ? mapAgentRun(data) : null;
 }
 
 export async function upsertAgentArtifact(
@@ -220,6 +238,8 @@ export function mapAgentRun(row: AgentRunRow): AgentRun {
     agentGitBranch: row.agent_git_branch ?? null,
     agentGitCommitSha: row.agent_git_commit_sha ?? null,
     needsUserInput: row.needs_user_input ?? false,
+    userChatMessageId: row.user_chat_message_id ?? null,
+    assistantChatMessageId: row.assistant_chat_message_id ?? null,
   };
 }
 

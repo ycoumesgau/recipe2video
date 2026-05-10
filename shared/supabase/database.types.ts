@@ -544,6 +544,8 @@ export type Database = {
           agent_git_branch: string | null;
           agent_git_commit_sha: string | null;
           needs_user_input: boolean;
+          user_chat_message_id: string | null;
+          assistant_chat_message_id: string | null;
         };
         Insert: {
           id?: string;
@@ -563,6 +565,8 @@ export type Database = {
           agent_git_branch?: string | null;
           agent_git_commit_sha?: string | null;
           needs_user_input?: boolean;
+          user_chat_message_id?: string | null;
+          assistant_chat_message_id?: string | null;
         };
         Update: {
           id?: string;
@@ -582,6 +586,8 @@ export type Database = {
           agent_git_branch?: string | null;
           agent_git_commit_sha?: string | null;
           needs_user_input?: boolean;
+          user_chat_message_id?: string | null;
+          assistant_chat_message_id?: string | null;
         };
         Relationships: [];
       };
@@ -609,6 +615,108 @@ export type Database = {
           event_type?: string;
           payload?: Json;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      recipe_agent_messages: {
+        Row: {
+          id: string;
+          thread_id: string;
+          agent_run_id: string | null;
+          role: string;
+          content: string;
+          status: string;
+          summary: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          thread_id: string;
+          agent_run_id?: string | null;
+          role: string;
+          content?: string;
+          status?: string;
+          summary?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          thread_id?: string;
+          agent_run_id?: string | null;
+          role?: string;
+          content?: string;
+          status?: string;
+          summary?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      recipe_agent_steps: {
+        Row: {
+          id: string;
+          agent_run_id: string;
+          seq: number;
+          step_type: string;
+          state: string;
+          label: string | null;
+          detail: string | null;
+          payload: Json;
+          source_event_seq: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          agent_run_id: string;
+          seq: number;
+          step_type: string;
+          state?: string;
+          label?: string | null;
+          detail?: string | null;
+          payload?: Json;
+          source_event_seq?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          agent_run_id?: string;
+          seq?: number;
+          step_type?: string;
+          state?: string;
+          label?: string | null;
+          detail?: string | null;
+          payload?: Json;
+          source_event_seq?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      recipe_agent_threads: {
+        Row: {
+          id: string;
+          video_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          video_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          video_id?: string;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
