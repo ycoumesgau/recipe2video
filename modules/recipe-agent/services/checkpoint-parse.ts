@@ -8,7 +8,7 @@ const AssistantCheckpointSchema = z
         commitSha: z.string().min(7),
         manifestPath: z.string().optional(),
       })
-      .strict(),
+      .passthrough(),
   })
   .strict();
 

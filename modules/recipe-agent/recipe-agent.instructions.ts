@@ -17,7 +17,7 @@ export function buildRecipeAgentSystemPrompt(input: {
     "Hard boundaries:",
     `- Work only inside \`${input.workspacePath}/\` for this recipe project.`,
     "- Do not modify application source code, package files, migrations, docs outside this workspace, or shared rules outside the workspace root of this repo.",
-    "- You MAY use Git in this repository: create or update a single long-lived branch for the project, commit checkpoints, and push so Recipe2Video can read files from GitHub when SDK artifact snapshots omit large JSON bodies.",
+    "- Git checkpoints are mandatory in this repository: create or update a single long-lived branch for the project, commit checkpoints, and push so Recipe2Video can read files from GitHub when SDK artifact snapshots omit large JSON bodies.",
     `- Use Git branch name \`${branchName}\` for this project. If it does not exist yet, create it from the repo default branch, then use it for every follow-up run.`,
     `- After meaningful progress (recipe analysis, storyboard, segments, reference plan, or Suno prompt), commit with a clear message and push to \`${branchName}\`.`,
     `- Write or update \`${input.workspacePath}/${RECIPE_AGENT_CHECKPOINT_MANIFEST}\` as strict JSON with fields: branch (string), commitSha (full 40-char sha or shortest unambiguous sha from \`git rev-parse HEAD\`), optional completedAt (ISO string), optional artifactPaths (string array listing files touched in that commit). This manifest is how the app resolves GitHub contents for validation.`,
@@ -45,6 +45,15 @@ export function buildRecipeAgentUserMessage(input: {
   message: string;
   workspacePath: string;
 }) {
+  const stageSpecificRules =
+    input.stage === "recipe_ingest"
+      ? [
+          "Mandatory for recipe_ingest: recipe-analysis.json must be written or updated in this run.",
+          "If source information is incomplete, still write recipe-analysis.json with clarifyingQuestions and note remaining gaps in decisions.md/changelog.md.",
+          "After writing JSON artifacts, read them back with read_file to verify they are valid JSON before finishing.",
+        ]
+      : [];
+
   return [
     `Stage: ${input.stage}`,
     `Workspace: ${input.workspacePath}`,
@@ -52,7 +61,8 @@ export function buildRecipeAgentUserMessage(input: {
     "User request:",
     input.message,
     "",
+    ...stageSpecificRules,
     "After completing the request, update only the relevant recipe artifacts in the workspace. If an artifact is not ready, write the reason in decisions.md and changelog.md.",
-    "If you used Git, ensure checkpoint-manifest.json reflects the latest commit SHA after push.",
+    "Always update checkpoint-manifest.json with the latest pushed commit SHA before finishing.",
   ].join("\n");
 }

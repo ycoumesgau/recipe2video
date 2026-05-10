@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { AgentOptions, Run, RunResult, SDKAgent } from "@cursor/sdk";
+import type {
+  AgentOptions,
+  Run,
+  RunResult,
+  SDKAgent,
+  SDKMessage,
+} from "@cursor/sdk";
 
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
 import { buildRecipeAgentSystemPrompt } from "../recipe-agent.instructions";
@@ -233,8 +239,91 @@ test("sendMessage falls back to conversation file reads when cloud artifacts are
       path: "agent-recipes/video-1/decisions.md",
       sizeBytes: 39,
       content: "# Decisions\n\n- Diagnostic artifact test.",
+      source: "sdk",
     },
   ]);
+});
+
+test("sendMessage recovers artifact content from conversation write steps", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  sdk.resumedAgent.artifacts = [];
+  sdk.resumedAgent.conversationSteps = [
+    {
+      type: "toolCall",
+      message: {
+        type: "write",
+        args: {
+          path: "/workspace/agent-recipes/video-1/recipe-analysis.json",
+          content: '{"title":"Recovered from write"}',
+        },
+        result: {
+          status: "success",
+          value: {
+            fileSize: 32,
+          },
+        },
+      },
+    },
+  ];
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  const result = await service.sendMessage({
+    agentId: "bc-existing",
+    videoId: "video-1",
+    stage: "recipe_ingest",
+    message: "Analyze recipe.",
+    includeArtifactContents: true,
+  });
+
+  assert.deepEqual(result.artifacts, [
+    {
+      name: "recipe-analysis.json",
+      path: "agent-recipes/video-1/recipe-analysis.json",
+      sizeBytes: 32,
+      content: '{"title":"Recovered from write"}',
+      source: "sdk",
+    },
+  ]);
+});
+
+test("sendMessage uses streamed assistant text when wait result is empty", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  sdk.resumedAgent.assistantStreamText =
+    'Done\n```json\n{"recipe2videoCheckpoint":{"branch":"recipe2video/video-1","commitSha":"abc1234567"}}\n```';
+  sdk.resumedAgent.waitResult = undefined;
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  const result = await service.sendMessage({
+    agentId: "bc-existing",
+    videoId: "video-1",
+    stage: "general",
+    message: "Write checkpoint.",
+    includeArtifactContents: true,
+  });
+
+  assert.match(result.result ?? "", /recipe2videoCheckpoint/);
+  assert.equal(
+    result.streamMeta?.assistantText,
+    sdk.resumedAgent.assistantStreamText,
+  );
 });
 
 class FakeCursorSdkAdapter implements CursorAgentSdkAdapter {
@@ -277,12 +366,21 @@ class FakeSdkAgent implements SDKAgent {
     content: string;
     fileSize: number;
   }> = [];
+  conversationSteps: Array<Record<string, unknown>> = [];
+  assistantStreamText?: string;
+  waitResult: string | undefined = "updated";
 
   constructor(readonly agentId: string) {}
 
   async send(message: string): Promise<Run> {
     this.sentMessage = message;
-    return new FakeRun(this.agentId, this.conversationArtifacts);
+    return new FakeRun(
+      this.agentId,
+      this.conversationArtifacts,
+      this.conversationSteps,
+      this.assistantStreamText,
+      this.waitResult,
+    );
   }
 
   close(): void {}
@@ -313,20 +411,52 @@ class FakeRun implements Run {
       path: string;
       content: string;
       fileSize: number;
-    }> = [],
+    }>,
+    private readonly conversationSteps: Array<Record<string, unknown>>,
+    private readonly assistantStreamText: string | undefined,
+    private readonly waitResult: string | undefined,
   ) {}
 
   supports(operation?: string): boolean {
-    return operation === "conversation" && this.conversationArtifacts.length > 0;
+    return (
+      (operation === "conversation" &&
+        (this.conversationArtifacts.length > 0 ||
+          this.conversationSteps.length > 0)) ||
+      (operation === "stream" && this.assistantStreamText !== undefined)
+    );
   }
 
   unsupportedReason(): string | undefined {
     return undefined;
   }
 
-  async *stream() {}
+  async *stream() {
+    if (!this.assistantStreamText) {
+      return;
+    }
+
+    for (const text of ["Done\n", this.assistantStreamText.slice(5)]) {
+      yield {
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text }],
+        },
+      } as unknown as SDKMessage;
+    }
+  }
 
   async conversation() {
+    if (this.conversationSteps.length > 0) {
+      return [
+        {
+          type: "agentConversationTurn",
+          turn: {
+            steps: this.conversationSteps,
+          },
+        },
+      ] as unknown as Awaited<ReturnType<Run["conversation"]>>;
+    }
+
     return [
       {
         type: "agentConversationTurn",
@@ -356,7 +486,7 @@ class FakeRun implements Run {
     return {
       id: this.id,
       status: "finished",
-      result: "updated",
+      result: this.waitResult,
       durationMs: 10,
     };
   }
