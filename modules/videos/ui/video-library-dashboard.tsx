@@ -59,6 +59,7 @@ import type {
   VideoDashboardData,
   VideoDashboardProject,
 } from "@/modules/videos/video-dashboard.types";
+import { ProjectCardArchiveMenu } from "@/modules/videos/ui/project-card-archive-menu";
 
 type StatusFilter = "all" | VideoStatus;
 
@@ -93,7 +94,13 @@ const thumbnailToneClasses: Record<VideoDashboardProject["thumbnailTone"], strin
   sky: "from-sky-500/35 via-cyan-400/20 to-background",
 };
 
-export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
+export function VideoLibraryDashboard({
+  data,
+  libraryMode,
+}: {
+  data: VideoDashboardData;
+  libraryMode: "active" | "archived";
+}) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortKey, setSortKey] = useState<DashboardSortKey>("updated");
@@ -195,11 +202,22 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
                   Project library
                 </CardTitle>
                 <CardDescription>
-                  Seeded projects prove the library layout until Supabase data
-                  access is wired.
+                  {libraryMode === "archived"
+                    ? "Projects you archived stay here until you restore them to the active library."
+                    : "Active videos and seeded demos share this grid; archive anything you do not need on the default view."}
                 </CardDescription>
               </div>
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Button
+                  asChild
+                  variant={libraryMode === "archived" ? "secondary" : "outline"}
+                >
+                  <Link href={libraryMode === "archived" ? "/" : "/?archived=1"}>
+                    {libraryMode === "archived"
+                      ? "Back to active library"
+                      : "Archived projects"}
+                  </Link>
+                </Button>
                 <div className="relative min-w-0 sm:min-w-60">
                   <Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -260,10 +278,14 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
           </CardHeader>
           <CardContent>
             {data.projects.length === 0 ? (
-              <ProjectEmptyState onClearFilters={() => undefined} />
+              <ProjectEmptyState
+                libraryMode={libraryMode}
+                onClearFilters={() => undefined}
+              />
             ) : filteredProjects.length === 0 ? (
               <ProjectEmptyState
                 copy="No project matches the current search and status filters."
+                libraryMode={libraryMode}
                 onClearFilters={() => {
                   setQuery("");
                   setStatusFilter("all");
@@ -273,7 +295,11 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
             ) : (
               <div className="grid min-w-0 gap-4 md:grid-cols-2 2xl:grid-cols-3">
                 {filteredProjects.map((project) => (
-                  <ProjectCard key={project.id} project={project} />
+                  <ProjectCard
+                    key={project.id}
+                    libraryMode={libraryMode}
+                    project={project}
+                  />
                 ))}
               </div>
             )}
@@ -323,7 +349,13 @@ function DashboardRadioMenu({
   );
 }
 
-function ProjectCard({ project }: { project: VideoDashboardProject }) {
+function ProjectCard({
+  libraryMode,
+  project,
+}: {
+  libraryMode: "active" | "archived";
+  project: VideoDashboardProject;
+}) {
   const completion = getSegmentProgress(project);
   const agentStatus = project.agentStatus ?? "idle";
   const projectHref =
@@ -362,9 +394,17 @@ function ProjectCard({ project }: { project: VideoDashboardProject }) {
       )}
       <CardHeader>
         <CardAction>
-          <Badge variant={statusBadgeVariant[project.status]}>
-            {VIDEO_STATUS_LABELS[project.status]}
-          </Badge>
+          <div className="flex items-center gap-1">
+            <Badge variant={statusBadgeVariant[project.status]}>
+              {VIDEO_STATUS_LABELS[project.status]}
+            </Badge>
+            {project.canArchive ? (
+              <ProjectCardArchiveMenu
+                libraryMode={libraryMode}
+                videoId={project.id}
+              />
+            ) : null}
+          </div>
         </CardAction>
         <CardTitle className="pr-24">{project.title}</CardTitle>
         <CardDescription>
@@ -541,28 +581,49 @@ function RecentlyUpdatedCard({
 }
 
 function ProjectEmptyState({
-  copy = "Create your first recipe video to start using Runway credits productively.",
+  copy,
+  libraryMode,
   onClearFilters,
-  title = "No video projects yet",
+  title,
 }: {
   copy?: string;
+  libraryMode: "active" | "archived";
   onClearFilters: () => void;
   title?: string;
 }) {
+  const resolvedTitle =
+    title ??
+    (libraryMode === "archived"
+      ? "No archived projects"
+      : "No video projects yet");
+  const resolvedCopy =
+    copy ??
+    (libraryMode === "archived"
+      ? "Anything you archive from the active library or a project page will land here for easy reuse."
+      : "Create your first recipe video to start using Runway credits productively.");
+
   return (
     <div className="rounded-lg border border-dashed p-8 text-center">
       <Sparkles className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-      <h3 className="font-medium">{title}</h3>
+      <h3 className="font-medium">{resolvedTitle}</h3>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        {copy}
+        {resolvedCopy}
       </p>
       <div className="mt-4 flex flex-col justify-center gap-2 sm:flex-row">
-        <Button asChild>
-          <Link href="/videos/new">Create video</Link>
-        </Button>
-        <Button asChild variant="outline">
-          <Link href="/demo">Load demo project</Link>
-        </Button>
+        {libraryMode === "active" ? (
+          <>
+            <Button asChild>
+              <Link href="/videos/new">Create video</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/demo">Load demo project</Link>
+            </Button>
+          </>
+        ) : (
+          <Button asChild variant="outline">
+            <Link href="/">Back to active library</Link>
+          </Button>
+        )}
         <Button onClick={onClearFilters} variant="ghost">
           Clear filters
         </Button>

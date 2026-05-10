@@ -28,6 +28,7 @@ import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-sto
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import type { RecipeSourceSummary, VideoProject } from "@/modules/videos/video.types";
 import { ProjectPipelineProgress } from "@/modules/videos/ui/project-pipeline-progress";
+import { ProjectDetailArchiveControls } from "@/modules/videos/ui/project-detail-archive-controls";
 
 export default async function VideoDetailPage({
   params,
@@ -74,6 +75,13 @@ export default async function VideoDetailPage({
           segments, assembly, costs, and logs.
         </p>
       </div>
+
+      {project ? (
+        <ProjectDetailArchiveControls
+          archivedAt={project.archivedAt ?? null}
+          videoId={project.id}
+        />
+      ) : null}
 
       {dataError ? (
         <Alert>

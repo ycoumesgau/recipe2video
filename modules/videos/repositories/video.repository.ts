@@ -80,6 +80,14 @@ export async function listVideoProjects(
     .select("*")
     .order("updated_at", { ascending: false });
 
+  const archiveFilter = options.archiveFilter ?? "active";
+  if (archiveFilter === "active") {
+    query = query.is("archived_at", null);
+  } else if (archiveFilter === "archived") {
+    query = query.not("archived_at", "is", null);
+  }
+  // "all": intentionally no filter on archived_at
+
   if (options.status) {
     query = query.eq("status", options.status);
   }
@@ -106,6 +114,23 @@ export async function updateVideoProjectStatus(
     .single();
 
   throwIfSupabaseError(error, "updateVideoProjectStatus failed");
+  return mapVideoProject(data);
+}
+
+export async function setVideoProjectArchived(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  archived: boolean,
+): Promise<VideoProject> {
+  const archivedAt = archived ? new Date().toISOString() : null;
+  const { data, error } = await supabase
+    .from("videos")
+    .update({ archived_at: archivedAt })
+    .eq("id", videoId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "setVideoProjectArchived failed");
   return mapVideoProject(data);
 }
 
@@ -182,6 +207,7 @@ export function mapVideoProject(row: VideoRow): VideoProject {
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
     cursorAgentId: row.cursor_agent_id,
     cursorAgentRuntime: row.cursor_agent_runtime as RecipeAgentRuntime | null,
     agentWorkspacePath: row.agent_workspace_path,

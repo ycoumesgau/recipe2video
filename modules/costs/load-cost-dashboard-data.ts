@@ -14,7 +14,7 @@ export async function loadGlobalCostDashboardData() {
     const supabase = createSupabaseAdminClient();
     const [logs, projects] = await Promise.all([
       listCostLogs(supabase, { limit: 500 }),
-      listVideoProjects(supabase, { limit: 50 }),
+      listVideoProjects(supabase, { limit: 50, archiveFilter: "all" }),
     ]);
 
     return getCostDashboardData({
@@ -37,7 +37,7 @@ export async function loadProjectCostDashboardData(videoId: string) {
     const [projectLogs, globalLogs, projects] = await Promise.all([
       listCostLogsByVideoId(supabase, videoId),
       listCostLogs(supabase, { limit: 500 }),
-      listVideoProjects(supabase, { limit: 50 }),
+      listVideoProjects(supabase, { limit: 50, archiveFilter: "all" }),
     ]);
     const project = projects.find((item) => item.id === videoId);
     const displayLogs = projectLogs.length > 0 ? projectLogs : seededLogsForVideo(videoId);

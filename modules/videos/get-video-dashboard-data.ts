@@ -26,6 +26,8 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
     updatedAt: "2026-05-08T18:42:00.000Z",
     ownerName: "Yoann",
     nextAction: "Review Segment 5",
+    archivedAt: null,
+    canArchive: false,
   },
   {
     id: "tarte-citron-reference-pass",
@@ -43,6 +45,8 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
     updatedAt: "2026-05-08T17:15:00.000Z",
     ownerName: "Licorn Ops",
     nextAction: "Approve references",
+    archivedAt: null,
+    canArchive: false,
   },
   {
     id: "cookie-dough-storyboard",
@@ -60,6 +64,8 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
     updatedAt: "2026-05-08T15:30:00.000Z",
     ownerName: "Yoann",
     nextAction: "Review storyboard",
+    archivedAt: null,
+    canArchive: false,
   },
 ];
 
@@ -108,12 +114,14 @@ const SEEDED_ACTIVE_QUEUE: ActiveGenerationQueueItem[] = [
 export function getVideoDashboardData(
   persistedProjects: VideoProject[] = [],
   thumbnailByProjectId: Map<string, string> = new Map(),
+  options: { includeSeededDemos?: boolean } = {},
 ): VideoDashboardData {
+  const includeSeededDemos = options.includeSeededDemos ?? true;
   const projects = [
     ...persistedProjects.map((project) =>
       mapPersistedProject(project, thumbnailByProjectId.get(project.id) ?? null),
     ),
-    ...SEEDED_PROJECTS,
+    ...(includeSeededDemos ? SEEDED_PROJECTS : []),
   ];
   const activeVideos = projects.filter(
     (project) => project.status !== "exported" && project.status !== "failed",
@@ -202,6 +210,8 @@ function mapPersistedProject(
     updatedAt: project.updatedAt,
     ownerName: "Licorn Ops",
     nextAction: "Analyze recipe",
+    archivedAt: project.archivedAt ?? null,
+    canArchive: true,
   };
 }
 

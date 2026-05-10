@@ -48,6 +48,8 @@ export interface VideoProject {
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** When set, the project is excluded from the default library list. */
+  archivedAt?: string | null;
   cursorAgentId?: string | null;
   cursorAgentRuntime?: RecipeAgentRuntime | null;
   agentWorkspacePath?: string | null;
@@ -57,6 +59,9 @@ export interface VideoProject {
   agentGitBranch?: string | null;
   agentGitCommitSha?: string | null;
 }
+
+/** `active`: non-archived only (default). `archived`: archived only. `all`: no archive filter. */
+export type VideoProjectArchiveFilter = "active" | "archived" | "all";
 
 export interface CreateVideoProjectInput {
   title: string;
@@ -74,4 +79,5 @@ export interface CreateVideoProjectInput {
 export interface ListVideoProjectsOptions {
   status?: VideoStatus;
   limit?: number;
+  archiveFilter?: VideoProjectArchiveFilter;
 }
