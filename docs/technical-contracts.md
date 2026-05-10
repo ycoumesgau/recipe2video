@@ -969,7 +969,8 @@ Required environment variables:
 CURSOR_API_KEY=
 CURSOR_AGENT_REPO_URL=
 CURSOR_AGENT_STARTING_REF=main
-CURSOR_AGENT_MODEL=composer-2
+CURSOR_AGENT_MODEL=gpt-5.5
+CURSOR_AGENT_MODEL_THINKING=high
 CURSOR_AGENT_RUNTIME=cloud
 CURSOR_AGENT_LOCAL_CWD=
 ```
@@ -980,6 +981,8 @@ Runtime rules:
 * Cloud agents clone `CURSOR_AGENT_REPO_URL` at `CURSOR_AGENT_STARTING_REF`.
 * Local runtime is reserved for development and uses `CURSOR_AGENT_LOCAL_CWD` or
   `process.cwd()`.
+* `CURSOR_AGENT_MODEL_THINKING` is optional and maps to the Cursor SDK model
+  parameter `{ id: "thinking", value }` for models that support it.
 * The app stores the persistent Cursor `agentId` per video project in a later
   data-model issue.
 * The app resumes the same agent for follow-up messages so recipe decisions are

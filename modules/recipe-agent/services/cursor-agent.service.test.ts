@@ -41,6 +41,18 @@ test("resolveRecipeAgentConfig supports local dev runtime", () => {
   assert.equal(config.model, "composer-2");
 });
 
+test("resolveRecipeAgentConfig carries optional model thinking parameter", () => {
+  const config = resolveRecipeAgentConfig({
+    CURSOR_API_KEY: "cursor-test",
+    CURSOR_AGENT_REPO_URL: "https://github.com/ycoumesgau/recipe2video.git",
+    CURSOR_AGENT_MODEL: "gpt-5.5",
+    CURSOR_AGENT_MODEL_THINKING: "high",
+  });
+
+  assert.equal(config.model, "gpt-5.5");
+  assert.equal(config.modelThinking, "high");
+});
+
 test("buildRecipeAgentWorkspace scopes artifacts under one recipe folder", () => {
   const workspace = buildRecipeAgentWorkspace("Video 123 / Paris-Brest");
 
@@ -69,7 +81,8 @@ test("createRecipeAgent creates a cloud Cursor agent without PR automation", asy
     config: {
       apiKey: "cursor-test",
       runtime: "cloud",
-      model: "composer-2",
+      model: "gpt-5.5",
+      modelThinking: "high",
       repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
       startingRef: "main",
     },
@@ -84,6 +97,10 @@ test("createRecipeAgent creates a cloud Cursor agent without PR automation", asy
   assert.equal(session.workspacePath, "agent-recipes/video-1");
   assert.equal(sdk.createdOptions?.cloud?.autoCreatePR, false);
   assert.equal(sdk.createdOptions?.cloud?.skipReviewerRequest, true);
+  assert.deepEqual(sdk.createdOptions?.model, {
+    id: "gpt-5.5",
+    params: [{ id: "thinking", value: "high" }],
+  });
   assert.equal(sdk.createdAgent.disposed, true);
 });
 
@@ -94,7 +111,8 @@ test("sendMessage resumes the same agent and returns recipe artifacts", async ()
     config: {
       apiKey: "cursor-test",
       runtime: "cloud",
-      model: "composer-2",
+      model: "gpt-5.5",
+      modelThinking: "high",
       repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
       startingRef: "main",
     },
@@ -109,6 +127,10 @@ test("sendMessage resumes the same agent and returns recipe artifacts", async ()
   });
 
   assert.equal(sdk.resumedAgentId, "bc-existing");
+  assert.deepEqual(sdk.resumedOptions?.model, {
+    id: "gpt-5.5",
+    params: [{ id: "thinking", value: "high" }],
+  });
   assert.equal(result.runId, "run-1");
   assert.equal(result.status, "finished");
   assert.equal(result.artifacts.length, 1);
@@ -119,6 +141,7 @@ test("sendMessage resumes the same agent and returns recipe artifacts", async ()
 
 class FakeCursorSdkAdapter implements CursorAgentSdkAdapter {
   createdOptions?: AgentOptions;
+  resumedOptions?: Partial<AgentOptions>;
   resumedAgentId?: string;
   createdAgent = new FakeSdkAgent("agent-created");
   resumedAgent = new FakeSdkAgent("bc-existing");
@@ -128,8 +151,9 @@ class FakeCursorSdkAdapter implements CursorAgentSdkAdapter {
     return this.createdAgent;
   }
 
-  async resume(agentId: string): Promise<SDKAgent> {
+  async resume(agentId: string, options?: Partial<AgentOptions>): Promise<SDKAgent> {
     this.resumedAgentId = agentId;
+    this.resumedOptions = options;
     return this.resumedAgent;
   }
 }

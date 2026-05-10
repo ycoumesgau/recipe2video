@@ -1,4 +1,4 @@
-import type { AgentOptions, SDKAgent } from "@cursor/sdk";
+import type { AgentOptions, ModelSelection, SDKAgent } from "@cursor/sdk";
 
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
 import {
@@ -104,7 +104,7 @@ function buildAgentOptions(input: {
 }): AgentOptions {
   const base = {
     apiKey: input.config.apiKey,
-    model: { id: input.config.model },
+    model: buildModelSelection(input.config),
     name: input.name,
     agents: {
       "recipe-scene-verifier": {
@@ -169,7 +169,7 @@ function buildResumeOptions(config: RecipeAgentConfig): Partial<AgentOptions> {
   if (config.runtime === "local") {
     return {
       apiKey: config.apiKey,
-      model: { id: config.model },
+      model: buildModelSelection(config),
       local: {
         cwd: config.localCwd,
         settingSources: ["project"],
@@ -179,7 +179,16 @@ function buildResumeOptions(config: RecipeAgentConfig): Partial<AgentOptions> {
 
   return {
     apiKey: config.apiKey,
-    model: { id: config.model },
+    model: buildModelSelection(config),
+  };
+}
+
+function buildModelSelection(config: RecipeAgentConfig): ModelSelection {
+  return {
+    id: config.model,
+    params: config.modelThinking
+      ? [{ id: "thinking", value: config.modelThinking }]
+      : undefined,
   };
 }
 
