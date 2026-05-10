@@ -11,6 +11,10 @@ import type {
   VideoProject,
 } from "../video.types";
 import type { VideoStatus } from "../video-status";
+import type {
+  RecipeAgentRuntime,
+  RecipeAgentStatus,
+} from "@/modules/recipe-agent/recipe-agent.types";
 
 type VideoRow = Database["public"]["Tables"]["videos"]["Row"];
 
@@ -178,5 +182,11 @@ export function mapVideoProject(row: VideoRow): VideoProject {
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    cursorAgentId: row.cursor_agent_id,
+    cursorAgentRuntime: row.cursor_agent_runtime as RecipeAgentRuntime | null,
+    agentWorkspacePath: row.agent_workspace_path,
+    lastAgentRunId: row.last_agent_run_id,
+    lastAgentSyncAt: row.last_agent_sync_at,
+    agentStatus: row.agent_status as RecipeAgentStatus,
   };
 }

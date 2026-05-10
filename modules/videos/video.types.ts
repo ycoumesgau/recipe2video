@@ -1,4 +1,8 @@
 import type { Json } from "@/shared/supabase/database.types";
+import type {
+  RecipeAgentRuntime,
+  RecipeAgentStatus,
+} from "@/modules/recipe-agent/recipe-agent.types";
 import type { VideoStatus } from "./video-status";
 
 export type RecipeSourceType = "url" | "photos" | "text" | "demo";
@@ -41,6 +45,12 @@ export interface VideoProject {
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;
+  cursorAgentId?: string | null;
+  cursorAgentRuntime?: RecipeAgentRuntime | null;
+  agentWorkspacePath?: string | null;
+  lastAgentRunId?: string | null;
+  lastAgentSyncAt?: string | null;
+  agentStatus: RecipeAgentStatus;
 }
 
 export interface CreateVideoProjectInput {

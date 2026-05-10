@@ -177,6 +177,7 @@ const demoProject: VideoProject = {
   createdBy: "fixture",
   createdAt: CREATED_AT,
   updatedAt: UPDATED_AT,
+  agentStatus: "idle",
 };
 
 const demoReferences: DemoReference[] = [

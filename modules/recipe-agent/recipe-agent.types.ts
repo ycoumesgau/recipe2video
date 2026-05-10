@@ -18,6 +18,25 @@ export type RecipeAgentStage =
   | "suno_prompt_revision"
   | "general";
 
+export type RecipeAgentStatus =
+  | "idle"
+  | "running"
+  | "needs_sync"
+  | "validation_failed"
+  | "failed";
+
+export type RecipeAgentRunStatus =
+  | "queued"
+  | "running"
+  | "finished"
+  | "error"
+  | "cancelled";
+
+export type RecipeAgentArtifactValidationStatus =
+  | "pending"
+  | "valid"
+  | "invalid";
+
 export type RecipeAgentArtifactName =
   (typeof RECIPE_AGENT_ARTIFACT_NAMES)[number];
 
@@ -81,3 +100,74 @@ export interface CursorAgentSdkAdapter {
 }
 
 export type CursorSdkArtifact = SDKArtifact;
+
+export interface AgentRun {
+  id: string;
+  videoId: string;
+  cursorAgentId: string;
+  cursorRunId?: string | null;
+  stage: RecipeAgentStage;
+  userMessage: string;
+  status: RecipeAgentRunStatus;
+  resultSummary?: string | null;
+  error?: string | null;
+  createdBy?: string | null;
+  startedAt: string;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAgentRunInput {
+  videoId: string;
+  cursorAgentId: string;
+  cursorRunId?: string | null;
+  stage: RecipeAgentStage;
+  userMessage: string;
+  status?: RecipeAgentRunStatus;
+  resultSummary?: string | null;
+  error?: string | null;
+  createdBy?: string | null;
+  startedAt?: string;
+  completedAt?: string | null;
+}
+
+export interface UpdateAgentRunInput {
+  cursorRunId?: string | null;
+  status?: RecipeAgentRunStatus;
+  resultSummary?: string | null;
+  error?: string | null;
+  completedAt?: string | null;
+}
+
+export interface AgentArtifact {
+  id: string;
+  videoId: string;
+  artifactName: string;
+  artifactPath: string;
+  content: string;
+  contentHash?: string | null;
+  validationStatus: RecipeAgentArtifactValidationStatus;
+  validationErrors: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertAgentArtifactInput {
+  videoId: string;
+  artifactName: string;
+  artifactPath: string;
+  content: string;
+  contentHash?: string | null;
+  validationStatus?: RecipeAgentArtifactValidationStatus;
+  validationErrors?: string[];
+}
+
+export interface UpdateVideoAgentSessionInput {
+  cursorAgentId?: string | null;
+  cursorAgentRuntime?: RecipeAgentRuntime | null;
+  agentWorkspacePath?: string | null;
+  lastAgentRunId?: string | null;
+  lastAgentSyncAt?: string | null;
+  agentStatus?: RecipeAgentStatus;
+}

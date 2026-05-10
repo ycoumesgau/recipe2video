@@ -70,6 +70,12 @@ export type Database = {
           created_by: string | null;
           created_at: string;
           updated_at: string;
+          cursor_agent_id: string | null;
+          cursor_agent_runtime: string | null;
+          agent_workspace_path: string | null;
+          last_agent_run_id: string | null;
+          last_agent_sync_at: string | null;
+          agent_status: string;
         };
         Insert: {
           id?: string;
@@ -89,6 +95,12 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          cursor_agent_id?: string | null;
+          cursor_agent_runtime?: string | null;
+          agent_workspace_path?: string | null;
+          last_agent_run_id?: string | null;
+          last_agent_sync_at?: string | null;
+          agent_status?: string;
         };
         Update: {
           id?: string;
@@ -108,6 +120,12 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          cursor_agent_id?: string | null;
+          cursor_agent_runtime?: string | null;
+          agent_workspace_path?: string | null;
+          last_agent_run_id?: string | null;
+          last_agent_sync_at?: string | null;
+          agent_status?: string;
         };
         Relationships: [];
       };
@@ -496,6 +514,96 @@ export type Database = {
           remotion_props?: Json | null;
           export_status?: string;
           created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      agent_runs: {
+        Row: {
+          id: string;
+          video_id: string;
+          cursor_agent_id: string;
+          cursor_run_id: string | null;
+          stage: string;
+          user_message: string;
+          status: string;
+          result_summary: string | null;
+          error: string | null;
+          created_by: string | null;
+          started_at: string;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          video_id: string;
+          cursor_agent_id: string;
+          cursor_run_id?: string | null;
+          stage: string;
+          user_message: string;
+          status?: string;
+          result_summary?: string | null;
+          error?: string | null;
+          created_by?: string | null;
+          started_at?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          video_id?: string;
+          cursor_agent_id?: string;
+          cursor_run_id?: string | null;
+          stage?: string;
+          user_message?: string;
+          status?: string;
+          result_summary?: string | null;
+          error?: string | null;
+          created_by?: string | null;
+          started_at?: string;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      agent_artifacts: {
+        Row: {
+          id: string;
+          video_id: string;
+          artifact_name: string;
+          artifact_path: string;
+          content: string;
+          content_hash: string | null;
+          validation_status: string;
+          validation_errors: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          video_id: string;
+          artifact_name: string;
+          artifact_path: string;
+          content: string;
+          content_hash?: string | null;
+          validation_status?: string;
+          validation_errors?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          video_id?: string;
+          artifact_name?: string;
+          artifact_path?: string;
+          content?: string;
+          content_hash?: string | null;
+          validation_status?: string;
+          validation_errors?: Json;
           created_at?: string;
           updated_at?: string;
         };
