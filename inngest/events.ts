@@ -1,5 +1,9 @@
 import type { CreateCostLogInput } from "@/modules/costs/cost.types";
 import type {
+  RecipeAgentArtifact,
+  RecipeAgentStage,
+} from "@/modules/recipe-agent/recipe-agent.types";
+import type {
   SegmentGenerationPollRequestedData,
   SegmentGenerationRequestedData,
   SegmentMuxUploadRequestedData,
@@ -31,6 +35,9 @@ export const INNGEST_EVENTS = {
   segmentMuxUploadRequested: "segment.mux.upload.requested",
   segmentFeedbackApplyRequested: "segment.feedback.apply.requested",
   costLogRequested: "cost.log.requested",
+  recipeAgentCreateRequested: "recipe.agent.create.requested",
+  recipeAgentMessageRequested: "recipe.agent.message.requested",
+  recipeAgentSyncRequested: "recipe.agent.sync.requested",
 } as const;
 
 export type InngestEventName =
@@ -60,6 +67,21 @@ export interface FeedbackApplyRequestedData extends WorkflowAuthEventData {
   generationId: string;
 }
 
+export interface RecipeAgentCreateRequestedData extends WorkflowAuthEventData {
+  videoId: string;
+}
+
+export interface RecipeAgentMessageRequestedData extends WorkflowAuthEventData {
+  videoId: string;
+  stage: RecipeAgentStage;
+  message: string;
+}
+
+export interface RecipeAgentSyncRequestedData extends WorkflowAuthEventData {
+  videoId: string;
+  artifacts: RecipeAgentArtifact[];
+}
+
 export type CostLogRequestedData = WorkflowAuthEventData & CreateCostLogInput;
 
 export type Recipe2VideoEventPayloads = {
@@ -72,4 +94,7 @@ export type Recipe2VideoEventPayloads = {
   [INNGEST_EVENTS.segmentMuxUploadRequested]: SegmentMuxUploadRequestedData;
   [INNGEST_EVENTS.segmentFeedbackApplyRequested]: FeedbackApplyRequestedData;
   [INNGEST_EVENTS.costLogRequested]: CostLogRequestedData;
+  [INNGEST_EVENTS.recipeAgentCreateRequested]: RecipeAgentCreateRequestedData;
+  [INNGEST_EVENTS.recipeAgentMessageRequested]: RecipeAgentMessageRequestedData;
+  [INNGEST_EVENTS.recipeAgentSyncRequested]: RecipeAgentSyncRequestedData;
 };
