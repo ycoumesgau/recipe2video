@@ -326,6 +326,33 @@ test("sendMessage uses streamed assistant text when wait result is empty", async
   );
 });
 
+test("sendMessage uses streamed assistant text when wait result is blank string", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  sdk.resumedAgent.assistantStreamText =
+    'Done\n```json\n{"recipe2videoCheckpoint":{"branch":"recipe2video/video-1","commitSha":"abc1234567"}}\n```';
+  sdk.resumedAgent.waitResult = "   ";
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  const result = await service.sendMessage({
+    agentId: "bc-existing",
+    videoId: "video-1",
+    stage: "general",
+    message: "Write checkpoint.",
+    includeArtifactContents: true,
+  });
+
+  assert.match(result.result ?? "", /recipe2videoCheckpoint/);
+});
+
 class FakeCursorSdkAdapter implements CursorAgentSdkAdapter {
   createdOptions?: AgentOptions;
   resumedOptions?: Partial<AgentOptions>;

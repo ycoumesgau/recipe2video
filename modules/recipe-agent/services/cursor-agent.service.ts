@@ -479,7 +479,7 @@ async function sendMessageWithAgent(input: {
     agentId: input.agentId,
     runId: result.id,
     status: result.status,
-    result: result.result ?? streamMeta.assistantText,
+    result: pickRunResultText(result.result, streamMeta.assistantText),
     durationMs: result.durationMs,
     workspacePath: input.workspacePath,
     artifacts,
@@ -548,4 +548,15 @@ function isValidJson(content: string) {
   } catch {
     return false;
   }
+}
+
+function pickRunResultText(
+  waitResult: string | undefined,
+  streamedAssistantText: string | undefined,
+) {
+  if (typeof waitResult === "string" && waitResult.trim().length > 0) {
+    return waitResult;
+  }
+
+  return streamedAssistantText;
 }
