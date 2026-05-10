@@ -22,6 +22,9 @@ import {
   updateAgentRun,
   updateVideoAgentSession,
 } from "../repositories/recipe-agent.repository";
+import { applyRecipeAgentStreamToChat } from "../services/recipe-agent-chat-ingest";
+import { finalizeRecipeAgentChatTurn } from "./finalize-recipe-agent-chat-turn";
+import { seedRecipeAgentChatTurn } from "./seed-recipe-agent-chat-turn";
 import type {
   AgentRun,
   CreateAgentRunInput,
@@ -83,6 +86,7 @@ export interface RecipeAgentOrchestrationDependencies {
     seq: number;
     eventType: string;
     payload: Record<string, unknown>;
+    assistantMessageId?: string;
   }) => Promise<void>;
 }
 
@@ -139,6 +143,25 @@ export async function sendRecipeAgentMessage(
   const currentProject = project;
   let run: AgentRun | undefined;
   let session: RecipeAgentSession | undefined;
+  let chatAssistantMessageId: string | undefined;
+
+  async function attachChatTurnToRun(current: AgentRun): Promise<AgentRun> {
+    if (!input.supabase) {
+      return current;
+    }
+
+    const ids = await seedRecipeAgentChatTurn(input.supabase, {
+      videoId: input.videoId,
+      agentRunId: current.id,
+      userMessage: input.message,
+      stage: input.stage,
+    });
+    chatAssistantMessageId = ids.assistantMessageId;
+    return deps.updateAgentRun(current.id, {
+      userChatMessageId: ids.userMessageId,
+      assistantChatMessageId: ids.assistantMessageId,
+    });
+  }
 
   const handleStreamEvent: RecipeAgentStreamEventHandler = async (event) => {
     const runId = run?.id;
@@ -152,6 +175,7 @@ export async function sendRecipeAgentMessage(
       seq: event.seq,
       eventType: event.eventType,
       payload: event.payload,
+      assistantMessageId: chatAssistantMessageId,
     });
   };
 
@@ -209,6 +233,21 @@ export async function sendRecipeAgentMessage(
           : "validation_failed",
     });
 
+    if (input.supabase && chatAssistantMessageId) {
+      await finalizeRecipeAgentChatTurn(input.supabase, {
+        run: updatedRun,
+        assistantMessageId: chatAssistantMessageId,
+        runStatus,
+        resultSummary: result.result ?? updatedRun.resultSummary,
+        error:
+          runStatus === "error"
+            ? (updatedRun.error ??
+                result.result ??
+                "Cursor agent run failed.")
+            : null,
+      });
+    }
+
     const nextVideoStatus = resolveVideoStatusAfterAgentSync({
       stage: input.stage,
       syncPlan,
@@ -235,6 +274,15 @@ export async function sendRecipeAgentMessage(
         })
       : undefined;
 
+    if (input.supabase && chatAssistantMessageId && updatedRun) {
+      await finalizeRecipeAgentChatTurn(input.supabase, {
+        run: updatedRun,
+        assistantMessageId: chatAssistantMessageId,
+        runStatus: "error",
+        error: message,
+      });
+    }
+
     await deps.updateVideoAgentSession(input.videoId, {
       agentStatus: "failed",
     });
@@ -250,6 +298,7 @@ export async function sendRecipeAgentMessage(
     if (existingSession) {
       session = existingSession;
       run = await createRunningAgentRun(existingSession);
+      run = await attachChatTurnToRun(run);
 
       await deps.updateVideoAgentSession(input.videoId, {
         agentStatus: "running",
@@ -270,11 +319,20 @@ export async function sendRecipeAgentMessage(
           throw error;
         }
 
-        await deps.updateAgentRun(run.id, {
+        const failedRun = await deps.updateAgentRun(run.id, {
           status: "error",
           error: error instanceof Error ? error.message : "Cursor agent not found.",
           completedAt: new Date().toISOString(),
         });
+
+        if (input.supabase && chatAssistantMessageId) {
+          await finalizeRecipeAgentChatTurn(input.supabase, {
+            run: failedRun,
+            assistantMessageId: chatAssistantMessageId,
+            runStatus: "error",
+            error: failedRun.error ?? "Cursor agent not found.",
+          });
+        }
 
         await deps.updateVideoAgentSession(input.videoId, {
           cursorAgentId: null,
@@ -305,6 +363,7 @@ export async function sendRecipeAgentMessage(
         });
 
         run = await createRunningAgentRun(createdSession);
+        run = await attachChatTurnToRun(run);
       },
       onStreamEvent: handleStreamEvent,
     });
@@ -731,14 +790,30 @@ function createDefaultDependencies(
       syncRecipeAgentArtifacts(syncSupabase ?? supabase, syncInput),
     persistAgentRunStreamEvent: async (event) => {
       try {
-        await insertAgentRunEvent(supabase, event);
+        await insertAgentRunEvent(supabase, {
+          agentRunId: event.agentRunId,
+          seq: event.seq,
+          eventType: event.eventType,
+          payload: event.payload,
+        });
+        if (event.assistantMessageId) {
+          await applyRecipeAgentStreamToChat(supabase, {
+            agentRunId: event.agentRunId,
+            assistantMessageId: event.assistantMessageId,
+            event: {
+              seq: event.seq,
+              eventType: event.eventType,
+              payload: event.payload,
+            },
+          });
+        }
       } catch (err) {
         if (process.env.NODE_ENV !== "development") {
           throw err;
         }
 
         console.warn(
-          "[recipe-agent] Skipping agent_run_events row in development (table missing or RLS):",
+          "[recipe-agent] Skipping agent_run_events / chat ingest in development (table missing or RLS):",
           err instanceof Error ? err.message : err,
         );
       }
