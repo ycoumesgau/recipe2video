@@ -81,7 +81,8 @@ export function NewVideoWizardForm() {
           </div>
           <CardDescription>
             Add at least one source. The draft is persisted immediately; recipe
-            extraction is intentionally not triggered by this issue.
+            analysis is handled by the persistent recipe agent when you choose
+            the analyze action.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -103,8 +104,8 @@ export function NewVideoWizardForm() {
                   type="url"
                 />
                 <p className="text-xs text-muted-foreground">
-                  URL extraction will be handled by the recipe ingest workflow
-                  in a later issue.
+                  URL analysis is sent to the persistent recipe agent after the
+                  draft is created.
                 </p>
               </div>
             </TabsContent>
@@ -250,11 +251,11 @@ export function NewVideoWizardForm() {
         <CardContent className="space-y-4">
           <Alert>
             <Info className="h-4 w-4" />
-            <AlertTitle>No costly action on submit</AlertTitle>
+            <AlertTitle>No Runway generation on submit</AlertTitle>
             <AlertDescription>
-              This only stores the recipe source, selected models, and draft
-              project metadata. Storyboarding and generation remain separate
-              approval checkpoints.
+              Analyze queues the Cursor recipe agent to update planning
+              artifacts. Seedance generation remains a separate approved
+              checkpoint.
             </AlertDescription>
           </Alert>
           <div className="flex flex-col gap-2 sm:flex-row">

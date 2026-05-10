@@ -26,6 +26,7 @@ export async function createVideoDraftAction(
       selectedImageModel: getString(formData, "selectedImageModel"),
       selectedTtsModel: getString(formData, "selectedTtsModel"),
       selectedSfxModel: getString(formData, "selectedSfxModel"),
+      intent: normalizeIntent(getString(formData, "intent")),
     });
 
     redirect(`/videos/${result.videoId}`);
@@ -63,6 +64,10 @@ function getNumber(formData: FormData, key: string) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeIntent(value: string | undefined) {
+  return value === "draft" ? "draft" : "analyze";
 }
 
 function isNextRedirectError(error: unknown) {

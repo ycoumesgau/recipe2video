@@ -183,6 +183,8 @@ Validation:
 * Require at least one source: URL, photos, pasted text, or demo recipe.
 * Warn if files are too large.
 * Show selected model before creating.
+* The primary CTA queues the persistent recipe agent. It must not launch Runway
+  generation.
 
 Components:
 
