@@ -1,3 +1,6 @@
+/** Max length for `videos.title` (wizard + inline rename). */
+export const MAX_VIDEO_TITLE_LENGTH = 200;
+
 export const DEFAULT_VIDEO_MODEL = "seedance2";
 export const DEFAULT_IMAGE_MODEL = "gpt_image_2";
 export const DEFAULT_TTS_MODEL = "eleven_multilingual_v2";

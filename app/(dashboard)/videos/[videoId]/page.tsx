@@ -27,6 +27,7 @@ import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import type { RecipeSourceSummary, VideoProject } from "@/modules/videos/video.types";
+import { EditableProjectTitle } from "@/modules/videos/ui/editable-project-title";
 import { ProjectPipelineProgress } from "@/modules/videos/ui/project-pipeline-progress";
 
 export default async function VideoDetailPage({
@@ -66,9 +67,16 @@ export default async function VideoDetailPage({
         <Badge className="mb-3" variant="outline">
           Project {project?.status ?? videoId}
         </Badge>
-        <h2 className="text-3xl font-semibold tracking-tight">
-          {project?.title ?? "Project overview"}
-        </h2>
+        {project ? (
+          <EditableProjectTitle
+            initialTitle={project.title}
+            videoId={project.id}
+          />
+        ) : (
+          <h2 className="text-3xl font-semibold tracking-tight">
+            Project overview
+          </h2>
+        )}
         <p className="text-muted-foreground">
           This cockpit reserves the structure for storyboard, references,
           segments, assembly, costs, and logs.

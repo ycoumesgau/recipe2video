@@ -1,8 +1,16 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getCurrentProfile } from "@/modules/auth/assert-allowlisted-user";
+import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import {
+  getVideoProjectById,
+  updateVideoProjectTitle,
+} from "@/modules/videos/repositories/video.repository";
 import { createVideoDraft } from "@/modules/videos/use-cases/create-video";
+import { MAX_VIDEO_TITLE_LENGTH } from "@/modules/videos/video.constants";
 
 export interface NewVideoWizardActionState {
   message?: string;
@@ -14,6 +22,7 @@ export async function createVideoDraftAction(
 ): Promise<NewVideoWizardActionState> {
   try {
     const result = await createVideoDraft({
+      recipeTitle: getString(formData, "recipeTitle"),
       recipeUrl: getString(formData, "recipeUrl"),
       pastedRecipeText: getString(formData, "pastedRecipeText"),
       demoRecipeId: normalizeDemoRecipeId(getString(formData, "demoRecipeId")),
@@ -78,4 +87,36 @@ function isNextRedirectError(error: unknown) {
     typeof error.digest === "string" &&
     error.digest.startsWith("NEXT_REDIRECT")
   );
+}
+
+export type UpdateVideoTitleResult =
+  | { ok: true }
+  | { ok: false; message: string };
+
+export async function updateVideoProjectTitleAction(
+  videoId: string,
+  rawTitle: string,
+): Promise<UpdateVideoTitleResult> {
+  const trimmed = rawTitle.trim().slice(0, MAX_VIDEO_TITLE_LENGTH);
+  if (!trimmed) {
+    return { ok: false, message: "Title cannot be empty." };
+  }
+
+  const profile = await getCurrentProfile();
+  if (!profile) {
+    return { ok: false, message: "Authentication is required." };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const project = await getVideoProjectById(supabase, videoId);
+  if (!project) {
+    return { ok: false, message: "Project not found." };
+  }
+  if (project.createdBy !== profile.id) {
+    return { ok: false, message: "You cannot rename this project." };
+  }
+
+  await updateVideoProjectTitle(supabase, videoId, trimmed);
+  revalidatePath(`/videos/${videoId}`);
+  return { ok: true };
 }
