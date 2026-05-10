@@ -8,6 +8,7 @@ import type { VideoProject } from "@/modules/videos/video.types";
 import type {
   AgentArtifact,
   AgentRun,
+  AgentRunTimelineEvent,
   CreateAgentRunInput,
   RecipeAgentArtifactValidationStatus,
   RecipeAgentRunStatus,
@@ -20,6 +21,8 @@ import type {
 type AgentRunRow = Database["public"]["Tables"]["agent_runs"]["Row"];
 type AgentArtifactRow =
   Database["public"]["Tables"]["agent_artifacts"]["Row"];
+type AgentRunEventRow =
+  Database["public"]["Tables"]["agent_run_events"]["Row"];
 
 export async function updateVideoAgentSession(
   supabase: SupabaseDataClient,
@@ -35,6 +38,8 @@ export async function updateVideoAgentSession(
       last_agent_run_id: input.lastAgentRunId,
       last_agent_sync_at: input.lastAgentSyncAt,
       agent_status: input.agentStatus,
+      agent_git_branch: input.agentGitBranch,
+      agent_git_commit_sha: input.agentGitCommitSha,
     }))
     .eq("id", videoId)
     .select("*")
@@ -62,6 +67,9 @@ export async function createAgentRun(
       created_by: input.createdBy ?? undefined,
       started_at: input.startedAt,
       completed_at: input.completedAt ?? undefined,
+      agent_git_branch: input.agentGitBranch ?? undefined,
+      agent_git_commit_sha: input.agentGitCommitSha ?? undefined,
+      needs_user_input: input.needsUserInput ?? undefined,
     }))
     .select("*")
     .single();
@@ -83,6 +91,9 @@ export async function updateAgentRun(
       result_summary: input.resultSummary,
       error: input.error,
       completed_at: input.completedAt,
+      agent_git_branch: input.agentGitBranch,
+      agent_git_commit_sha: input.agentGitCommitSha,
+      needs_user_input: input.needsUserInput,
     }))
     .eq("id", agentRunId)
     .select("*")
@@ -131,6 +142,51 @@ export async function upsertAgentArtifact(
   return mapAgentArtifact(data);
 }
 
+export async function insertAgentRunEvent(
+  supabase: SupabaseDataClient,
+  input: {
+    agentRunId: string;
+    seq: number;
+    eventType: string;
+    payload: Record<string, unknown>;
+  },
+): Promise<AgentRunTimelineEvent> {
+  const { data, error } = await supabase
+    .from("agent_run_events")
+    .insert({
+      agent_run_id: input.agentRunId,
+      seq: input.seq,
+      event_type: input.eventType,
+      payload: toJson(input.payload),
+    })
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "insertAgentRunEvent failed");
+  return mapAgentRunEvent(data);
+}
+
+export async function listAgentRunEventsByAgentRunId(
+  supabase: SupabaseDataClient,
+  agentRunId: string,
+  options: { limit?: number } = {},
+): Promise<AgentRunTimelineEvent[]> {
+  let query = supabase
+    .from("agent_run_events")
+    .select("*")
+    .eq("agent_run_id", agentRunId)
+    .order("seq", { ascending: true });
+
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+
+  throwIfSupabaseError(error, "listAgentRunEventsByAgentRunId failed");
+  return data.map(mapAgentRunEvent);
+}
+
 export async function listAgentArtifactsByVideoId(
   supabase: SupabaseDataClient,
   videoId: string,
@@ -161,6 +217,20 @@ export function mapAgentRun(row: AgentRunRow): AgentRun {
     completedAt: row.completed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    agentGitBranch: row.agent_git_branch ?? null,
+    agentGitCommitSha: row.agent_git_commit_sha ?? null,
+    needsUserInput: row.needs_user_input ?? false,
+  };
+}
+
+export function mapAgentRunEvent(row: AgentRunEventRow): AgentRunTimelineEvent {
+  return {
+    id: row.id,
+    agentRunId: row.agent_run_id,
+    seq: row.seq,
+    eventType: row.event_type,
+    payload: fromJson<Record<string, unknown>>(row.payload) ?? {},
+    createdAt: row.created_at,
   };
 }
 

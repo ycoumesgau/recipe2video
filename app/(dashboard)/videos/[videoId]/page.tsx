@@ -19,6 +19,7 @@ import type { CostDashboardData } from "@/modules/costs/cost.types";
 import { countActiveGenerationsForSegments } from "@/modules/generation/repositories/generation.repository";
 import {
   listAgentArtifactsByVideoId,
+  listAgentRunEventsByAgentRunId,
   listAgentRunsByVideoId,
 } from "@/modules/recipe-agent/repositories/recipe-agent.repository";
 import { RecipeAgentPanel } from "@/modules/recipe-agent/ui/recipe-agent-panel";
@@ -44,6 +45,7 @@ export default async function VideoDetailPage({
     activeTaskCount,
     agentRuns,
     agentArtifacts,
+    latestRunTimelineEvents,
   } = await loadProject(videoId);
 
   const acceptedSegments = seedanceSegments.filter(
@@ -123,6 +125,7 @@ export default async function VideoDetailPage({
 
                 <RecipeAgentPanel
                   artifacts={agentArtifacts}
+                  latestRunTimelineEvents={latestRunTimelineEvents}
                   project={project}
                   runs={agentRuns}
                 />
@@ -327,12 +330,18 @@ async function loadProject(videoId: string) {
       supabase,
       seedanceSegments.map((segment) => segment.id),
     );
-    const [agentRuns, agentArtifacts] = project
-      ? await Promise.all([
-          listAgentRunsByVideoId(supabase, videoId),
-          listAgentArtifactsByVideoId(supabase, videoId),
-        ])
-      : [[], []];
+    const [agentRuns, agentArtifacts, latestRunTimelineEvents] = project
+      ? await (async () => {
+          const runs = await listAgentRunsByVideoId(supabase, videoId);
+          const artifacts = await listAgentArtifactsByVideoId(supabase, videoId);
+          const latestRunId = runs[0]?.id;
+          const timeline =
+            latestRunId !== undefined
+              ? await listAgentRunEventsByAgentRunId(supabase, latestRunId)
+              : [];
+          return [runs, artifacts, timeline] as const;
+        })()
+      : [[], [], []];
 
     return {
       project,
@@ -344,6 +353,7 @@ async function loadProject(videoId: string) {
       activeTaskCount,
       agentRuns,
       agentArtifacts,
+      latestRunTimelineEvents,
     };
   } catch (error) {
     return {
@@ -362,6 +372,7 @@ async function loadProject(videoId: string) {
       activeTaskCount: 0,
       agentRuns: [],
       agentArtifacts: [],
+      latestRunTimelineEvents: [],
     };
   }
 }
@@ -428,6 +439,15 @@ function computeNextAction(input: {
   totalCount: number;
 }) {
   const { project } = input;
+
+  if (project.agentStatus === "needs_input") {
+    return {
+      detail:
+        "The recipe agent asked for clarification in Cursor. Reply via Recipe Agent below, then refresh when the follow-up run completes.",
+      cta: "Answer agent request",
+      href: `/videos/${project.id}`,
+    };
+  }
 
   if (project.agentStatus === "validation_failed") {
     return {

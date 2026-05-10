@@ -188,5 +188,7 @@ export function mapVideoProject(row: VideoRow): VideoProject {
     lastAgentRunId: row.last_agent_run_id,
     lastAgentSyncAt: row.last_agent_sync_at,
     agentStatus: row.agent_status as RecipeAgentStatus,
+    agentGitBranch: row.agent_git_branch,
+    agentGitCommitSha: row.agent_git_commit_sha,
   };
 }

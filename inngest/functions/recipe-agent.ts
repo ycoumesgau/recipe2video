@@ -4,7 +4,6 @@ import {
   updateVideoAgentSession,
 } from "@/modules/recipe-agent/repositories/recipe-agent.repository";
 import {
-  ensureRecipeAgent,
   sendRecipeAgentMessage,
 } from "@/modules/recipe-agent/use-cases/orchestrate-recipe-agent";
 import {
@@ -31,10 +30,13 @@ export const createRecipeAgentWorkflow = inngest.createFunction(
 
     await assertAllowlistedUser(data.requestedByUserId);
 
-    return ensureRecipeAgent({
+    return sendRecipeAgentMessage({
       supabase,
       videoId: data.videoId,
       requestedByUserId: data.requestedByUserId,
+      stage: "general",
+      message:
+        "Initialize the persistent Recipe2Video recipe agent workspace for this project. Create or update decisions.md and changelog.md only if useful. Do not launch generation services.",
     });
   },
 );
