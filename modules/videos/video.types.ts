@@ -16,12 +16,15 @@ export interface RecipeSourceSummary {
 }
 
 export interface VideoProductionDefaults {
-  targetDurationSeconds: number;
+  targetDurationSeconds?: number;
   stylePreset: string;
   videoModel: string;
   imageModel: string;
   ttsModel: string;
   sfxModel: string;
+  cursorAgentModel?: string;
+  cursorAgentReasoning?: string;
+  cursorAgentFast?: string;
 }
 
 export type RecipeData = Record<string, unknown>;

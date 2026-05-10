@@ -52,6 +52,39 @@ test("ensureRecipeAgent creates and stores a recipe agent when missing", async (
   });
 });
 
+test("ensureRecipeAgent prefers project-scoped service when provided", async () => {
+  const deps = createDeps({ project: baseProject });
+  let factoryCalls = 0;
+  deps.getRecipeAgentService = (project) => {
+    factoryCalls += 1;
+    assert.equal(project.id, "video-1");
+    return {
+      async createRecipeAgent() {
+        return {
+          agentId: "bc-scoped",
+          runtime: "cloud",
+          workspacePath: "agent-recipes/video-1",
+          model: "composer-2",
+        };
+      },
+      async createRecipeAgentAndSendMessage() {
+        throw new Error("not used");
+      },
+      async sendMessage() {
+        throw new Error("not used");
+      },
+    };
+  };
+
+  const session = await ensureRecipeAgent(
+    { videoId: "video-1", requestedByUserId: "user-1" },
+    deps,
+  );
+
+  assert.equal(factoryCalls, 1);
+  assert.equal(session.agentId, "bc-scoped");
+});
+
 test("sendRecipeAgentMessage records run, syncs valid artifacts, and marks idle", async () => {
   const deps = createDeps({
     project: {

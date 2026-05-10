@@ -227,16 +227,22 @@ function buildModelSelection(config: RecipeAgentConfig): ModelSelection {
 }
 
 function buildModelParams(config: RecipeAgentConfig): ModelSelection["params"] {
-  if (!config.modelReasoning) {
-    return undefined;
+  if (config.model === "composer-2") {
+    // Cost guardrail: Composer 2 is the only model allowed in fast mode.
+    return [{ id: "fast", value: "true" }];
   }
 
   if (config.model === "gpt-5.5" || config.model === "gpt-5-5") {
+    const reasoning = config.modelReasoning ?? "high";
     return [
       { id: "context", value: config.modelContext ?? "272k" },
-      { id: "reasoning", value: config.modelReasoning },
-      { id: "fast", value: config.modelFast ?? "false" },
+      { id: "reasoning", value: reasoning },
+      { id: "fast", value: "false" },
     ];
+  }
+
+  if (!config.modelReasoning) {
+    return undefined;
   }
 
   if (config.model.startsWith("gpt-") || config.model.includes("codex")) {

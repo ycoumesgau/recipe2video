@@ -44,7 +44,7 @@ test("resolveRecipeAgentConfig supports local dev runtime", () => {
 
   assert.equal(config.runtime, "local");
   assert.equal(config.localCwd, "/tmp/recipe2video");
-  assert.equal(config.model, "composer-2");
+  assert.equal(config.model, "gpt-5.5");
 });
 
 test("resolveRecipeAgentConfig carries optional model reasoning parameter", () => {
@@ -351,6 +351,31 @@ test("sendMessage uses streamed assistant text when wait result is blank string"
   });
 
   assert.match(result.result ?? "", /recipe2videoCheckpoint/);
+});
+
+test("createRecipeAgent maps Composer 2 to forced fast mode", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "composer-2",
+      modelFast: "false",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  await service.createRecipeAgent({
+    videoId: "video-1",
+    title: "Paris-Brest",
+  });
+
+  assert.deepEqual(sdk.createdOptions?.model, {
+    id: "composer-2",
+    params: [{ id: "fast", value: "true" }],
+  });
 });
 
 class FakeCursorSdkAdapter implements CursorAgentSdkAdapter {
