@@ -79,6 +79,7 @@ const baseVideo: VideoProject = {
   createdBy: "user-1",
   createdAt: "2026-05-09T00:00:00.000Z",
   updatedAt: "2026-05-09T00:00:00.000Z",
+  agentStatus: "idle",
 };
 
 test("requestSegmentGenerationWorkflow persists queued and generating states before scheduling polling", async () => {

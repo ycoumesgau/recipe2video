@@ -587,6 +587,8 @@ Required main tables:
 * `scene_feedbacks`
 * `cost_logs`
 * `compositions`
+* `agent_runs`
+* `agent_artifacts`
 
 Schema:
 
@@ -619,6 +621,12 @@ videos
   total_cost_credits integer
   total_cost_openai numeric
   created_by uuid references profiles(id)
+  cursor_agent_id text nullable
+  cursor_agent_runtime text nullable
+  agent_workspace_path text nullable
+  last_agent_run_id text nullable
+  last_agent_sync_at timestamptz nullable
+  agent_status text
   created_at timestamptz
   updated_at timestamptz
 
@@ -744,6 +752,34 @@ compositions
   created_at timestamptz
   updated_at timestamptz
 
+agent_runs
+  id uuid primary key
+  video_id uuid references videos(id)
+  cursor_agent_id text
+  cursor_run_id text nullable
+  stage text
+  user_message text
+  status text
+  result_summary text nullable
+  error text nullable
+  created_by uuid references profiles(id) nullable
+  started_at timestamptz
+  completed_at timestamptz nullable
+  created_at timestamptz
+  updated_at timestamptz
+
+agent_artifacts
+  id uuid primary key
+  video_id uuid references videos(id)
+  artifact_name text
+  artifact_path text
+  content text
+  content_hash text nullable
+  validation_status text
+  validation_errors jsonb
+  created_at timestamptz
+  updated_at timestamptz
+
 ```
 
 Required indexes:
@@ -757,6 +793,11 @@ create index idx_media_assets_generation on media_assets(generation_id);
 create index idx_generations_segment_status on generations(segment_id, status);
 create index idx_cost_logs_video on cost_logs(video_id);
 create index idx_feedback_segment_created on scene_feedbacks(segment_id, created_at desc);
+create index idx_videos_cursor_agent_id on videos(cursor_agent_id);
+create index idx_videos_agent_status on videos(agent_status);
+create index idx_agent_runs_video_created on agent_runs(video_id, created_at desc);
+create index idx_agent_runs_cursor_agent on agent_runs(cursor_agent_id);
+create index idx_agent_artifacts_video on agent_artifacts(video_id);
 
 ```
 
