@@ -29,4 +29,6 @@ test("getVideoDashboardData defaults missing agent status to idle", () => {
   const project = data.projects.find((item) => item.id === "legacy-video");
 
   assert.equal(project?.agentStatus, "idle");
+  assert.equal(project?.canArchive, true);
+  assert.equal(project?.archivedAt ?? null, null);
 });

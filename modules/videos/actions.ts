@@ -1,7 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { assertAuthenticatedUser, assertAllowlistedUser } from "@/modules/auth/assert-allowlisted-user";
+import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import {
+  setVideoProjectArchived,
+} from "@/modules/videos/repositories/video.repository";
 import { createVideoDraft } from "@/modules/videos/use-cases/create-video";
 
 export interface NewVideoWizardActionState {
@@ -44,6 +50,26 @@ export async function createVideoDraftAction(
           : "Unable to create video draft.",
     };
   }
+}
+
+export async function archiveVideoProjectAction(videoId: string) {
+  const user = await assertAuthenticatedUser();
+  await assertAllowlistedUser(user.id);
+
+  const supabase = createSupabaseAdminClient();
+  await setVideoProjectArchived(supabase, videoId, true);
+  revalidatePath("/");
+  revalidatePath(`/videos/${videoId}`);
+}
+
+export async function unarchiveVideoProjectAction(videoId: string) {
+  const user = await assertAuthenticatedUser();
+  await assertAllowlistedUser(user.id);
+
+  const supabase = createSupabaseAdminClient();
+  await setVideoProjectArchived(supabase, videoId, false);
+  revalidatePath("/");
+  revalidatePath(`/videos/${videoId}`);
 }
 
 function getString(formData: FormData, key: string) {
