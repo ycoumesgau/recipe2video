@@ -8,14 +8,35 @@ import {
 
 const CheckpointManifestSchema = z
   .object({
-    branch: z.string().min(1),
-    commitSha: z.string().min(7),
+    branch: z.string().min(1).optional(),
+    commitSha: z.string().min(7).optional(),
+    latestPushedCommitSha: z.string().min(7).optional(),
     artifactPaths: z.array(z.string()).optional(),
+    artifacts: z
+      .array(
+        z
+          .object({
+            path: z.string().min(1),
+          })
+          .passthrough(),
+      )
+      .optional(),
     completedAt: z.string().optional(),
+    updatedAtUtc: z.string().optional(),
     manifestPath: z.string().optional(),
     workspace: z.string().optional(),
   })
-  .passthrough();
+  .passthrough()
+  .refine((value) => !!(value.commitSha || value.latestPushedCommitSha), {
+    message: "Manifest must contain commitSha or latestPushedCommitSha.",
+  })
+  .transform((value) => ({
+    ...value,
+    commitSha: value.commitSha ?? value.latestPushedCommitSha,
+    artifactPaths:
+      value.artifactPaths ??
+      value.artifacts?.map((artifact) => artifact.path).filter(Boolean),
+  }));
 
 export type RecipeAgentCheckpointManifest = z.infer<typeof CheckpointManifestSchema>;
 

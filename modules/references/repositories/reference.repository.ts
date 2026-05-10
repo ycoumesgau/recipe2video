@@ -52,19 +52,21 @@ export async function insertReferenceAsset(
   supabase: SupabaseDataClient,
   input: CreateReferenceAssetInput,
 ): Promise<ReferenceAsset> {
+  const row = {
+    ...(input.id ? { id: input.id } : {}),
+    video_id: input.videoId ?? null,
+    media_asset_id: input.mediaAssetId ?? null,
+    type: input.type,
+    canonical_name: input.canonicalName,
+    source: input.source,
+    runway_uri: input.runwayUri ?? null,
+    prompt: input.prompt ?? null,
+    status: input.status ?? "planned",
+  };
+
   const { data, error } = await supabase
     .from("reference_assets")
-    .insert({
-      id: input.id,
-      video_id: input.videoId ?? null,
-      media_asset_id: input.mediaAssetId ?? null,
-      type: input.type,
-      canonical_name: input.canonicalName,
-      source: input.source,
-      runway_uri: input.runwayUri ?? null,
-      prompt: input.prompt ?? null,
-      status: input.status ?? "planned",
-    })
+    .insert(row)
     .select("*")
     .single();
 
@@ -96,7 +98,7 @@ export async function replaceAgentReferenceAssetsForVideo(
     .from("reference_assets")
     .insert(
       references.map((reference) => ({
-        id: reference.id,
+        ...(reference.id ? { id: reference.id } : {}),
         video_id: videoId,
         media_asset_id: reference.mediaAssetId ?? null,
         type: reference.type,

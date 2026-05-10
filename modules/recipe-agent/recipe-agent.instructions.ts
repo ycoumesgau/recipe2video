@@ -50,6 +50,8 @@ export function buildRecipeAgentUserMessage(input: {
       ? [
           "Mandatory for recipe_ingest: recipe-analysis.json must be written or updated in this run.",
           "If source information is incomplete, still write recipe-analysis.json with clarifyingQuestions and note remaining gaps in decisions.md/changelog.md.",
+          "recipe-analysis.json contract is strict: `criticalTransformations`, `visualTextureOpportunities`, `possibleHooks`, and `promptPolicySources` must be arrays of plain strings (never objects).",
+          "For recipe-analysis.json timing, keep `recipe.timing` keys as `prep`, `cook`, `total` (string or null).",
           "After writing JSON artifacts, read them back with read_file to verify they are valid JSON before finishing.",
         ]
       : [];
