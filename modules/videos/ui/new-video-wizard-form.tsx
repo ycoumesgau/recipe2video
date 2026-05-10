@@ -17,7 +17,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -160,9 +166,14 @@ export function NewVideoWizardForm() {
             <TabsContent className="space-y-3 pt-4" value="demo">
               <div className="space-y-2">
                 <Label htmlFor="demoRecipeId">Demo recipe</Label>
-                <Select id="demoRecipeId" name="demoRecipeId">
-                  <option value="">No demo recipe</option>
-                  <option value="paris-brest">Paris-Brest fixture</option>
+                <Select defaultValue="__no_demo" name="demoRecipeId">
+                  <SelectTrigger id="demoRecipeId">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__no_demo">No demo recipe</SelectItem>
+                    <SelectItem value="paris-brest">Paris-Brest fixture</SelectItem>
+                  </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   Demo mode data is handled separately; this option only marks
@@ -274,12 +285,17 @@ function SelectField({
   return (
     <div className="space-y-2">
       <Label htmlFor={name}>{label}</Label>
-      <Select defaultValue={defaultValue} id={name} name={name}>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
+      <Select defaultValue={defaultValue} name={name}>
+        <SelectTrigger id={name}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper">
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
       </Select>
     </div>
   );

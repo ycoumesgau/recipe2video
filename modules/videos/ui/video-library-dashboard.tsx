@@ -123,7 +123,7 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
   }, [data.projects, query, sortKey, statusFilter]);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 max-w-full space-y-6">
       <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <Badge className="mb-3" variant="outline">
@@ -153,7 +153,7 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {data.kpis.map((kpi) => (
           <Card key={kpi.label} size="sm">
             <CardHeader>
@@ -185,8 +185,8 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
         </AlertDescription>
       </Alert>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.85fr)]">
-        <Card>
+      <section className="grid min-w-0 gap-4 max-xl:grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(0,0.85fr)]">
+        <Card className="min-w-0">
           <CardHeader>
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
@@ -199,12 +199,12 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
                   access is wired.
                 </CardDescription>
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <div className="relative">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <div className="relative min-w-0 sm:min-w-60">
                   <Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
                   <Input
                     aria-label="Search projects"
-                    className="pl-8 sm:w-60"
+                    className="w-full min-w-0 pl-8"
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Search projects"
                     value={query}
@@ -271,7 +271,7 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
                 title="No matching projects"
               />
             ) : (
-              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              <div className="grid min-w-0 gap-4 md:grid-cols-2 2xl:grid-cols-3">
                 {filteredProjects.map((project) => (
                   <ProjectCard key={project.id} project={project} />
                 ))}
@@ -280,7 +280,7 @@ export function VideoLibraryDashboard({ data }: { data: VideoDashboardData }) {
           </CardContent>
         </Card>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <ActiveQueueCard queue={data.activeQueue} />
           <RecentlyUpdatedCard projects={data.projects} />
         </div>
@@ -301,20 +301,25 @@ function DashboardRadioMenu({
   value: string;
 }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button className="justify-start" variant="outline">
-          {icon}
-          <span className="text-muted-foreground">{label}:</span>
-          <span className="max-w-28 truncate">{value}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56">
-        <DropdownMenuLabel>{label}</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div className="w-full min-w-0 sm:w-auto sm:max-w-full">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            className="w-full min-w-0 max-w-full justify-start sm:w-auto [&>span:last-child]:min-w-0"
+            variant="outline"
+          >
+            {icon}
+            <span className="text-muted-foreground">{label}:</span>
+            <span className="max-w-28 truncate">{value}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-56">
+          <DropdownMenuLabel>{label}</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {children}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 

@@ -29,6 +29,9 @@ type ResponsesCreate = (input: {
   model: string;
   input: string;
   instructions: string;
+  reasoning?: {
+    effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  };
 }) => Promise<unknown>;
 
 export interface OpenAiPlanningClient {
@@ -77,6 +80,7 @@ export function createOpenAiPlanningClient(
         model: input.model,
         instructions: input.instructions,
         input: input.input,
+        reasoning: input.reasoning,
       }));
 
   return {
@@ -90,6 +94,7 @@ export function createOpenAiPlanningClient(
           "Return strictly valid JSON for the requested operation. Do not include Markdown fences or explanatory prose.",
         ].join(" "),
         input: input.prompt,
+        reasoning: { effort: "high" },
       });
 
       const outputText = getOutputText(response);
