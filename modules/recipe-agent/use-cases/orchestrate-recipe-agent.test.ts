@@ -8,7 +8,10 @@ import {
   sendRecipeAgentMessage,
   type RecipeAgentOrchestrationDependencies,
 } from "./orchestrate-recipe-agent";
-import type { UpdateAgentRunInput } from "../recipe-agent.types";
+import type {
+  CreateAgentRunInput,
+  UpdateAgentRunInput,
+} from "../recipe-agent.types";
 
 test("ensureRecipeAgent reuses an existing recipe agent session", async () => {
   const deps = createDeps({
@@ -91,6 +94,93 @@ test("sendRecipeAgentMessage records run, syncs valid artifacts, and marks idle"
   assert.equal(deps.sessionUpdates.at(-1)?.agentStatus, "idle");
 });
 
+test("sendRecipeAgentMessage sends the first message on the newly created agent", async () => {
+  const deps = createDeps({
+    project: baseProject,
+    agentArtifacts: [
+      {
+        name: "recipe-analysis.json",
+        path: "agent-recipes/video-1/recipe-analysis.json",
+        content: "{\"ok\":true}",
+      },
+    ],
+  });
+
+  const result = await sendRecipeAgentMessage(
+    {
+      videoId: "video-1",
+      requestedByUserId: "user-1",
+      stage: "recipe_ingest",
+      message: "Analyze recipe.",
+    },
+    deps,
+  );
+
+  assert.equal(result.run.status, "finished");
+  assert.equal(deps.createdAgents.length, 0);
+  assert.equal(deps.sentFirstMessages.length, 1);
+  assert.deepEqual(deps.createdRuns[0], {
+    videoId: "video-1",
+    cursorAgentId: "bc-created",
+    stage: "recipe_ingest",
+    userMessage: "Analyze recipe.",
+    status: "running",
+    createdBy: "user-1",
+  });
+  assert.deepEqual(deps.sessionUpdates[0], {
+    videoId: "video-1",
+    cursorAgentId: "bc-created",
+    cursorAgentRuntime: "cloud",
+    agentWorkspacePath: "agent-recipes/video-1",
+    agentStatus: "running",
+  });
+  assert.equal(deps.updatedRuns[0]?.patch.status, "finished");
+  assert.equal(deps.sessionUpdates.at(-1)?.agentStatus, "idle");
+});
+
+test("sendRecipeAgentMessage recreates stale Cursor agents reported as missing", async () => {
+  const staleAgentError = Object.assign(new Error("[agent_not_found] Agent not found"), {
+    code: "agent_not_found",
+  });
+  const deps = createDeps({
+    project: {
+      ...baseProject,
+      cursorAgentId: "bc-stale",
+      cursorAgentRuntime: "cloud",
+      agentWorkspacePath: "agent-recipes/video-1",
+    },
+    sendMessageError: staleAgentError,
+  });
+
+  const result = await sendRecipeAgentMessage(
+    {
+      videoId: "video-1",
+      requestedByUserId: "user-1",
+      stage: "recipe_ingest",
+      message: "Analyze recipe.",
+    },
+    deps,
+  );
+
+  assert.equal(result.run.cursorAgentId, "bc-created");
+  assert.equal(deps.createdRuns.length, 2);
+  assert.deepEqual(deps.createdRuns.map((run) => run.cursorAgentId), [
+    "bc-stale",
+    "bc-created",
+  ]);
+  assert.equal(deps.updatedRuns[0]?.patch.status, "error");
+  assert.match(deps.updatedRuns[0]?.patch.error ?? "", /agent_not_found/);
+  assert.deepEqual(deps.sessionUpdates[1], {
+    videoId: "video-1",
+    cursorAgentId: null,
+    cursorAgentRuntime: null,
+    agentWorkspacePath: null,
+    agentStatus: "running",
+  });
+  assert.equal(deps.sentFirstMessages.length, 1);
+  assert.equal(deps.updatedRuns.at(-1)?.patch.status, "finished");
+});
+
 test("sendRecipeAgentMessage preserves invalid artifacts and marks validation_failed", async () => {
   const deps = createDeps({
     project: {
@@ -146,25 +236,29 @@ const baseProject: VideoProject = {
 function createDeps(input: {
   project: VideoProject;
   agentArtifacts?: Array<{ name: string; path: string; content: string }>;
+  sendMessageError?: Error;
 }) {
   const createdAgents: unknown[] = [];
   const sessionUpdates: Array<Record<string, unknown>> = [];
-  const createdRuns: unknown[] = [];
+  const createdRuns: CreateAgentRunInput[] = [];
   const updatedRuns: Array<{ id: string; patch: UpdateAgentRunInput }> = [];
   const syncedArtifactBatches: unknown[] = [];
+  const sentFirstMessages: unknown[] = [];
 
   const deps: RecipeAgentOrchestrationDependencies & {
     createdAgents: unknown[];
     sessionUpdates: Array<Record<string, unknown>>;
-    createdRuns: unknown[];
+    createdRuns: CreateAgentRunInput[];
     updatedRuns: Array<{ id: string; patch: UpdateAgentRunInput }>;
     syncedArtifactBatches: unknown[];
+    sentFirstMessages: unknown[];
   } = {
     createdAgents,
     sessionUpdates,
     createdRuns,
     updatedRuns,
     syncedArtifactBatches,
+    sentFirstMessages,
     async getVideoProject() {
       return input.project;
     },
@@ -182,7 +276,35 @@ function createDeps(input: {
           model: "gpt-5.5",
         };
       },
+      async createRecipeAgentAndSendMessage(agentInput) {
+        sentFirstMessages.push(agentInput);
+        const session = {
+          agentId: "bc-created",
+          runtime: "cloud" as const,
+          workspacePath: "agent-recipes/video-1",
+          model: "gpt-5.5",
+        };
+
+        await agentInput.onSessionCreated?.(session);
+
+        return {
+          session,
+          result: {
+            agentId: "bc-created",
+            runId: "cursor-run-1",
+            status: "finished",
+            result: "Done",
+            durationMs: 100,
+            workspacePath: "agent-recipes/video-1",
+            artifacts: input.agentArtifacts ?? [],
+          },
+        };
+      },
       async sendMessage() {
+        if (input.sendMessageError) {
+          throw input.sendMessageError;
+        }
+
         return {
           agentId: "bc-existing",
           runId: "cursor-run-1",
@@ -215,10 +337,12 @@ function createDeps(input: {
     },
     async updateAgentRun(id, patch) {
       updatedRuns.push({ id, patch });
+      const latestRunInput = createdRuns.at(-1);
+
       return {
         id,
         videoId: "video-1",
-        cursorAgentId: "bc-existing",
+        cursorAgentId: latestRunInput?.cursorAgentId ?? "bc-existing",
         cursorRunId: patch.cursorRunId ?? null,
         stage: "general",
         userMessage: "Message",

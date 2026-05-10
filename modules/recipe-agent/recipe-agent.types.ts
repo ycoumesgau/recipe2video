@@ -44,7 +44,9 @@ export interface RecipeAgentConfig {
   apiKey: string;
   runtime: RecipeAgentRuntime;
   model: string;
-  modelThinking?: string;
+  modelReasoning?: string;
+  modelContext?: string;
+  modelFast?: string;
   repoUrl?: string;
   startingRef?: string;
   localCwd?: string;

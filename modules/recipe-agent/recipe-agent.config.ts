@@ -11,7 +11,11 @@ export function resolveRecipeAgentConfig(
   const apiKey = env.CURSOR_API_KEY;
   const runtime = resolveRuntime(env.CURSOR_AGENT_RUNTIME);
   const model = env.CURSOR_AGENT_MODEL ?? DEFAULT_RECIPE_AGENT_MODEL;
-  const modelThinking = emptyToUndefined(env.CURSOR_AGENT_MODEL_THINKING);
+  const modelReasoning = emptyToUndefined(
+    env.CURSOR_AGENT_MODEL_REASONING ?? env.CURSOR_AGENT_MODEL_THINKING,
+  );
+  const modelContext = emptyToUndefined(env.CURSOR_AGENT_MODEL_CONTEXT);
+  const modelFast = emptyToUndefined(env.CURSOR_AGENT_MODEL_FAST);
 
   if (!apiKey) {
     throw new Error("CURSOR_API_KEY is required before creating recipe agents.");
@@ -30,7 +34,9 @@ export function resolveRecipeAgentConfig(
       apiKey,
       runtime,
       model,
-      modelThinking,
+      modelReasoning,
+      modelContext,
+      modelFast,
       repoUrl,
       startingRef:
         env.CURSOR_AGENT_STARTING_REF ?? DEFAULT_RECIPE_AGENT_STARTING_REF,
@@ -41,7 +47,9 @@ export function resolveRecipeAgentConfig(
     apiKey,
     runtime,
     model,
-    modelThinking,
+    modelReasoning,
+    modelContext,
+    modelFast,
     localCwd: env.CURSOR_AGENT_LOCAL_CWD ?? process.cwd(),
   };
 }

@@ -74,7 +74,7 @@ export async function createRecipeAgentAction(
 
     return {
       kind: "success",
-      message: "Recipe agent creation queued.",
+      message: "Recipe agent initialization queued.",
     };
   } catch (error) {
     return toActionError(error, "Unable to queue recipe agent creation.");

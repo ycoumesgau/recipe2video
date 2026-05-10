@@ -1,4 +1,4 @@
-import type { AgentOptions, ModelSelection, SDKAgent } from "@cursor/sdk";
+import type { AgentOptions, ModelSelection, Run, SDKAgent } from "@cursor/sdk";
 
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
 import {
@@ -26,6 +26,15 @@ interface CreateCursorRecipeAgentServiceOptions {
 
 export interface CursorRecipeAgentService {
   createRecipeAgent(input: CreateRecipeAgentInput): Promise<RecipeAgentSession>;
+  createRecipeAgentAndSendMessage(
+    input: CreateRecipeAgentInput &
+      Omit<SendRecipeAgentMessageInput, "agentId"> & {
+        onSessionCreated?: (session: RecipeAgentSession) => Promise<void>;
+      },
+  ): Promise<{
+    session: RecipeAgentSession;
+    result: RecipeAgentRunResult;
+  }>;
   sendMessage(input: SendRecipeAgentMessageInput): Promise<RecipeAgentRunResult>;
 }
 
@@ -58,6 +67,43 @@ export function createCursorRecipeAgentService(
       }
     },
 
+    async createRecipeAgentAndSendMessage(input) {
+      const workspace = buildRecipeAgentWorkspace(input.videoId);
+      const agent = await options.sdk.create(
+        buildAgentOptions({
+          config,
+          name: buildAgentName(input),
+          workspacePath: workspace.workspacePath,
+          videoId: input.videoId,
+        }),
+      );
+      const session = {
+        agentId: agent.agentId,
+        runtime: config.runtime,
+        workspacePath: workspace.workspacePath,
+        model: config.model,
+      };
+
+      try {
+        await input.onSessionCreated?.(session);
+
+        return {
+          session,
+          result: await sendMessageWithAgent({
+            agent,
+            agentId: session.agentId,
+            videoId: input.videoId,
+            stage: input.stage,
+            message: input.message,
+            includeArtifactContents: input.includeArtifactContents,
+            workspacePath: workspace.workspacePath,
+          }),
+        };
+      } finally {
+        await disposeAgent(agent);
+      }
+    },
+
     async sendMessage(input) {
       const workspace = buildRecipeAgentWorkspace(input.videoId);
       const agent = await options.sdk.resume(
@@ -66,29 +112,15 @@ export function createCursorRecipeAgentService(
       );
 
       try {
-        const run = await agent.send(
-          buildRecipeAgentUserMessage({
-            stage: input.stage,
-            message: input.message,
-            workspacePath: workspace.workspacePath,
-          }),
-        );
-        const result = await run.wait();
-        const artifacts = await listRecipeArtifacts({
+        return await sendMessageWithAgent({
           agent,
-          includeContents: input.includeArtifactContents ?? false,
+          agentId: input.agentId,
+          videoId: input.videoId,
+          stage: input.stage,
+          message: input.message,
+          includeArtifactContents: input.includeArtifactContents,
           workspacePath: workspace.workspacePath,
         });
-
-        return {
-          agentId: input.agentId,
-          runId: result.id,
-          status: result.status,
-          result: result.result,
-          durationMs: result.durationMs,
-          workspacePath: workspace.workspacePath,
-          artifacts,
-        };
       } finally {
         await disposeAgent(agent);
       }
@@ -186,14 +218,40 @@ function buildResumeOptions(config: RecipeAgentConfig): Partial<AgentOptions> {
 function buildModelSelection(config: RecipeAgentConfig): ModelSelection {
   return {
     id: config.model,
-    params: config.modelThinking
-      ? [{ id: "thinking", value: config.modelThinking }]
-      : undefined,
+    params: buildModelParams(config),
   };
+}
+
+function buildModelParams(config: RecipeAgentConfig): ModelSelection["params"] {
+  if (!config.modelReasoning) {
+    return undefined;
+  }
+
+  if (config.model === "gpt-5.5" || config.model === "gpt-5-5") {
+    return [
+      { id: "context", value: config.modelContext ?? "272k" },
+      { id: "reasoning", value: config.modelReasoning },
+      { id: "fast", value: config.modelFast ?? "false" },
+    ];
+  }
+
+  if (config.model.startsWith("gpt-") || config.model.includes("codex")) {
+    return [{ id: "reasoning", value: config.modelReasoning }];
+  }
+
+  if (config.model.startsWith("claude-")) {
+    return [
+      { id: "thinking", value: "true" },
+      { id: "effort", value: config.modelReasoning },
+    ];
+  }
+
+  return [{ id: "thinking", value: config.modelReasoning }];
 }
 
 async function listRecipeArtifacts(input: {
   agent: SDKAgent;
+  run?: Run;
   includeContents: boolean;
   workspacePath: string;
 }): Promise<RecipeAgentArtifact[]> {
@@ -202,7 +260,7 @@ async function listRecipeArtifacts(input: {
     normalizePath(artifact.path).startsWith(`${input.workspacePath}/`),
   );
 
-  return Promise.all(
+  const downloadedArtifacts = await Promise.all(
     recipeArtifacts.map(async (artifact) => ({
       name: getRecipeAgentArtifactName(artifact.path),
       path: artifact.path,
@@ -213,12 +271,165 @@ async function listRecipeArtifacts(input: {
         : undefined,
     })),
   );
+
+  if (downloadedArtifacts.length > 0 || !input.run) {
+    return downloadedArtifacts;
+  }
+
+  return listRecipeArtifactsFromConversation({
+    run: input.run,
+    includeContents: input.includeContents,
+    workspacePath: input.workspacePath,
+  });
 }
 
 async function downloadArtifactText(agent: SDKAgent, path: string) {
   const buffer = await agent.downloadArtifact(path);
 
   return buffer.toString("utf8");
+}
+
+async function listRecipeArtifactsFromConversation(input: {
+  run: Run;
+  includeContents: boolean;
+  workspacePath: string;
+}): Promise<RecipeAgentArtifact[]> {
+  if (!input.run.supports("conversation")) {
+    return [];
+  }
+
+  const conversation = await input.run.conversation();
+  const artifactsByPath = new Map<string, RecipeAgentArtifact>();
+
+  for (const item of walkUnknownValues(conversation)) {
+    const artifact = extractConversationReadArtifact(item, input);
+
+    if (artifact) {
+      artifactsByPath.set(artifact.path, artifact);
+    }
+  }
+
+  return [...artifactsByPath.values()];
+}
+
+function extractConversationReadArtifact(
+  value: unknown,
+  input: {
+    includeContents: boolean;
+    workspacePath: string;
+  },
+): RecipeAgentArtifact | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const path = getNestedString(value, ["args", "path"]);
+  const content = getNestedString(value, ["result", "value", "content"]);
+
+  if (!path || content === undefined) {
+    return null;
+  }
+
+  const normalizedPath = normalizeWorkspacePath(path);
+
+  if (!normalizedPath.startsWith(`${input.workspacePath}/`)) {
+    return null;
+  }
+
+  const sizeBytes =
+    getNestedNumber(value, ["result", "value", "fileSize"]) ??
+    getNestedNumber(value, ["result", "value", "sizeBytes"]) ??
+    Buffer.byteLength(content, "utf8");
+
+  return {
+    name: getRecipeAgentArtifactName(normalizedPath),
+    path: normalizedPath,
+    sizeBytes,
+    content: input.includeContents ? content : undefined,
+  };
+}
+
+function* walkUnknownValues(value: unknown): Generator<unknown> {
+  yield value;
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      yield* walkUnknownValues(item);
+    }
+
+    return;
+  }
+
+  if (isRecord(value)) {
+    for (const item of Object.values(value)) {
+      yield* walkUnknownValues(item);
+    }
+  }
+}
+
+function getNestedString(value: Record<string, unknown>, path: string[]) {
+  const nested = getNestedValue(value, path);
+
+  return typeof nested === "string" ? nested : undefined;
+}
+
+function getNestedNumber(value: Record<string, unknown>, path: string[]) {
+  const nested = getNestedValue(value, path);
+
+  return typeof nested === "number" ? nested : undefined;
+}
+
+function getNestedValue(value: Record<string, unknown>, path: string[]) {
+  let current: unknown = value;
+
+  for (const part of path) {
+    if (!isRecord(current)) {
+      return undefined;
+    }
+
+    current = current[part];
+  }
+
+  return current;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+async function sendMessageWithAgent(input: {
+  agent: SDKAgent;
+  agentId: string;
+  videoId: string;
+  stage: SendRecipeAgentMessageInput["stage"];
+  message: string;
+  includeArtifactContents?: boolean;
+  workspacePath: string;
+}): Promise<RecipeAgentRunResult> {
+  const run = await input.agent.send(
+    buildRecipeAgentUserMessage({
+      stage: input.stage,
+      message: input.message,
+      workspacePath: input.workspacePath,
+    }),
+  );
+  const result = await run.wait();
+  const artifacts = await listRecipeArtifacts({
+    agent: input.agent,
+    run,
+    includeContents: input.includeArtifactContents ?? false,
+    workspacePath: input.workspacePath,
+  });
+
+  return {
+    agentId: input.agentId,
+    runId: result.id,
+    status: result.status,
+    result: result.result,
+    durationMs: result.durationMs,
+    workspacePath: input.workspacePath,
+    artifacts,
+  };
 }
 
 function buildAgentName(input: CreateRecipeAgentInput) {
@@ -233,4 +444,8 @@ async function disposeAgent(agent: SDKAgent) {
 
 function normalizePath(path: string) {
   return path.replace(/\\/g, "/");
+}
+
+function normalizeWorkspacePath(path: string) {
+  return normalizePath(path).replace(/^\/workspace\//, "");
 }

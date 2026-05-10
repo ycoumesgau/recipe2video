@@ -93,34 +93,28 @@ export async function sendRecipeAgentMessage(
   dependencies?: RecipeAgentOrchestrationDependencies,
 ) {
   const deps = dependencies ?? createDefaultDependencies(input.supabase);
-  const session = await ensureRecipeAgent(input, deps);
-  const run = await deps.createAgentRun({
-    videoId: input.videoId,
-    cursorAgentId: session.agentId,
-    stage: input.stage,
-    userMessage: input.message,
-    status: "running",
-    createdBy: input.requestedByUserId,
-  });
+  const project = await deps.getVideoProject(input.videoId);
 
-  await deps.updateVideoAgentSession(input.videoId, {
-    agentStatus: "running",
-  });
+  if (!project) {
+    throw new Error(`Video ${input.videoId} not found.`);
+  }
+
+  const currentProject = project;
+  let run: AgentRun | undefined;
+  let session: RecipeAgentSession | undefined;
 
   try {
-    const result = await deps.recipeAgentService.sendMessage({
-      agentId: session.agentId,
-      videoId: input.videoId,
-      stage: input.stage,
-      message: input.message,
-      includeArtifactContents: true,
-    });
+    const result = await sendMessageWithExistingOrNewAgent();
     const syncPlan = await deps.syncArtifacts(input.supabase, {
       videoId: input.videoId,
       artifacts: result.artifacts,
     });
     const runStatus: RecipeAgentRunStatus =
       result.status === "finished" ? "finished" : result.status;
+
+    if (!run || !session) {
+      throw new Error("Recipe agent run was not initialized.");
+    }
 
     const updatedRun = await deps.updateAgentRun(run.id, {
       cursorRunId: result.runId,
@@ -145,11 +139,13 @@ export async function sendRecipeAgentMessage(
     const message =
       error instanceof Error ? error.message : "Unknown recipe agent error.";
 
-    const updatedRun = await deps.updateAgentRun(run.id, {
-      status: "error",
-      error: message,
-      completedAt: new Date().toISOString(),
-    });
+    const updatedRun = run
+      ? await deps.updateAgentRun(run.id, {
+          status: "error",
+          error: message,
+          completedAt: new Date().toISOString(),
+        })
+      : undefined;
 
     await deps.updateVideoAgentSession(input.videoId, {
       agentStatus: "failed",
@@ -159,6 +155,113 @@ export async function sendRecipeAgentMessage(
       run: updatedRun,
     });
   }
+
+  async function sendMessageWithExistingOrNewAgent() {
+    const existingSession = getExistingRecipeAgentSession(currentProject);
+
+    if (existingSession) {
+      session = existingSession;
+      run = await createRunningAgentRun(existingSession);
+
+      await deps.updateVideoAgentSession(input.videoId, {
+        agentStatus: "running",
+      });
+
+      try {
+        return await deps.recipeAgentService.sendMessage({
+          agentId: existingSession.agentId,
+          videoId: input.videoId,
+          stage: input.stage,
+          message: input.message,
+          includeArtifactContents: true,
+        });
+      } catch (error) {
+        if (!isCursorAgentNotFoundError(error)) {
+          throw error;
+        }
+
+        await deps.updateAgentRun(run.id, {
+          status: "error",
+          error: error instanceof Error ? error.message : "Cursor agent not found.",
+          completedAt: new Date().toISOString(),
+        });
+
+        await deps.updateVideoAgentSession(input.videoId, {
+          cursorAgentId: null,
+          cursorAgentRuntime: null,
+          agentWorkspacePath: null,
+          agentStatus: "running",
+        });
+
+        session = undefined;
+        run = undefined;
+      }
+    }
+
+    const created = await deps.recipeAgentService.createRecipeAgentAndSendMessage({
+      videoId: input.videoId,
+      title: currentProject.title,
+      stage: input.stage,
+      message: input.message,
+      includeArtifactContents: true,
+      onSessionCreated: async (createdSession) => {
+        session = createdSession;
+
+        await deps.updateVideoAgentSession(input.videoId, {
+          cursorAgentId: createdSession.agentId,
+          cursorAgentRuntime: createdSession.runtime,
+          agentWorkspacePath: createdSession.workspacePath,
+          agentStatus: "running",
+        });
+
+        run = await createRunningAgentRun(createdSession);
+      },
+    });
+
+    session = created.session;
+
+    return created.result;
+  }
+
+  function createRunningAgentRun(agentSession: RecipeAgentSession) {
+    return deps.createAgentRun({
+      videoId: input.videoId,
+      cursorAgentId: agentSession.agentId,
+      stage: input.stage,
+      userMessage: input.message,
+      status: "running",
+      createdBy: input.requestedByUserId,
+    });
+  }
+}
+
+function getExistingRecipeAgentSession(
+  project: VideoProject,
+): RecipeAgentSession | null {
+  if (project.cursorAgentId && project.cursorAgentRuntime && project.agentWorkspacePath) {
+    return {
+      agentId: project.cursorAgentId,
+      runtime: project.cursorAgentRuntime,
+      workspacePath: project.agentWorkspacePath,
+      model: "configured",
+    };
+  }
+
+  return null;
+}
+
+function isCursorAgentNotFoundError(error: unknown) {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const code = "code" in error ? error.code : undefined;
+
+  if (code === "agent_not_found") {
+    return true;
+  }
+
+  return error instanceof Error && error.message.includes("agent_not_found");
 }
 
 function createDefaultDependencies(
