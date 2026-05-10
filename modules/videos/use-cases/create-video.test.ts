@@ -10,13 +10,16 @@ import type {
   VideoProductionDefaults,
 } from "../video.types";
 
-const productionDefaults: VideoProductionDefaults = {
+const productionDefaultsWithDuration: VideoProductionDefaults = {
   targetDurationSeconds: 60,
   stylePreset: "asmr_food",
   videoModel: "seedance2",
   imageModel: "gpt_image_2",
   ttsModel: "eleven_multilingual_v2",
   sfxModel: "eleven_text_to_sound_v2",
+  cursorAgentModel: "gpt-5.5",
+  cursorAgentReasoning: "high",
+  cursorAgentFast: "false",
 };
 
 test("buildRecipeAgentMessagePayload sends recipe ingest requests to the recipe agent", () => {
@@ -30,7 +33,7 @@ test("buildRecipeAgentMessagePayload sends recipe ingest requests to the recipe 
       uploadedFileNames: [],
     },
     pastedRecipeText: "Paris-Brest recipe with praline cream.",
-    productionDefaults,
+    productionDefaults: productionDefaultsWithDuration,
     intent: "analyze",
   });
 
@@ -38,6 +41,9 @@ test("buildRecipeAgentMessagePayload sends recipe ingest requests to the recipe 
   assert.equal(payload?.requestedByUserId, "user-1");
   assert.match(payload?.message ?? "", /Paris-Brest recipe with praline cream/);
   assert.match(payload?.message ?? "", /target duration: 60 seconds/);
+  assert.match(payload?.message ?? "", /Cursor agent model: gpt-5.5/);
+  assert.match(payload?.message ?? "", /Cursor agent reasoning: high/);
+  assert.match(payload?.message ?? "", /Cursor agent fast mode: disabled/);
   assert.match(payload?.message ?? "", /produce or update recipe-analysis\.json/i);
 });
 
@@ -47,7 +53,7 @@ test("buildRecipeAgentMessagePayload does not send when saving draft only", () =
       videoId: "video-1",
       profileId: "user-1",
       sourceSummary: textSource(),
-      productionDefaults,
+      productionDefaults: productionDefaultsWithDuration,
       intent: "draft",
     }),
     null,
@@ -66,11 +72,52 @@ test("buildRecipeAgentMessagePayload does not send for demo fixtures", () => {
         pastedTextPreview: null,
         uploadedFileNames: [],
       },
-      productionDefaults,
+      productionDefaults: productionDefaultsWithDuration,
       intent: "analyze",
     }),
     null,
   );
+});
+
+test("buildRecipeAgentMessagePayload omits target duration when set to auto", () => {
+  const payload = buildRecipeAgentMessagePayload({
+    videoId: "video-1",
+    profileId: "user-1",
+    sourceSummary: textSource(),
+    pastedRecipeText: "Quick noodle bowl.",
+    productionDefaults: {
+      stylePreset: "asmr_food",
+      videoModel: "seedance2",
+      imageModel: "gpt_image_2",
+      ttsModel: "eleven_multilingual_v2",
+      sfxModel: "eleven_text_to_sound_v2",
+    },
+    intent: "analyze",
+  });
+
+  assert.doesNotMatch(payload?.message ?? "", /target duration:/i);
+});
+
+test("buildRecipeAgentMessagePayload omits reasoning for models without reasoning levels", () => {
+  const payload = buildRecipeAgentMessagePayload({
+    videoId: "video-1",
+    profileId: "user-1",
+    sourceSummary: textSource(),
+    productionDefaults: {
+      stylePreset: "asmr_food",
+      videoModel: "seedance2",
+      imageModel: "gpt_image_2",
+      ttsModel: "eleven_multilingual_v2",
+      sfxModel: "eleven_text_to_sound_v2",
+      cursorAgentModel: "composer-2",
+      cursorAgentFast: "true",
+    },
+    intent: "analyze",
+  });
+
+  assert.match(payload?.message ?? "", /Cursor agent model: composer-2/i);
+  assert.match(payload?.message ?? "", /Cursor agent fast mode: enabled/i);
+  assert.doesNotMatch(payload?.message ?? "", /Cursor agent reasoning:/i);
 });
 
 function textSource(): RecipeSourceSummary {

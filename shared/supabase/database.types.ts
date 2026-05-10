@@ -70,6 +70,7 @@ export type Database = {
           created_by: string | null;
           created_at: string;
           updated_at: string;
+          archived_at: string | null;
           cursor_agent_id: string | null;
           cursor_agent_runtime: string | null;
           agent_workspace_path: string | null;
@@ -97,6 +98,7 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          archived_at?: string | null;
           cursor_agent_id?: string | null;
           cursor_agent_runtime?: string | null;
           agent_workspace_path?: string | null;
@@ -124,6 +126,7 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          archived_at?: string | null;
           cursor_agent_id?: string | null;
           cursor_agent_runtime?: string | null;
           agent_workspace_path?: string | null;

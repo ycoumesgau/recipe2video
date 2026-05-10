@@ -2,6 +2,11 @@ import { getCurrentProfile } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
 import {
+  CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL,
+  CURSOR_AGENT_FAST_BY_MODEL,
+  CURSOR_AGENT_MODEL_OPTIONS,
+  CURSOR_AGENT_REASONING_OPTIONS,
+  DEFAULT_CURSOR_AGENT_MODEL,
   DEFAULT_IMAGE_MODEL,
   DEFAULT_SFX_MODEL,
   DEFAULT_TTS_MODEL,
@@ -34,6 +39,8 @@ export interface CreateVideoDraftInput {
   selectedImageModel?: string;
   selectedTtsModel?: string;
   selectedSfxModel?: string;
+  cursorAgentModel?: string;
+  cursorAgentReasoning?: string;
   intent?: CreateVideoDraftIntent;
 }
 
@@ -76,12 +83,16 @@ export async function createVideoDraft(
     sourceFiles,
   });
   const productionDefaults: VideoProductionDefaults = {
-    targetDurationSeconds: input.targetDurationSeconds ?? 60,
+    targetDurationSeconds: input.targetDurationSeconds,
     stylePreset: input.stylePreset ?? "asmr_food",
     videoModel: input.selectedVideoModel ?? DEFAULT_VIDEO_MODEL,
     imageModel: input.selectedImageModel ?? DEFAULT_IMAGE_MODEL,
     ttsModel: input.selectedTtsModel ?? DEFAULT_TTS_MODEL,
     sfxModel: input.selectedSfxModel ?? DEFAULT_SFX_MODEL,
+    ...resolveCursorAgentDefaults({
+      model: input.cursorAgentModel,
+      reasoning: input.cursorAgentReasoning,
+    }),
   };
   const title =
     manualTitle ??
@@ -276,4 +287,47 @@ function sanitizeFileName(fileName: string) {
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 120);
+}
+
+function resolveCursorAgentDefaults(input: {
+  model?: string;
+  reasoning?: string;
+}): Pick<
+  VideoProductionDefaults,
+  "cursorAgentModel" | "cursorAgentReasoning" | "cursorAgentFast"
+> {
+  const allowedModels = new Set<string>(
+    CURSOR_AGENT_MODEL_OPTIONS.map((option) => option.value),
+  );
+  const model = allowedModels.has(input.model ?? "")
+    ? (input.model as string)
+    : DEFAULT_CURSOR_AGENT_MODEL;
+
+  const modelReasoningOptions =
+    CURSOR_AGENT_REASONING_OPTIONS[
+      model as keyof typeof CURSOR_AGENT_REASONING_OPTIONS
+    ] ?? [];
+  const allowedReasoning = new Set<string>(
+    modelReasoningOptions.map((option) => option.value),
+  );
+  const configuredDefaultReasoning =
+    CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL[
+      model as keyof typeof CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL
+    ];
+  const fallbackReasoning =
+    modelReasoningOptions.find(
+      (option) => option.value === configuredDefaultReasoning,
+    )?.value ?? modelReasoningOptions[0]?.value;
+  const reasoning = allowedReasoning.has(input.reasoning ?? "")
+    ? (input.reasoning as string)
+    : fallbackReasoning;
+  const fastMode =
+    CURSOR_AGENT_FAST_BY_MODEL[model as keyof typeof CURSOR_AGENT_FAST_BY_MODEL] ??
+    "false";
+
+  return {
+    cursorAgentModel: model,
+    cursorAgentReasoning: modelReasoningOptions.length === 0 ? undefined : reasoning,
+    cursorAgentFast: fastMode,
+  };
 }

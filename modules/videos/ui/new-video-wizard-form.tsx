@@ -31,6 +31,10 @@ import {
   type NewVideoWizardActionState,
 } from "@/modules/videos/actions";
 import {
+  CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL,
+  CURSOR_AGENT_MODEL_OPTIONS,
+  CURSOR_AGENT_REASONING_OPTIONS,
+  DEFAULT_CURSOR_AGENT_MODEL,
   DEFAULT_IMAGE_MODEL,
   DEFAULT_SFX_MODEL,
   DEFAULT_TTS_MODEL,
@@ -55,6 +59,9 @@ export function NewVideoWizardForm() {
     initialState
   );
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedCursorAgentModel, setSelectedCursorAgentModel] = useState(
+    DEFAULT_CURSOR_AGENT_MODEL
+  );
 
   const totalFileSize = useMemo(
     () => selectedFiles.reduce((total, file) => total + file.size, 0),
@@ -63,6 +70,18 @@ export function NewVideoWizardForm() {
   const hasOversizedFile = selectedFiles.some(
     (file) => file.size > MAX_RECIPE_SOURCE_FILE_SIZE_BYTES
   );
+  const cursorAgentReasoningOptions =
+    CURSOR_AGENT_REASONING_OPTIONS[
+      selectedCursorAgentModel as keyof typeof CURSOR_AGENT_REASONING_OPTIONS
+    ] ?? [];
+  const cursorAgentDefaultReasoning =
+    CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL[
+      selectedCursorAgentModel as keyof typeof CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL
+    ];
+  const cursorAgentReasoningDefaultValue =
+    cursorAgentReasoningOptions.find(
+      (option) => option.value === cursorAgentDefaultReasoning,
+    )?.value ?? cursorAgentReasoningOptions[0]?.value;
 
   return (
     <form action={formAction} className="space-y-6">
@@ -222,11 +241,34 @@ export function NewVideoWizardForm() {
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <SelectField
-            defaultValue="60"
+            defaultValue="auto"
             label="Target duration"
             name="targetDurationSeconds"
             options={TARGET_DURATION_OPTIONS}
           />
+          <SelectField
+            defaultValue={DEFAULT_CURSOR_AGENT_MODEL}
+            label="Cursor agent model"
+            name="cursorAgentModel"
+            onValueChange={setSelectedCursorAgentModel}
+            options={CURSOR_AGENT_MODEL_OPTIONS}
+          />
+          {cursorAgentReasoningOptions.length > 0 &&
+          cursorAgentReasoningDefaultValue ? (
+            <SelectField
+              defaultValue={cursorAgentReasoningDefaultValue}
+              key={`cursor-reasoning-${selectedCursorAgentModel}`}
+              label="Cursor agent reasoning"
+              name="cursorAgentReasoning"
+              options={cursorAgentReasoningOptions}
+            />
+          ) : (
+            <NonConfigurableField
+              label="Cursor agent reasoning"
+              message="Not configurable for this model"
+              name="cursorAgentReasoning"
+            />
+          )}
           <SelectField
             defaultValue="asmr_food"
             label="Style preset"
@@ -295,21 +337,41 @@ export function NewVideoWizardForm() {
   );
 }
 
+function NonConfigurableField({
+  label,
+  message,
+  name,
+}: {
+  label: string;
+  message: string;
+  name: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={`${name}-disabled`}>{label}</Label>
+      <Input disabled id={`${name}-disabled`} value={message} />
+      <input name={name} type="hidden" value="" />
+    </div>
+  );
+}
+
 function SelectField({
   defaultValue,
   label,
   name,
+  onValueChange,
   options,
 }: {
   defaultValue: string;
   label: string;
   name: string;
+  onValueChange?: (value: string) => void;
   options: readonly { value: string; label: string }[];
 }) {
   return (
     <div className="space-y-2">
       <Label htmlFor={name}>{label}</Label>
-      <Select defaultValue={defaultValue} name={name}>
+      <Select defaultValue={defaultValue} name={name} onValueChange={onValueChange}>
         <SelectTrigger id={name}>
           <SelectValue />
         </SelectTrigger>

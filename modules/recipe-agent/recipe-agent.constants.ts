@@ -1,5 +1,5 @@
 export const DEFAULT_RECIPE_AGENT_RUNTIME = "cloud";
-export const DEFAULT_RECIPE_AGENT_MODEL = "composer-2";
+export const DEFAULT_RECIPE_AGENT_MODEL = "gpt-5.5";
 export const DEFAULT_RECIPE_AGENT_STARTING_REF = "main";
 export const RECIPE_AGENT_WORKSPACE_ROOT = "agent-recipes";
 

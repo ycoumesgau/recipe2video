@@ -4,18 +4,30 @@ import { getVideoDashboardData } from "@/modules/videos/get-video-dashboard-data
 import { listVideoProjects } from "@/modules/videos/repositories/video.repository";
 import { VideoLibraryDashboard } from "@/modules/videos/ui/video-library-dashboard";
 
-export default async function DashboardPage() {
-  const { projects, thumbnailByProjectId } = await loadProjectsForDashboard();
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ archived?: string }>;
+}) {
+  const { archived } = await searchParams;
+  const libraryMode = archived === "1" ? "archived" : "active";
+  const { projects, thumbnailByProjectId } =
+    await loadProjectsForDashboard(libraryMode);
   const thumbnailUrlByProjectId = buildThumbnailUrlMap(thumbnailByProjectId);
-  const data = getVideoDashboardData(projects, thumbnailUrlByProjectId);
+  const data = getVideoDashboardData(projects, thumbnailUrlByProjectId, {
+    includeSeededDemos: libraryMode === "active",
+  });
 
-  return <VideoLibraryDashboard data={data} />;
+  return <VideoLibraryDashboard data={data} libraryMode={libraryMode} />;
 }
 
-async function loadProjectsForDashboard() {
+async function loadProjectsForDashboard(libraryMode: "active" | "archived") {
   try {
     const supabase = createSupabaseAdminClient();
-    const projects = await listVideoProjects(supabase, { limit: 12 });
+    const projects = await listVideoProjects(supabase, {
+      limit: 12,
+      archiveFilter: libraryMode === "archived" ? "archived" : "active",
+    });
     const thumbnailByProjectId = await getProjectThumbnailPlaybackIds(
       supabase,
       projects.map((project) => project.id),

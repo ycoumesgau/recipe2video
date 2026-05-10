@@ -7,6 +7,13 @@ import {
 } from "@/modules/videos/repositories/video.repository";
 import type { VideoProject } from "@/modules/videos/video.types";
 import type { VideoStatus } from "@/modules/videos/video-status";
+import {
+  CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL,
+  CURSOR_AGENT_FAST_BY_MODEL,
+  CURSOR_AGENT_MODEL_OPTIONS,
+  CURSOR_AGENT_REASONING_OPTIONS,
+  DEFAULT_CURSOR_AGENT_MODEL,
+} from "@/modules/videos/video.constants";
 
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
 import {
@@ -18,6 +25,7 @@ import {
 import type {
   AgentRun,
   CreateAgentRunInput,
+  RecipeAgentConfig,
   RecipeAgentArtifact,
   RecipeAgentRunStatus,
   RecipeAgentSession,
@@ -59,6 +67,7 @@ export interface RecipeAgentOrchestrationDependencies {
   ): Promise<VideoProject>;
   updateVideoStatus(videoId: string, status: VideoStatus): Promise<VideoProject>;
   recipeAgentService: CursorRecipeAgentService;
+  getRecipeAgentService?: (project: VideoProject) => CursorRecipeAgentService;
   createAgentRun(input: CreateAgentRunInput): Promise<AgentRun>;
   updateAgentRun(id: string, patch: UpdateAgentRunInput): Promise<AgentRun>;
   syncArtifacts(
@@ -87,6 +96,8 @@ export async function ensureRecipeAgent(
   if (!project) {
     throw new Error(`Video ${input.videoId} not found.`);
   }
+  const recipeAgentService =
+    deps.getRecipeAgentService?.(project) ?? deps.recipeAgentService;
 
   if (project.cursorAgentId && project.cursorAgentRuntime && project.agentWorkspacePath) {
     return {
@@ -97,7 +108,7 @@ export async function ensureRecipeAgent(
     };
   }
 
-  const session = await deps.recipeAgentService.createRecipeAgent({
+  const session = await recipeAgentService.createRecipeAgent({
     videoId: input.videoId,
     title: project.title,
   });
@@ -122,6 +133,8 @@ export async function sendRecipeAgentMessage(
   if (!project) {
     throw new Error(`Video ${input.videoId} not found.`);
   }
+  const recipeAgentService =
+    deps.getRecipeAgentService?.(project) ?? deps.recipeAgentService;
 
   const currentProject = project;
   let run: AgentRun | undefined;
@@ -243,7 +256,7 @@ export async function sendRecipeAgentMessage(
       });
 
       try {
-        return await deps.recipeAgentService.sendMessage({
+        return await recipeAgentService.sendMessage({
           agentId: existingSession.agentId,
           videoId: input.videoId,
           stage: input.stage,
@@ -275,7 +288,7 @@ export async function sendRecipeAgentMessage(
       }
     }
 
-    const created = await deps.recipeAgentService.createRecipeAgentAndSendMessage({
+    const created = await recipeAgentService.createRecipeAgentAndSendMessage({
       videoId: input.videoId,
       title: currentProject.title,
       stage: input.stage,
@@ -680,18 +693,38 @@ function createDefaultDependencies(
     throw new Error("Supabase client is required for recipe agent orchestration.");
   }
 
+  const sdkAdapter = {
+    create: (options: Parameters<typeof Agent.create>[0]) => Agent.create(options),
+    resume: (agentId: string, options?: Parameters<typeof Agent.resume>[1]) =>
+      Agent.resume(agentId, options),
+  };
+  const baseConfig = resolveRecipeAgentConfig();
+  const baseRecipeAgentService = createCursorRecipeAgentService({
+    sdk: sdkAdapter,
+    config: baseConfig,
+  });
+
   return {
     getVideoProject: (videoId) => getVideoProjectById(supabase, videoId),
     updateVideoAgentSession: (videoId, patch) =>
       updateVideoAgentSession(supabase, videoId, patch),
     updateVideoStatus: (videoId, status) =>
       updateVideoProjectStatus(supabase, videoId, status),
-    recipeAgentService: createCursorRecipeAgentService({
-      sdk: {
-        create: (options) => Agent.create(options),
-        resume: (agentId, options) => Agent.resume(agentId, options),
-      },
-    }),
+    recipeAgentService: baseRecipeAgentService,
+    getRecipeAgentService: (project) => {
+      const override = resolveProjectRecipeAgentConfigOverride(project);
+      if (!override) {
+        return baseRecipeAgentService;
+      }
+
+      return createCursorRecipeAgentService({
+        sdk: sdkAdapter,
+        config: {
+          ...baseConfig,
+          ...override,
+        },
+      });
+    },
     createAgentRun: (runInput) => createAgentRun(supabase, runInput),
     updateAgentRun: (id, patch) => updateAgentRun(supabase, id, patch),
     syncArtifacts: (syncSupabase, syncInput) =>
@@ -711,4 +744,83 @@ function createDefaultDependencies(
       }
     },
   };
+}
+
+function resolveProjectRecipeAgentConfigOverride(
+  project: VideoProject,
+): Pick<RecipeAgentConfig, "model" | "modelReasoning" | "modelFast"> | null {
+  const defaults = getProductionDefaults(project.recipeData);
+  if (!defaults?.cursorAgentModel) {
+    return null;
+  }
+
+  const model = defaults.cursorAgentModel.trim();
+  if (model.length === 0) {
+    return null;
+  }
+  const allowedModels = new Set<string>(
+    CURSOR_AGENT_MODEL_OPTIONS.map((option) => option.value),
+  );
+  const resolvedModel = allowedModels.has(model)
+    ? model
+    : DEFAULT_CURSOR_AGENT_MODEL;
+
+  const modelKey = resolvedModel as keyof typeof CURSOR_AGENT_REASONING_OPTIONS;
+  const allowedReasoning =
+    CURSOR_AGENT_REASONING_OPTIONS[modelKey]?.map((option) => option.value) ?? [];
+  const reasoningRaw = defaults.cursorAgentReasoning?.trim();
+  const reasoning =
+    reasoningRaw &&
+    allowedReasoning.some((value) => value === reasoningRaw)
+      ? reasoningRaw
+      : CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL[
+          resolvedModel as keyof typeof CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL
+        ];
+  const fastMode =
+    CURSOR_AGENT_FAST_BY_MODEL[
+      resolvedModel as keyof typeof CURSOR_AGENT_FAST_BY_MODEL
+    ] ??
+    "false";
+
+  return {
+    model: resolvedModel,
+    modelReasoning: reasoning ? reasoning : undefined,
+    modelFast: fastMode,
+  };
+}
+
+function getProductionDefaults(
+  recipeData: VideoProject["recipeData"],
+): {
+  cursorAgentModel?: string;
+  cursorAgentReasoning?: string;
+  cursorAgentFast?: string;
+} | null {
+  if (!isRecord(recipeData)) {
+    return null;
+  }
+
+  const productionDefaults = recipeData.productionDefaults;
+  if (!isRecord(productionDefaults)) {
+    return null;
+  }
+
+  return {
+    cursorAgentModel:
+      typeof productionDefaults.cursorAgentModel === "string"
+        ? productionDefaults.cursorAgentModel
+        : undefined,
+    cursorAgentReasoning:
+      typeof productionDefaults.cursorAgentReasoning === "string"
+        ? productionDefaults.cursorAgentReasoning
+        : undefined,
+    cursorAgentFast:
+      typeof productionDefaults.cursorAgentFast === "string"
+        ? productionDefaults.cursorAgentFast
+        : undefined,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

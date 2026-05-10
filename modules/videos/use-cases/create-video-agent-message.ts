@@ -53,12 +53,23 @@ function buildInitialRecipeAgentMessage(
       : null,
     "",
     "Production defaults:",
-    `- target duration: ${input.productionDefaults.targetDurationSeconds} seconds`,
+    input.productionDefaults.targetDurationSeconds
+      ? `- target duration: ${input.productionDefaults.targetDurationSeconds} seconds`
+      : null,
     `- style preset: ${input.productionDefaults.stylePreset}`,
     `- video model: ${input.productionDefaults.videoModel}`,
     `- image model for reference generation: ${input.productionDefaults.imageModel}`,
     `- TTS model: ${input.productionDefaults.ttsModel}`,
     `- SFX model: ${input.productionDefaults.sfxModel}`,
+    input.productionDefaults.cursorAgentModel
+      ? `- Cursor agent model: ${input.productionDefaults.cursorAgentModel}`
+      : null,
+    input.productionDefaults.cursorAgentReasoning
+      ? `- Cursor agent reasoning: ${input.productionDefaults.cursorAgentReasoning}`
+      : null,
+    input.productionDefaults.cursorAgentFast
+      ? `- Cursor agent fast mode: ${input.productionDefaults.cursorAgentFast === "true" ? "enabled" : "disabled"}`
+      : null,
     "",
     "Mandatory: produce or update recipe-analysis.json in all cases (with clarifyingQuestions if information is missing).",
     "If enough information is available, also produce logical-scenes.json, seedance-segments.json, reference-plan.json, suno-prompt.md, decisions.md, and changelog.md.",
