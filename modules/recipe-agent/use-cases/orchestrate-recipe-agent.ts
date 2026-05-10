@@ -1,8 +1,12 @@
 import { Agent } from "@cursor/sdk";
 
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
-import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
+import {
+  getVideoProjectById,
+  updateVideoProjectStatus,
+} from "@/modules/videos/repositories/video.repository";
 import type { VideoProject } from "@/modules/videos/video.types";
+import type { VideoStatus } from "@/modules/videos/video-status";
 
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
 import {
@@ -26,6 +30,7 @@ import { extractAssistantCheckpoint } from "../services/checkpoint-parse";
 import type { CursorRecipeAgentService } from "../services/cursor-agent.service";
 import { createCursorRecipeAgentService } from "../services/cursor-agent.service";
 import {
+  fetchGithubBranchHeadSha,
   fetchCheckpointManifestFromGithub,
   parseGithubRepoFromUrl,
   supplementRecipeAgentArtifactsFromGithub,
@@ -52,6 +57,7 @@ export interface RecipeAgentOrchestrationDependencies {
     videoId: string,
     patch: UpdateVideoAgentSessionInput,
   ): Promise<VideoProject>;
+  updateVideoStatus(videoId: string, status: VideoStatus): Promise<VideoProject>;
   recipeAgentService: CursorRecipeAgentService;
   createAgentRun(input: CreateAgentRunInput): Promise<AgentRun>;
   updateAgentRun(id: string, patch: UpdateAgentRunInput): Promise<AgentRun>;
@@ -142,9 +148,18 @@ export async function sendRecipeAgentMessage(
       result,
       project: currentProject,
     });
+    const artifactsToSync = selectArtifactsForStage(input.stage, enriched.artifacts);
     const syncPlan = await deps.syncArtifacts(input.supabase, {
       videoId: input.videoId,
-      artifacts: enriched.artifacts,
+      artifacts: artifactsToSync,
+    });
+    assertRecipeAgentSyncReadiness({
+      stage: input.stage,
+      syncPlan,
+      artifacts: artifactsToSync,
+      gitBranch: enriched.gitBranch,
+      gitSha: enriched.gitSha,
+      hasAssistantCheckpoint: enriched.hasAssistantCheckpoint,
     });
 
     const needsUserInput = result.streamMeta?.needsUserInput ?? false;
@@ -181,6 +196,15 @@ export async function sendRecipeAgentMessage(
           ? "idle"
           : "validation_failed",
     });
+
+    const nextVideoStatus = resolveVideoStatusAfterAgentSync({
+      stage: input.stage,
+      syncPlan,
+    });
+
+    if (nextVideoStatus) {
+      await deps.updateVideoStatus(input.videoId, nextVideoStatus);
+    }
 
     return {
       session,
@@ -301,20 +325,15 @@ async function enrichArtifactsWithGithub(input: {
   artifacts: RecipeAgentArtifact[];
   gitBranch: string | null;
   gitSha: string | null;
+  hasAssistantCheckpoint: boolean;
 }> {
   let artifacts = input.result.artifacts;
   let gitBranch: string | null = input.project.agentGitBranch ?? null;
   let gitSha: string | null = input.project.agentGitCommitSha ?? null;
-
-  let config: ReturnType<typeof resolveRecipeAgentConfig> | undefined;
-
-  try {
-    config = resolveRecipeAgentConfig();
-  } catch {
-    return { artifacts, gitBranch, gitSha };
-  }
-
   const assistantCheckpoint = extractAssistantCheckpoint(input.result.result);
+  const hasAssistantCheckpoint =
+    !!assistantCheckpoint?.recipe2videoCheckpoint.branch &&
+    !!assistantCheckpoint?.recipe2videoCheckpoint.commitSha;
 
   if (assistantCheckpoint?.recipe2videoCheckpoint.branch) {
     gitBranch = assistantCheckpoint.recipe2videoCheckpoint.branch;
@@ -324,57 +343,276 @@ async function enrichArtifactsWithGithub(input: {
     gitSha = assistantCheckpoint.recipe2videoCheckpoint.commitSha;
   }
 
+  let config: ReturnType<typeof resolveRecipeAgentConfig> | undefined;
+
+  try {
+    config = resolveRecipeAgentConfig();
+  } catch {
+    return {
+      artifacts,
+      gitBranch,
+      gitSha,
+      hasAssistantCheckpoint,
+    };
+  }
+
   const repo = config.repoUrl ? parseGithubRepoFromUrl(config.repoUrl) : null;
   const token = config.githubToken;
 
   if (!repo || !token) {
-    return { artifacts, gitBranch, gitSha };
+    return {
+      artifacts,
+      gitBranch,
+      gitSha,
+      hasAssistantCheckpoint,
+    };
   }
 
   const workspacePath = input.result.workspacePath;
-  const ref = gitSha ?? gitBranch;
+  const candidateRefs = await buildGithubArtifactRefs({
+    gitBranch,
+    gitSha,
+    owner: repo.owner,
+    repo: repo.repo,
+    token,
+  });
 
-  if (!ref) {
-    return { artifacts, gitBranch, gitSha };
+  if (candidateRefs.length === 0) {
+    return {
+      artifacts,
+      gitBranch,
+      gitSha,
+      hasAssistantCheckpoint,
+    };
   }
 
-  try {
-    const manifest = await fetchCheckpointManifestFromGithub({
-      owner: repo.owner,
-      repo: repo.repo,
-      workspacePath,
-      ref,
-      token,
-    });
+  for (const candidate of candidateRefs) {
+    try {
+      const manifest = await fetchCheckpointManifestFromGithub({
+        owner: repo.owner,
+        repo: repo.repo,
+        workspacePath,
+        ref: candidate.ref,
+        token,
+      });
 
-    const supplementRef = manifest?.commitSha ?? ref;
+      if (!manifest) {
+        throw new Error(`Checkpoint manifest not found at ref ${candidate.ref}`);
+      }
 
-    artifacts = await supplementRecipeAgentArtifactsFromGithub({
-      workspacePath,
-      artifacts,
-      artifactPaths: manifest?.artifactPaths,
-      preferGithub: true,
-      owner: repo.owner,
-      repo: repo.repo,
-      ref: supplementRef,
-      token,
-    });
+      const supplementRef = candidate.preferRefOverManifestSha
+        ? candidate.ref
+        : manifest?.commitSha ?? candidate.ref;
 
-    if (manifest?.branch) {
-      gitBranch = manifest.branch;
+      artifacts = await supplementRecipeAgentArtifactsFromGithub({
+        workspacePath,
+        artifacts,
+        artifactPaths: manifest?.artifactPaths,
+        preferGithub: true,
+        owner: repo.owner,
+        repo: repo.repo,
+        ref: supplementRef,
+        token,
+      });
+
+      if (manifest?.branch) {
+        gitBranch = manifest.branch;
+      }
+
+      if (manifest?.commitSha) {
+        gitSha = manifest.commitSha;
+      }
+
+      if (candidate.persistedSha) {
+        gitSha = candidate.persistedSha;
+      }
+
+      return {
+        artifacts,
+        gitBranch,
+        gitSha,
+        hasAssistantCheckpoint,
+      };
+    } catch (error) {
+      console.warn(
+        "[recipe-agent] GitHub artifact sync failed for ref; trying next fallback:",
+        candidate.ref,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  console.warn(
+    "[recipe-agent] GitHub artifact sync failed for all refs; falling back to Cursor SDK artifacts.",
+  );
+
+  return {
+    artifacts,
+    gitBranch,
+    gitSha,
+    hasAssistantCheckpoint,
+  };
+}
+
+async function buildGithubArtifactRefs(input: {
+  gitBranch: string | null;
+  gitSha: string | null;
+  owner: string;
+  repo: string;
+  token: string;
+}) {
+  const refs: Array<{
+    ref: string;
+    persistedSha?: string;
+    preferRefOverManifestSha?: boolean;
+  }> = [];
+  const seen = new Set<string>();
+  const add = (entry: {
+    ref: string | null | undefined;
+    persistedSha?: string;
+    preferRefOverManifestSha?: boolean;
+  }) => {
+    if (!entry.ref || seen.has(entry.ref)) {
+      return;
     }
 
-    if (manifest?.commitSha) {
-      gitSha = manifest.commitSha;
+    seen.add(entry.ref);
+    refs.push({
+      ref: entry.ref,
+      persistedSha: entry.persistedSha,
+      preferRefOverManifestSha: entry.preferRefOverManifestSha,
+    });
+  };
+
+  add({
+    ref: input.gitSha,
+    persistedSha: input.gitSha ?? undefined,
+    preferRefOverManifestSha: true,
+  });
+
+  if (input.gitBranch) {
+    try {
+      const branchHeadSha = await fetchGithubBranchHeadSha({
+        owner: input.owner,
+        repo: input.repo,
+        branch: input.gitBranch,
+        token: input.token,
+      });
+
+      add({
+        ref: branchHeadSha,
+        persistedSha: branchHeadSha ?? undefined,
+        preferRefOverManifestSha: true,
+      });
+    } catch (error) {
+      console.warn(
+        "[recipe-agent] Unable to resolve GitHub branch HEAD; trying branch ref:",
+        error instanceof Error ? error.message : error,
+      );
     }
-  } catch (error) {
-    console.warn(
-      "[recipe-agent] GitHub artifact sync failed; falling back to Cursor SDK artifacts:",
-      error instanceof Error ? error.message : error,
+
+    add({ ref: input.gitBranch });
+  }
+
+  return refs;
+}
+
+function assertRecipeAgentSyncReadiness(input: {
+  stage: RecipeAgentStage;
+  syncPlan: RecipeAgentArtifactSyncPlan;
+  artifacts: RecipeAgentArtifact[];
+  gitBranch: string | null;
+  gitSha: string | null;
+  hasAssistantCheckpoint: boolean;
+}) {
+  if (input.stage !== "recipe_ingest") {
+    return;
+  }
+
+  if (!input.hasAssistantCheckpoint || !input.gitBranch || !input.gitSha) {
+    throw new Error(
+      "Recipe ingest requires a Git checkpoint (branch + commit SHA) in the assistant final response.",
     );
   }
 
-  return { artifacts, gitBranch, gitSha };
+  const hasRecipeAnalysis = input.syncPlan.artifactRecords.some(
+    (artifact) => artifact.artifactName === "recipe-analysis.json",
+  );
+
+  if (!hasRecipeAnalysis) {
+    throw new Error(
+      "Recipe ingest finished without syncing recipe-analysis.json. The agent output is not exploitable yet.",
+    );
+  }
+
+  const recipeAnalysisArtifact = input.artifacts.find(
+    (artifact) => artifact.name === "recipe-analysis.json",
+  );
+
+  if (recipeAnalysisArtifact?.source !== "github") {
+    throw new Error(
+      "Recipe ingest requires recipe-analysis.json from GitHub checkpoint (SDK JSON fallback is disabled).",
+    );
+  }
+}
+
+function selectArtifactsForStage(
+  stage: RecipeAgentStage,
+  artifacts: RecipeAgentArtifact[],
+) {
+  if (stage !== "recipe_ingest") {
+    return artifacts;
+  }
+
+  return artifacts.filter((artifact) => {
+    const name = String(artifact.name);
+    const isJson = name.endsWith(".json");
+
+    if (!isJson) {
+      return true;
+    }
+
+    return artifact.source === "github";
+  });
+}
+
+function resolveVideoStatusAfterAgentSync(input: {
+  stage: RecipeAgentStage;
+  syncPlan: RecipeAgentArtifactSyncPlan;
+}): VideoStatus | null {
+  if (!input.syncPlan.valid) {
+    return null;
+  }
+
+  if (input.stage === "recipe_ingest") {
+    const clarifyingQuestionCount =
+      input.syncPlan.recipePatch?.clarifyingQuestions.length ?? 0;
+
+    if (clarifyingQuestionCount > 0) {
+      return "clarification_needed";
+    }
+
+    if (
+      input.syncPlan.logicalScenes.length > 0 &&
+      input.syncPlan.segments.length > 0
+    ) {
+      return "storyboard_ready";
+    }
+
+    if (input.syncPlan.recipePatch) {
+      return "recipe_ingested";
+    }
+  }
+
+  if (
+    input.stage === "storyboard_revision" &&
+    input.syncPlan.logicalScenes.length > 0 &&
+    input.syncPlan.segments.length > 0
+  ) {
+    return "storyboard_ready";
+  }
+
+  return null;
 }
 
 function getExistingRecipeAgentSession(
@@ -417,6 +655,8 @@ function createDefaultDependencies(
     getVideoProject: (videoId) => getVideoProjectById(supabase, videoId),
     updateVideoAgentSession: (videoId, patch) =>
       updateVideoAgentSession(supabase, videoId, patch),
+    updateVideoStatus: (videoId, status) =>
+      updateVideoProjectStatus(supabase, videoId, status),
     recipeAgentService: createCursorRecipeAgentService({
       sdk: {
         create: (options) => Agent.create(options),

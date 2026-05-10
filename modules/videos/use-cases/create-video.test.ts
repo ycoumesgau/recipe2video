@@ -38,7 +38,7 @@ test("buildRecipeAgentMessagePayload sends recipe ingest requests to the recipe 
   assert.equal(payload?.requestedByUserId, "user-1");
   assert.match(payload?.message ?? "", /Paris-Brest recipe with praline cream/);
   assert.match(payload?.message ?? "", /target duration: 60 seconds/);
-  assert.match(payload?.message ?? "", /Produce or update recipe-analysis\.json/);
+  assert.match(payload?.message ?? "", /produce or update recipe-analysis\.json/i);
 });
 
 test("buildRecipeAgentMessagePayload does not send when saving draft only", () => {
