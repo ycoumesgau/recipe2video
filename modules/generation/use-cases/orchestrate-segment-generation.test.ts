@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Generation } from "@/modules/generation/generation.types";
-import type { RunwayTaskStatus } from "@/modules/generation/runway.types";
+import type {
+  RunwayTaskStatus,
+  SeedanceGenerationInput,
+} from "@/modules/generation/runway.types";
+import type { ReferenceAsset } from "@/modules/references/reference.types";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import type { VideoProject } from "@/modules/videos/video.types";
 
@@ -86,6 +90,7 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
   const segmentStatuses: string[] = [];
   const sentEvents: string[] = [];
   const costOperations: string[] = [];
+  const generationInputs: SeedanceGenerationInput[] = [];
 
   const result = await requestSegmentGenerationWorkflow(
     {
@@ -97,6 +102,7 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
       isGenerationQueuePaused: () => false,
       getSegmentById: async () => baseSegment,
       getVideoProjectById: async () => baseVideo,
+      listReferenceAssetsForVideo: async () => [],
       updateSegmentStatus: async (_segmentId, status) => {
         segmentStatuses.push(status);
         return { ...baseSegment, status };
@@ -107,11 +113,14 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
         runwayTaskId: "task-1",
         status: "queued",
       }),
-      startSeedanceGeneration: async () => ({
-        id: "task-1",
-        endpoint: "text_to_video",
-        generationStatus: "queued",
-      }),
+      startSeedanceGeneration: async (input) => {
+        generationInputs.push(input);
+        return {
+          id: "task-1",
+          endpoint: "image_to_video",
+          generationStatus: "queued",
+        };
+      },
       logCost: async (input) => {
         costOperations.push(input.operation);
         return baseCostLog(input.operation);
@@ -126,6 +135,7 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
   assert.deepEqual(segmentStatuses, ["queued", "generating"]);
   assert.deepEqual(sentEvents, ["segment.generation.poll.requested"]);
   assert.deepEqual(costOperations, ["seedance_segment_generation_started"]);
+  assert.equal(generationInputs[0]?.promptImage, "runway://test/kitchen");
 });
 
 test("requestSegmentGenerationWorkflow blocks new generation when the global queue is paused", async () => {
@@ -141,6 +151,7 @@ test("requestSegmentGenerationWorkflow blocks new generation when the global que
       isGenerationQueuePaused: () => true,
       getSegmentById: async () => baseSegment,
       getVideoProjectById: async () => baseVideo,
+      listReferenceAssetsForVideo: async () => [],
       updateSegmentStatus: async (_segmentId, status) => {
         segmentStatuses.push(status);
         return { ...baseSegment, status };
@@ -159,6 +170,171 @@ test("requestSegmentGenerationWorkflow blocks new generation when the global que
   );
 
   assert.equal(result.paused, true);
+  assert.deepEqual(segmentStatuses, ["blocked"]);
+});
+
+test("requestSegmentGenerationWorkflow resolves uploaded reference assets before Runway", async () => {
+  const generationInputs: SeedanceGenerationInput[] = [];
+  const segmentWithoutRunwayUri: SeedanceSegment = {
+    ...baseSegment,
+    references: [
+      {
+        id: "ref-kitchen",
+        role: "global Licorn kitchen environment",
+        name: "KitchenIslandDefault",
+        label: "KitchenIslandDefault",
+        runwayUri: null,
+        required: true,
+      },
+      {
+        id: "ref-state",
+        role: "current recipe state and fragile food geometry",
+        name: "RawChouxCrownFrame",
+        label: "RawChouxCrownFrame",
+        runwayUri: null,
+        required: true,
+      },
+    ],
+  };
+
+  await requestSegmentGenerationWorkflow(
+    {
+      segmentId: "segment-1",
+      requestedByUserId: "user-1",
+      isAllowlisted: true,
+    },
+    {
+      isGenerationQueuePaused: () => false,
+      getSegmentById: async () => segmentWithoutRunwayUri,
+      getVideoProjectById: async () => baseVideo,
+      listReferenceAssetsForVideo: async () => [
+        referenceAsset("KitchenIslandDefault", "kitchen", "runway://kitchen"),
+        referenceAsset("RawChouxCrownFrame", "recipe_state", "runway://raw-choux"),
+      ],
+      updateSegmentStatus: async (_segmentId, status) => ({
+        ...segmentWithoutRunwayUri,
+        status,
+      }),
+      createGeneration: async () => ({
+        ...baseGeneration,
+        id: "generation-1",
+        runwayTaskId: "task-1",
+        status: "queued",
+      }),
+      startSeedanceGeneration: async (input) => {
+        generationInputs.push(input);
+        return {
+          id: "task-1",
+          endpoint: "image_to_video",
+          generationStatus: "queued",
+        };
+      },
+      logCost: async (input) => baseCostLog(input.operation),
+      sendEvent: async () => {},
+    },
+  );
+
+  assert.equal(generationInputs[0]?.promptImage, "runway://kitchen");
+  assert.deepEqual(generationInputs[0]?.references, [
+    { type: "image", uri: "runway://raw-choux" },
+  ]);
+});
+
+test("requestSegmentGenerationWorkflow blocks when required reference asset is not uploaded", async () => {
+  const segmentStatuses: string[] = [];
+
+  await assert.rejects(
+    () =>
+      requestSegmentGenerationWorkflow(
+        {
+          segmentId: "segment-1",
+          requestedByUserId: "user-1",
+          isAllowlisted: true,
+        },
+        {
+          isGenerationQueuePaused: () => false,
+          getSegmentById: async () => ({
+            ...baseSegment,
+            references: [
+              {
+                id: "ref-kitchen",
+                role: "global Licorn kitchen environment",
+                name: "KitchenIslandDefault",
+                label: "KitchenIslandDefault",
+                runwayUri: null,
+                required: true,
+              },
+            ],
+          }),
+          getVideoProjectById: async () => baseVideo,
+          listReferenceAssetsForVideo: async () => [
+            referenceAsset("KitchenIslandDefault", "kitchen", null, "approved"),
+          ],
+          updateSegmentStatus: async (_segmentId, status) => {
+            segmentStatuses.push(status);
+            return { ...baseSegment, status };
+          },
+          createGeneration: async () => {
+            throw new Error("generation should not be created");
+          },
+          startSeedanceGeneration: async () => {
+            throw new Error("Runway should not be called");
+          },
+          logCost: async (input) => baseCostLog(input.operation),
+          sendEvent: async () => {},
+        },
+      ),
+    /not uploaded to Runway/,
+  );
+
+  assert.deepEqual(segmentStatuses, ["blocked"]);
+});
+
+test("requestSegmentGenerationWorkflow blocks when Seedance reference limit is exceeded", async () => {
+  const segmentStatuses: string[] = [];
+
+  await assert.rejects(
+    () =>
+      requestSegmentGenerationWorkflow(
+        {
+          segmentId: "segment-1",
+          requestedByUserId: "user-1",
+          isAllowlisted: true,
+        },
+        {
+          isGenerationQueuePaused: () => false,
+          getSegmentById: async () => ({
+            ...baseSegment,
+            references: Array.from({ length: 10 }, (_, index) => ({
+              role:
+                index === 0
+                  ? "global Licorn kitchen environment"
+                  : `recipe state reference ${index}`,
+              name: index === 0 ? "KitchenIslandDefault" : `State${index}`,
+              label: index === 0 ? "KitchenIslandDefault" : `State${index}`,
+              runwayUri: `runway://reference-${index}`,
+              required: true,
+            })),
+          }),
+          getVideoProjectById: async () => baseVideo,
+          listReferenceAssetsForVideo: async () => [],
+          updateSegmentStatus: async (_segmentId, status) => {
+            segmentStatuses.push(status);
+            return { ...baseSegment, status };
+          },
+          createGeneration: async () => {
+            throw new Error("generation should not be created");
+          },
+          startSeedanceGeneration: async () => {
+            throw new Error("Runway should not be called");
+          },
+          logCost: async (input) => baseCostLog(input.operation),
+          sendEvent: async () => {},
+        },
+      ),
+    /at most 9/,
+  );
+
   assert.deepEqual(segmentStatuses, ["blocked"]);
 });
 
@@ -293,6 +469,26 @@ function baseCostLog(operation: string) {
     tokensOutput: null,
     metadata: {},
     createdBy: "user-1",
+    createdAt: "2026-05-09T00:00:00.000Z",
+  };
+}
+
+function referenceAsset(
+  canonicalName: string,
+  type: string,
+  runwayUri: string | null,
+  status: ReferenceAsset["status"] = "uploaded_to_runway",
+): ReferenceAsset {
+  return {
+    id: `reference-${canonicalName}`,
+    videoId: "video-1",
+    mediaAssetId: null,
+    type,
+    canonicalName,
+    source: "agent_reference_plan",
+    runwayUri,
+    prompt: null,
+    status,
     createdAt: "2026-05-09T00:00:00.000Z",
   };
 }

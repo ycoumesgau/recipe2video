@@ -1,0 +1,109 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import type { ReferenceAsset } from "../reference.types";
+import { buildSegmentReadiness } from "./reference-readiness";
+import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
+
+test("buildSegmentReadiness treats segment references with runwayUri as ready", () => {
+  const readiness = buildSegmentReadiness([], [
+    segment({
+      runwayUri: "runway://kitchen",
+    }),
+  ]);
+
+  assert.equal(readiness[0]?.exceedsReferenceLimit, false);
+  assert.deepEqual(readiness[0]?.missingApprovedReferences, []);
+  assert.deepEqual(readiness[0]?.missingRunwayUploads, []);
+});
+
+test("buildSegmentReadiness treats uploaded reference assets as ready", () => {
+  const readiness = buildSegmentReadiness(
+    [referenceAsset("KitchenIslandDefault", "runway://kitchen")],
+    [
+      segment({
+        runwayUri: null,
+      }),
+    ],
+  );
+
+  assert.deepEqual(readiness[0]?.missingApprovedReferences, []);
+  assert.deepEqual(readiness[0]?.missingRunwayUploads, []);
+});
+
+test("buildSegmentReadiness reports approved references missing Runway upload", () => {
+  const readiness = buildSegmentReadiness(
+    [referenceAsset("KitchenIslandDefault", null, "approved")],
+    [
+      segment({
+        runwayUri: null,
+      }),
+    ],
+  );
+
+  assert.deepEqual(readiness[0]?.missingApprovedReferences, []);
+  assert.deepEqual(readiness[0]?.missingRunwayUploads, ["KitchenIslandDefault"]);
+});
+
+function segment(input: { runwayUri: string | null }): SeedanceSegment {
+  return {
+    id: "segment-1",
+    videoId: "video-1",
+    position: 1,
+    title: "Hook",
+    arc: "opening",
+    mode: "References",
+    logicalSceneIds: ["scene-1"],
+    description: "Hook",
+    prompt: "Prompt",
+    promptInitial: "Prompt",
+    references: [
+      {
+        role: "global Licorn kitchen environment",
+        name: "KitchenIslandDefault",
+        label: "KitchenIslandDefault",
+        runwayUri: input.runwayUri,
+        required: true,
+      },
+    ],
+    beats: [],
+    timing: [],
+    continuity: "",
+    risk: "",
+    audioPrompt: "",
+    negatives: [],
+    qaChecklist: {
+      referencesWithinLimit: true,
+      globalKitchenReferencePresent: true,
+      referenceRolesExplicit: true,
+      promptWithinPracticalLimit: true,
+      hardCutsSpecified: true,
+      mandatoryTimingSpecified: true,
+      noSpeechVoiceoverOrMusic: true,
+      fragileFoodPhysicsHandled: true,
+      nonStandardGeometryHandled: true,
+      sourcePoliciesApplied: [],
+    },
+    durationTarget: 5,
+    status: "ready",
+  };
+}
+
+function referenceAsset(
+  canonicalName: string,
+  runwayUri: string | null,
+  status: ReferenceAsset["status"] = "uploaded_to_runway",
+): ReferenceAsset {
+  return {
+    id: `reference-${canonicalName}`,
+    videoId: "video-1",
+    mediaAssetId: null,
+    type: "kitchen",
+    canonicalName,
+    source: "agent_reference_plan",
+    runwayUri,
+    prompt: null,
+    status,
+    createdAt: "2026-05-10T00:00:00.000Z",
+  };
+}
