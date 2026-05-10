@@ -12,6 +12,7 @@ import {
   DEFAULT_TTS_MODEL,
   DEFAULT_VIDEO_MODEL,
   MAX_RECIPE_SOURCE_FILE_SIZE_BYTES,
+  MAX_VIDEO_TITLE_LENGTH,
 } from "@/modules/videos/video.constants";
 import { createVideoProject } from "@/modules/videos/repositories/video.repository";
 import type {
@@ -26,6 +27,8 @@ import {
 } from "./create-video-agent-message";
 
 export interface CreateVideoDraftInput {
+  /** When non-empty after trim, used as `videos.title` instead of `buildDraftTitle`. */
+  recipeTitle?: string;
   recipeUrl?: string;
   pastedRecipeText?: string;
   demoRecipeId?: string;
@@ -48,6 +51,10 @@ export interface CreateVideoDraftResult {
 export async function createVideoDraft(
   input: CreateVideoDraftInput
 ): Promise<CreateVideoDraftResult> {
+  const manualTitle = normalizeOptionalText(input.recipeTitle)?.slice(
+    0,
+    MAX_VIDEO_TITLE_LENGTH,
+  );
   const recipeUrl = normalizeOptionalText(input.recipeUrl);
   const pastedRecipeText = normalizeOptionalText(input.pastedRecipeText);
   const demoRecipeId = normalizeOptionalText(input.demoRecipeId);
@@ -87,7 +94,9 @@ export async function createVideoDraft(
       reasoning: input.cursorAgentReasoning,
     }),
   };
-  const title = buildDraftTitle({ recipeUrl, pastedRecipeText, demoRecipeId });
+  const title =
+    manualTitle ??
+    buildDraftTitle({ recipeUrl, pastedRecipeText, demoRecipeId });
 
   const project = await createVideoProject(supabase, {
     title,

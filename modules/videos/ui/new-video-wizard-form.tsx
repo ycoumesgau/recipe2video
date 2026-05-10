@@ -41,6 +41,7 @@ import {
   DEFAULT_VIDEO_MODEL,
   IMAGE_MODEL_OPTIONS,
   MAX_RECIPE_SOURCE_FILE_SIZE_BYTES,
+  MAX_VIDEO_TITLE_LENGTH,
   SFX_MODEL_OPTIONS,
   STYLE_PRESET_OPTIONS,
   TARGET_DURATION_OPTIONS,
@@ -91,6 +92,28 @@ export function NewVideoWizardForm() {
           <AlertDescription>{state.message}</AlertDescription>
         </Alert>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recipe title</CardTitle>
+          <CardDescription>
+            Optional. When set, this becomes the project name. Leave blank to
+            derive a title from the URL, pasted text, or demo selection.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="recipeTitle">Display name</Label>
+            <Input
+              id="recipeTitle"
+              name="recipeTitle"
+              autoComplete="off"
+              maxLength={MAX_VIDEO_TITLE_LENGTH}
+              placeholder="e.g. Chicken enchiladas"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -101,6 +101,22 @@ export async function listVideoProjects(
   return data.map(mapVideoProject);
 }
 
+export async function updateVideoProjectTitle(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  title: string,
+): Promise<VideoProject> {
+  const { data, error } = await supabase
+    .from("videos")
+    .update({ title })
+    .eq("id", videoId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateVideoProjectTitle failed");
+  return mapVideoProject(data);
+}
+
 export async function updateVideoProjectStatus(
   supabase: SupabaseDataClient,
   videoId: string,
