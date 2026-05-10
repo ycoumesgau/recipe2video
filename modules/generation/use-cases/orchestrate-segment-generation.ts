@@ -16,8 +16,11 @@ import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import type { SegmentStatus } from "@/modules/storyboard/segment-status";
 import type { VideoProject } from "@/modules/videos/video.types";
 import type { VideoStatus } from "@/modules/videos/video-status";
+import {
+  RUNWAY_DEFAULT_VIDEO_RATIO,
+  RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
+} from "../runway.constants";
 
-const SEEDANCE2_CREDITS_PER_SECOND = 36;
 const MAX_SEEDANCE_REFERENCE_INPUTS = 9;
 
 interface WorkflowAuthData {
@@ -358,7 +361,7 @@ export function buildSeedanceGenerationInput(
   return {
     promptText: segment.prompt,
     durationSeconds: segment.durationTarget,
-    ratio: "720:1280",
+    ratio: RUNWAY_DEFAULT_VIDEO_RATIO,
     promptImage: promptImageReference?.uri,
     references: remainingReferences.length > 0 ? remainingReferences : undefined,
   };
@@ -551,7 +554,7 @@ function normalizeReferenceKey(value: string | null | undefined) {
 }
 
 function estimateSeedanceCredits(durationSeconds: number) {
-  return Math.ceil(durationSeconds * SEEDANCE2_CREDITS_PER_SECOND);
+  return Math.ceil(durationSeconds * RUNWAY_SEEDANCE2_CREDITS_PER_SECOND);
 }
 
 export function workflowStatusForRecipeResult(input: {

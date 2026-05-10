@@ -1,6 +1,10 @@
 import type { CostLog } from "@/modules/costs/cost.types";
 import type { PromptDiff } from "@/modules/feedback/feedback.types";
 import type { Generation } from "@/modules/generation/generation.types";
+import {
+  RUNWAY_DEFAULT_VIDEO_RATIO,
+  RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
+} from "@/modules/generation/runway.constants";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import {
   buildFixturePromptQa,
@@ -309,12 +313,14 @@ function buildDemoGenerations(
       model: "seedance2",
       modelParams: {
         duration: segment.durationTarget,
-        ratio: "720:1280",
+        ratio: RUNWAY_DEFAULT_VIDEO_RATIO,
         mode: "References",
       },
       runwayTaskId: `fixture-task-paris-brest-${clipNumber}`,
       status: "succeeded",
-      costCredits: Math.ceil(segment.durationTarget * 36),
+      costCredits: Math.ceil(
+        segment.durationTarget * RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
+      ),
       durationSeconds: segment.durationTarget,
       triggeredBy: "fixture",
       createdAt: CREATED_AT,

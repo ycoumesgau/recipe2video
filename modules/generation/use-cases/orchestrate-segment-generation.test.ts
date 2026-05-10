@@ -9,6 +9,10 @@ import type {
 import type { ReferenceAsset } from "@/modules/references/reference.types";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import type { VideoProject } from "@/modules/videos/video.types";
+import {
+  RUNWAY_DEFAULT_VIDEO_RATIO,
+  RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
+} from "../runway.constants";
 
 import {
   persistSegmentOutputWorkflow,
@@ -136,6 +140,7 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
   assert.deepEqual(sentEvents, ["segment.generation.poll.requested"]);
   assert.deepEqual(costOperations, ["seedance_segment_generation_started"]);
   assert.equal(generationInputs[0]?.promptImage, "runway://test/kitchen");
+  assert.equal(generationInputs[0]?.ratio, RUNWAY_DEFAULT_VIDEO_RATIO);
 });
 
 test("requestSegmentGenerationWorkflow blocks new generation when the global queue is paused", async () => {
@@ -440,7 +445,7 @@ const baseGeneration: Generation = {
   modelParams: {},
   runwayTaskId: "task-1",
   status: "queued",
-  costCredits: 144,
+  costCredits: 4 * RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
   durationSeconds: 4,
   triggeredBy: "user-1",
   createdAt: "2026-05-09T00:00:00.000Z",
@@ -456,6 +461,8 @@ const succeededTask: RunwayTaskStatus = {
 };
 
 function baseCostLog(operation: string) {
+  const creditsUsed = 4 * RUNWAY_SEEDANCE2_CREDITS_PER_SECOND;
+
   return {
     id: "cost-1",
     videoId: "video-1",
@@ -463,7 +470,7 @@ function baseCostLog(operation: string) {
     provider: "runway",
     model: "seedance2",
     operation,
-    creditsUsed: 144,
+    creditsUsed,
     costDollars: null,
     tokensInput: null,
     tokensOutput: null,
