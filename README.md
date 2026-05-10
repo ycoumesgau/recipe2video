@@ -1,6 +1,6 @@
 # Recipe2Video
 
-Recipe2Video is an internal Licorn production tool built for the Runway API Hackathon. It turns a food recipe into an agent-driven workflow for producing short vertical cooking videos featuring the Licorn mascot.
+Recipe2Video is an internal Licorn production tool built for the Runway API Hackathon. It turns a food recipe into an agent-driven workflow for producing short vertical cooking videos featuring the Licorn mascot. The creative planning engine is a persistent per-recipe Cursor SDK agent (`@cursor/sdk`), while the Runway API handles all video generation.
 
 The product is designed for a real operational use case at Licorn: generating high-quality cooking videos for TikTok, YouTube Shorts, and Instagram while controlling creative quality, generation cost, iteration loops, media storage, and final assembly.
 
@@ -27,8 +27,8 @@ Recipe2Video supports the following workflow:
 
 1. Ingest a recipe from a URL, uploaded photos, pasted text, or demo fixture.
 2. Extract structured recipe data and identify visual complexity.
-3. Generate a logical storyboard with 30-48 editorial scenes.
-4. Compress the storyboard into approximately 5-10 Seedance 2.0 generation segments.
+3. A persistent Cursor SDK recipe agent analyzes the recipe and generates a logical storyboard with 30-48 editorial scenes.
+4. The agent compresses the storyboard into approximately 5-10 Seedance 2.0 generation segments.
 5. Select global and recipe-specific reference images.
 6. Generate missing reference images when needed.
 7. Launch Seedance segment generation through the Runway API.
@@ -62,6 +62,8 @@ The first milestone is an end-to-end usable product for Licorn’s own marketing
 * Mux is the playback, streaming, and thumbnail layer.
 * User feedback modifies prompts through visible diffs.
 * The system should learn from correction history over time.
+* Persistent per-recipe Cursor SDK agent as the creative planning engine.
+* Agent artifacts are validated before synchronization into canonical project state.
 
 ## Tech stack
 
@@ -74,8 +76,10 @@ The first milestone is an end-to-end usable product for Licorn’s own marketing
 * Supabase Storage
 * pgvector for future feedback retrieval
 * Inngest
+* Cursor TypeScript SDK (`@cursor/sdk`) for persistent recipe agents
+* `recipe2video-agent-workspace` — dedicated agent workspace repository
 * Runway API (`@runwayml/sdk`)
-* OpenAI GPT-5.5 High
+* OpenAI GPT-5.5 High (fallback/narrow utilities: prompt diffs, feedback interpretation)
 * Mux Pay-as-you-go with Basic on-demand video
 * Remotion
 * Suno manual music workflow
@@ -133,6 +137,66 @@ Rules:
 * Mux assets are used for playback and review, not as the only archive.
 * Final Remotion assembly should use original files from Supabase Storage, not Mux playback streams.
 
+## Cursor SDK Agent Architecture
+
+Recipe2Video uses a two-repository architecture where the main app orchestrates persistent Cursor SDK agents that operate in a separate workspace.
+
+```txt
+recipe2video (this repo)
+  → creates/resumes Cursor SDK agent per recipe
+  → agent clones recipe2video-agent-workspace
+  → agent writes artifacts in agent-recipes/{videoId}/
+  → app downloads and validates artifacts (Zod)
+  → app syncs valid artifacts into Supabase
+```
+
+### Contractual artifacts
+
+Each agent produces 7 artifacts in `agent-recipes/{videoId}/`:
+
+| File | Purpose |
+|------|---------|
+| `recipe-analysis.json` | Structured recipe understanding |
+| `decisions.md` | Creative direction and rationale |
+| `logical-scenes.json` | 30-48 editorial scenes |
+| `seedance-segments.json` | Compressed Seedance generation segments |
+| `reference-plan.json` | Reference image requirements |
+| `suno-prompt.md` | Music generation prompt |
+| `changelog.md` | Agent reasoning log |
+
+### Agent boundaries
+
+The Cursor SDK agent:
+
+* **Can:** read recipe data, reason about creative direction, write artifact files
+* **Cannot:** access Runway/Supabase/Mux/Suno credentials
+* **Cannot:** create branches, PRs, or commits for everyday recipe work
+* **Cannot:** call external APIs directly
+
+### Inngest workflows
+
+* `recipe.agent.create.requested` — spawn a new agent for a recipe
+* `recipe.agent.message.requested` — send a follow-up message to an existing agent
+* `recipe.agent.sync.requested` — download and validate agent artifacts
+
+### Database tables
+
+* `agent_runs` — tracks agent lifecycle and status
+* `agent_artifacts` — stores validated artifact metadata
+* Agent columns on `videos` table — links video projects to their agent
+
+### Environment variables (agent)
+
+```txt
+CURSOR_API_KEY=
+CURSOR_AGENT_REPO_URL=
+CURSOR_AGENT_STARTING_REF=main
+CURSOR_AGENT_MODEL=gpt-5.5
+CURSOR_AGENT_MODEL_THINKING=high
+CURSOR_AGENT_RUNTIME=cloud
+CURSOR_AGENT_LOCAL_CWD=
+```
+
 ## Authentication
 
 Recipe2Video is restricted to internal Licorn users.
@@ -159,7 +223,7 @@ The repository should include the following documentation files:
 * `PRD.md` — product requirements and hackathon scope
 * `docs/agent-workflow.md` — how Cursor agents should work in parallel
 * `docs/ux-contract.md` — UX screens, states, rules, and component expectations
-* `docs/technical-contracts.md` — architecture, types, data model, storage, auth, and service contracts
+* `docs/technical-contracts.md` — architecture, types, data model, storage, auth, service contracts, and Cursor SDK agent architecture
 * `docs/github-issues-backlog.md` — agent-ready GitHub Issues backlog
 * `docs/demo-runbook.md` — demo recording plan and fallback strategy
 * `.cursor/skills/use-runway-api/SKILL.md` and companion `rw-*` skills — Runway API agent skills, copied from https://github.com/runwayml/skills/tree/main/skills (kept in repo so Cursor Cloud Agents read them as in-repo context)
@@ -178,6 +242,7 @@ modules/
   auth/
   videos/
   recipe-ingest/
+  recipe-agent/
   storyboard/
   references/
   generation/
@@ -185,6 +250,7 @@ modules/
   feedback/
   costs/
   assembly/
+  demo/
 shared/
   config/
   errors/
@@ -227,6 +293,7 @@ Rules:
 * `auth` — Magic Link login, allowlist checks, profiles
 * `videos` — video project lifecycle and dashboard data
 * `recipe-ingest` — recipe extraction from URL, photos, or text
+* `recipe-agent` — persistent Cursor SDK recipe agents, artifact validation, Supabase synchronization
 * `storyboard` — logical scenes and Seedance 2.0 segment planning
 * `references` — global and recipe-specific reference assets
 * `generation` — Runway task creation, polling, and generation state
@@ -305,14 +372,23 @@ MUX_TOKEN_SECRET=
 INNGEST_EVENT_KEY=
 INNGEST_SIGNING_KEY=
 APP_BASE_URL=
+CURSOR_API_KEY=
+CURSOR_AGENT_REPO_URL=
+CURSOR_AGENT_STARTING_REF=main
+CURSOR_AGENT_MODEL=gpt-5.5
+CURSOR_AGENT_MODEL_THINKING=high
+CURSOR_AGENT_RUNTIME=cloud
+CURSOR_AGENT_LOCAL_CWD=
 ```
 
 Never expose server-side secrets to the client.
 
 OpenAI planning uses `OPENAI_API_KEY` only on the server. Set
 `OPENAI_PLANNING_MODEL` to the exact API model identifier that corresponds to
-GPT-5.5 High for the account. Recipe2Video does not silently fall back to a
-different model if this value is missing or unavailable.
+GPT-5.5 High for the account. OpenAI is now a fallback/narrow utility layer
+(prompt diffs, feedback interpretation); the primary planning engine is the
+Cursor SDK agent. Recipe2Video does not silently fall back to a different model
+if this value is missing or unavailable.
 
 ## Development workflow
 

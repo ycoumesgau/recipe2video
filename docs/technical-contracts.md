@@ -73,6 +73,8 @@ modules/
   feedback/
   costs/
   assembly/
+  recipe-agent/
+  demo/
 shared/
   config/
   errors/
@@ -292,6 +294,32 @@ Key files:
 * `build-remotion-props.ts`
 * `assembly.repository.ts`
 * `ui/assembly-preview.tsx`
+
+### `modules/recipe-agent`
+
+Responsibilities:
+
+* Cursor SDK agent lifecycle (create, resume, send, dispose).
+* Agent configuration resolution from environment variables.
+* System prompt construction for recipe agents.
+* Workspace path management.
+* Artifact download, validation, and Supabase synchronization.
+* Agent run tracking (`agent_runs` table).
+* Agent artifact versioning (`agent_artifacts` table).
+* Video agent session management (`cursor_agent_id`, `agent_status` on `videos`).
+
+Key files:
+
+* `recipe-agent.types.ts`
+* `recipe-agent.config.ts`
+* `recipe-agent.constants.ts`
+* `recipe-agent.workspace.ts`
+* `recipe-agent.instructions.ts`
+* `services/cursor-agent.service.ts`
+* `use-cases/orchestrate-recipe-agent.ts`
+* `use-cases/sync-recipe-agent-artifacts.ts`
+* `repositories/recipe-agent.repository.ts`
+* `ui/recipe-agent-panel.tsx`
 
 ---
 
@@ -1005,8 +1033,8 @@ Rules:
 
 ## Cursor Recipe Agent Contract
 
-Recipe2Video can use the Cursor TypeScript SDK as the creative planning
-runtime for persistent per-recipe agents. A recipe agent is not a code
+Recipe2Video uses the Cursor TypeScript SDK (`@cursor/sdk`) as the creative
+planning runtime for persistent per-recipe agents. A recipe agent is not a code
 contributor and must not open PRs for everyday recipe work. It is a creative
 worker with a filesystem workspace whose artifacts are validated and
 synchronized back into Supabase by the application.
@@ -1031,8 +1059,9 @@ Runtime rules:
   `process.cwd()`.
 * `CURSOR_AGENT_MODEL_THINKING` is optional and maps to the Cursor SDK model
   parameter `{ id: "thinking", value }` for models that support it.
-* The app stores the persistent Cursor `agentId` per video project in a later
-  data-model issue.
+* The app stores the persistent Cursor `agentId` per video project on the
+  `videos` row (`cursor_agent_id`, `cursor_agent_runtime`, `agent_workspace_path`,
+  `agent_status`).
 * The app resumes the same agent for follow-up messages so recipe decisions are
   not regenerated from scratch.
 * The agent does not receive Runway, Supabase, Mux, or Suno credentials for the
@@ -1060,6 +1089,111 @@ Agent boundaries:
 * The agent must not call costly generation services.
 * The app validates all artifacts before syncing them into canonical project
   tables.
+
+### Two-Repository Architecture
+
+Recipe2Video operates as two Git repositories:
+
+| Repository | Purpose |
+|---|---|
+| `recipe2video` | Application repository — Next.js app, Inngest functions, Supabase migrations, Remotion compositions, and all production code. |
+| `recipe2video-agent-workspace` | Agent workspace repository — cloned by cloud Cursor agents. Contains `.cursor/rules/`, `.cursor/skills/`, and an empty `agent-recipes/` directory tree. |
+
+Cloud agents clone `recipe2video-agent-workspace` (set via `CURSOR_AGENT_REPO_URL`),
+**not** the application repository. This keeps agents sandboxed away from
+production code, migrations, and secrets. The workspace repo provides:
+
+* Rules and skills that guide the agent's creative output.
+* An empty `agent-recipes/` directory structure where each agent writes its
+  per-video artifacts into `agent-recipes/{videoId}/`.
+* No application source code, no `node_modules`, no credentials.
+
+The application repository reads agent output by downloading artifacts through
+the Cursor SDK (`agent.listArtifacts()` + `agent.downloadArtifact(path)`),
+then validates and synchronizes them into Supabase.
+
+### Agent Service Interface
+
+The `CursorRecipeAgentService` interface in
+`modules/recipe-agent/services/cursor-agent.service.ts` exposes two operations:
+
+```ts
+interface CursorRecipeAgentService {
+  createRecipeAgent(input: CreateRecipeAgentInput): Promise<RecipeAgentSession>;
+  sendMessage(input: SendRecipeAgentMessageInput): Promise<RecipeAgentRunResult>;
+}
+```
+
+`createRecipeAgent` creates a new Cursor cloud agent backed by the workspace
+repo, registers the `agentId` on the `videos` row, and returns a
+`RecipeAgentSession`. Subsequent calls use `sendMessage`, which resumes the
+existing agent with `Agent.resume(agentId)`, sends the user message, waits for
+the run to finish, downloads artifacts from the agent workspace, and returns
+a `RecipeAgentRunResult` including validated artifacts.
+
+Both operations are wrapped by the orchestration layer
+(`ensureRecipeAgent` + `sendRecipeAgentMessage` in
+`modules/recipe-agent/use-cases/orchestrate-recipe-agent.ts`) which handles
+agent-run tracking, session upsert, artifact sync, and status transitions.
+
+### Artifact Validation and Synchronization
+
+After each agent run the application downloads all files from
+`agent-recipes/{videoId}/` and validates them:
+
+**JSON artifacts — validated with Zod schemas:**
+
+| Artifact | Zod Schema | Sync target |
+|---|---|---|
+| `recipe-analysis.json` | `RecipeAnalysisResultSchema` | `videos.recipe_data` (merge) |
+| `logical-scenes.json` | `LogicalScenesEnvelopeSchema` | `logical_scenes` table (replace) |
+| `seedance-segments.json` | `SeedanceSegmentsEnvelopeSchema` | `segments` table (replace) |
+| `reference-plan.json` | `ReferencePlanSchema` | `reference_assets` table (replace) |
+
+**Markdown artifacts — accepted as-is (no schema validation):**
+
+| Artifact | Sync target |
+|---|---|
+| `decisions.md` | Stored in `agent_artifacts` only |
+| `suno-prompt.md` | `videos.recipe_data.sunoPrompt` |
+| `changelog.md` | Stored in `agent_artifacts` only |
+
+Validation and sync rules:
+
+* Every artifact (valid or not) is upserted into `agent_artifacts` with its
+  `content_hash` (SHA-256), `validation_status` (`valid` | `invalid`), and
+  any `validation_errors`.
+* Invalid artifacts are **not** synced to canonical tables; they remain in
+  `agent_artifacts` for debugging.
+* Valid artifacts trigger a sync that replaces (not merges) the canonical table
+  rows for that video, except `recipe_data` which is merged.
+* Content hashes allow the application to detect whether an artifact changed
+  between successive agent runs.
+
+### Agent Orchestration Flow
+
+```mermaid
+sequenceDiagram
+  participant App as Recipe2Video App
+  participant Inngest
+  participant SDK as Cursor SDK
+  participant WS as agent-workspace repo
+  participant DB as Supabase
+
+  App->>Inngest: recipe.agent.create.requested
+  Inngest->>SDK: Agent.create(cloud config)
+  SDK->>WS: Clone repo
+  SDK-->>Inngest: agentId
+  Inngest->>DB: Store cursor_agent_id on video
+
+  App->>Inngest: recipe.agent.message.requested
+  Inngest->>SDK: Agent.resume(agentId) + send(message)
+  SDK->>WS: Write artifacts
+  SDK-->>Inngest: RunResult + artifacts
+  Inngest->>Inngest: Validate artifacts (Zod)
+  Inngest->>DB: Sync valid artifacts
+  Inngest->>DB: Update agent_status
+```
 
 ---
 
