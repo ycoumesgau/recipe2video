@@ -387,7 +387,12 @@ function ProjectCard({ project }: { project: VideoDashboardProject }) {
         </div>
 
         <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-          <p className="text-muted-foreground">Next action</p>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-muted-foreground">Next action</p>
+            <Badge variant={project.agentStatus === "failed" || project.agentStatus === "validation_failed" ? "destructive" : "outline"}>
+              Agent {project.agentStatus.replace(/_/g, " ")}
+            </Badge>
+          </div>
           <p className="font-medium">{project.nextAction}</p>
         </div>
 

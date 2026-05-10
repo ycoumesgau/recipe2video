@@ -1,3 +1,4 @@
+import type { RecipeAgentStatus } from "@/modules/recipe-agent/recipe-agent.types";
 import type { VideoStatus } from "./video-status";
 
 export type RecipeSourceKind = "url" | "photos" | "pasted_text" | "demo_fixture";
@@ -10,6 +11,7 @@ export interface VideoDashboardProject {
   recipeSourceKind: RecipeSourceKind;
   recipeSourceLabel: string;
   status: VideoStatus;
+  agentStatus: RecipeAgentStatus;
   thumbnailLabel: string;
   thumbnailTone: "pink" | "amber" | "emerald" | "sky";
   /**
