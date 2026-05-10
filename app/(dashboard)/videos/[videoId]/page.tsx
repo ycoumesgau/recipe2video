@@ -17,6 +17,11 @@ import { loadProjectCostDashboardData } from "@/modules/costs/load-cost-dashboar
 import { CostDashboard } from "@/modules/costs/ui/cost-dashboard";
 import type { CostDashboardData } from "@/modules/costs/cost.types";
 import { countActiveGenerationsForSegments } from "@/modules/generation/repositories/generation.repository";
+import {
+  listAgentArtifactsByVideoId,
+  listAgentRunsByVideoId,
+} from "@/modules/recipe-agent/repositories/recipe-agent.repository";
+import { RecipeAgentPanel } from "@/modules/recipe-agent/ui/recipe-agent-panel";
 import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
@@ -37,6 +42,8 @@ export default async function VideoDetailPage({
     seedanceSegments,
     storyboardError,
     activeTaskCount,
+    agentRuns,
+    agentArtifacts,
   } = await loadProject(videoId);
 
   const acceptedSegments = seedanceSegments.filter(
@@ -86,32 +93,40 @@ export default async function VideoDetailPage({
         <TabsContent value="overview">
           {project && nextAction ? (
             <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Next required action</CardTitle>
-                  <CardDescription>{nextAction.detail}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 text-sm">
-                  <ProjectPipelineProgress
-                    acceptedSegmentCount={acceptedSegments}
-                    activeTaskCount={activeTaskCount}
-                    status={project.status}
-                    totalSegmentCount={seedanceSegments.length}
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    {nextAction.href ? (
-                      <Button asChild>
-                        <Link href={nextAction.href}>{nextAction.cta}</Link>
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Next required action</CardTitle>
+                    <CardDescription>{nextAction.detail}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4 text-sm">
+                    <ProjectPipelineProgress
+                      acceptedSegmentCount={acceptedSegments}
+                      activeTaskCount={activeTaskCount}
+                      status={project.status}
+                      totalSegmentCount={seedanceSegments.length}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {nextAction.href ? (
+                        <Button asChild>
+                          <Link href={nextAction.href}>{nextAction.cta}</Link>
+                        </Button>
+                      ) : (
+                        <Button disabled>{nextAction.cta}</Button>
+                      )}
+                      <Button asChild variant="outline">
+                        <Link href="/">Back to dashboard</Link>
                       </Button>
-                    ) : (
-                      <Button disabled>{nextAction.cta}</Button>
-                    )}
-                    <Button asChild variant="outline">
-                      <Link href="/">Back to dashboard</Link>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <RecipeAgentPanel
+                  artifacts={agentArtifacts}
+                  project={project}
+                  runs={agentRuns}
+                />
+              </div>
 
               <div className="space-y-4">
                 <Card>
@@ -312,6 +327,12 @@ async function loadProject(videoId: string) {
       supabase,
       seedanceSegments.map((segment) => segment.id),
     );
+    const [agentRuns, agentArtifacts] = project
+      ? await Promise.all([
+          listAgentRunsByVideoId(supabase, videoId),
+          listAgentArtifactsByVideoId(supabase, videoId),
+        ])
+      : [[], []];
 
     return {
       project,
@@ -321,6 +342,8 @@ async function loadProject(videoId: string) {
       seedanceSegments,
       storyboardError: null,
       activeTaskCount,
+      agentRuns,
+      agentArtifacts,
     };
   } catch (error) {
     return {
@@ -337,6 +360,8 @@ async function loadProject(videoId: string) {
           ? error.message
           : "Unable to load storyboard data.",
       activeTaskCount: 0,
+      agentRuns: [],
+      agentArtifacts: [],
     };
   }
 }
@@ -403,6 +428,24 @@ function computeNextAction(input: {
   totalCount: number;
 }) {
   const { project } = input;
+
+  if (project.agentStatus === "validation_failed") {
+    return {
+      detail:
+        "The recipe agent produced artifacts that failed validation. Ask the same agent to repair them before approving downstream checkpoints.",
+      cta: "Open Recipe Agent",
+      href: `/videos/${project.id}`,
+    };
+  }
+
+  if (project.agentStatus === "running") {
+    return {
+      detail:
+        "The recipe agent is currently updating planning artifacts. Refresh this project after the run completes.",
+      cta: "Agent running",
+      href: null as string | null,
+    };
+  }
 
   if (project.status === "draft") {
     return {

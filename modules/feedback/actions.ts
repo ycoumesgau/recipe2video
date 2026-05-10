@@ -93,6 +93,23 @@ export async function submitSegmentFeedbackAction(
       createdBy: profile.id,
     });
 
+    await inngest.send({
+      name: INNGEST_EVENTS.recipeAgentMessageRequested,
+      data: {
+        videoId,
+        stage: "segment_prompt_revision",
+        message: [
+          `Segment ${segment.position}: ${segment.title}`,
+          "User feedback on generated variant:",
+          feedbackMessage,
+          "",
+          "Keep the recipe artifacts in sync with this correction. Do not launch Runway generation.",
+        ].join("\n"),
+        requestedByUserId: profile.id,
+        isAllowlisted: true,
+      },
+    });
+
     revalidateSegmentReview(videoId, segmentId);
 
     return {

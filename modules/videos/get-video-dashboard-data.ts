@@ -7,6 +7,7 @@ import type {
   VideoDashboardProject,
 } from "./video-dashboard.types";
 import type { VideoProject } from "./video.types";
+import type { RecipeAgentStatus } from "@/modules/recipe-agent/recipe-agent.types";
 
 const SEEDED_PROJECTS: VideoDashboardProject[] = [
   {
@@ -15,6 +16,7 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
     recipeSourceKind: "demo_fixture",
     recipeSourceLabel: "Demo fixture",
     status: "review",
+    agentStatus: "idle",
     thumbnailLabel: "Paris-Brest",
     thumbnailTone: "amber",
     acceptedSegments: 4,
@@ -31,6 +33,7 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
     recipeSourceKind: "url",
     recipeSourceLabel: "Recipe URL",
     status: "references_ready",
+    agentStatus: "idle",
     thumbnailLabel: "Lemon tart",
     thumbnailTone: "emerald",
     acceptedSegments: 0,
@@ -47,6 +50,7 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
     recipeSourceKind: "pasted_text",
     recipeSourceLabel: "Pasted text",
     status: "storyboard_ready",
+    agentStatus: "idle",
     thumbnailLabel: "Cookie dough",
     thumbnailTone: "pink",
     acceptedSegments: 0,
@@ -187,6 +191,7 @@ function mapPersistedProject(
     recipeSourceKind,
     recipeSourceLabel: getRecipeSourceLabel(recipeSourceKind),
     status: project.status,
+    agentStatus: normalizeAgentStatus(project.agentStatus),
     thumbnailLabel: project.title,
     thumbnailTone: recipeSourceKind === "demo_fixture" ? "amber" : "sky",
     thumbnailUrl,
@@ -234,4 +239,20 @@ function getRecipeSourceLabel(
   }
 
   return "Demo fixture";
+}
+
+function normalizeAgentStatus(
+  status: VideoProject["agentStatus"] | undefined,
+): RecipeAgentStatus {
+  if (
+    status === "idle" ||
+    status === "running" ||
+    status === "needs_sync" ||
+    status === "validation_failed" ||
+    status === "failed"
+  ) {
+    return status;
+  }
+
+  return "idle";
 }

@@ -84,8 +84,8 @@ export function StoryboardActions({
         <div>
           <h3 className="font-medium">Ask agent to revise</h3>
           <p className="text-sm text-muted-foreground">
-            This captures the operator intent without calling OpenAI from the UI
-            issue scope.
+            This sends the revision to the persistent recipe agent for this
+            project and keeps generation blocked until you approve the result.
           </p>
         </div>
         <form action={revisionAction} className="space-y-3">

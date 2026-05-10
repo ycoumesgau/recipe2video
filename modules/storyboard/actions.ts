@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
+import { inngest } from "@/inngest/client";
+import { INNGEST_EVENTS } from "@/inngest/events";
 import { getCurrentProfile } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { updateVideoProjectStatus } from "@/modules/videos/repositories/video.repository";
@@ -75,18 +77,31 @@ export async function requestStoryboardRevisionAction(
   formData: FormData,
 ): Promise<StoryboardActionState> {
   try {
-    await requireProfile();
-    requireFormString(formData, "videoId");
+    const profile = await requireProfile();
+    const videoId = requireFormString(formData, "videoId");
     const revisionRequest = requireFormString(formData, "revisionRequest");
 
     if (revisionRequest.length < 10) {
       throw new Error("Add a short revision note before asking the agent.");
     }
 
+    await inngest.send({
+      name: INNGEST_EVENTS.recipeAgentMessageRequested,
+      data: {
+        videoId,
+        stage: "storyboard_revision",
+        message: revisionRequest,
+        requestedByUserId: profile.id,
+        isAllowlisted: true,
+      },
+    });
+
+    revalidateStoryboardPaths(videoId);
+
     return {
       kind: "success",
       message:
-        "Revision request captured in the UI. No OpenAI call was made from this issue scope.",
+        "Storyboard revision queued for the persistent recipe agent. No Runway generation was launched.",
     };
   } catch (error) {
     return toActionError(error, "Unable to request storyboard revision.");
