@@ -230,6 +230,19 @@ Overview content:
 * Active tasks for this project.
 * Cost summary.
 
+Recipe Agent panel:
+
+* Agent status indicator: idle, running, needs_sync, validation_failed, failed.
+* Last agent run summary.
+* Quick action buttons by stage:
+  * Analyze recipe
+  * Revise storyboard
+  * Generate segments and references
+  * Adjust Suno prompt
+  * Correct segment prompt
+* Agent run history (collapsed by default).
+* Agent artifact sync status.
+
 Primary next-action button examples:
 
 * Answer clarification questions.
@@ -241,6 +254,10 @@ Primary next-action button examples:
 Rules:
 
 * The overview must always answer: what is happening, what is blocked, what should the user do next?
+* The agent panel must be visible on the project overview.
+* Agent status must update after each run completes.
+* Invalid artifacts must show validation errors, not silently disappear.
+* The user must be able to see whether agent artifacts have been synced to Supabase.
 
 ---
 
@@ -276,7 +293,7 @@ Seedance segments view:
 Actions:
 
 * Approve storyboard.
-* Ask agent to revise.
+* Ask agent to revise — sends a message to the persistent Cursor recipe agent, not a one-shot OpenAI call.
 * Generate TTS pitch.
 * Edit segment instructions with agent.
 
@@ -433,8 +450,9 @@ Prompt panel:
 Chat panel:
 
 * Contextual chat with the selected segment.
+* Messages are routed to the persistent recipe agent for the project.
 * User feedback input.
-* Agent response.
+* Agent response from the same persistent agent that created the storyboard.
 * Diff proposal.
 
 Rules:
@@ -560,6 +578,20 @@ Rules:
 
 ---
 
+## Agent Status States
+
+The recipe agent for each project has a visible status:
+
+* `idle` — Agent exists, no active run, ready for new messages.
+* `running` — Agent is processing a message. UI shows a loading indicator with the current stage.
+* `needs_sync` — Agent has produced artifacts that have not been synced to Supabase yet.
+* `validation_failed` — Agent artifacts failed Zod validation. Errors are displayed. User can ask the agent to fix them.
+* `failed` — Agent run encountered an error. Error message is displayed with a retry option.
+
+These states are persisted on the `videos` table as `agent_status` and must be visible in the project overview and the Recipe Agent panel.
+
+---
+
 ## Error States
 
 Required error states:
@@ -637,3 +669,5 @@ Rules:
 * Project switching must not stop background work.
 * Logical scenes and Seedance segments must never be confused.
 * Mux playback is for review; Supabase Storage is the durable source of original media.
+* Agent artifacts are never applied to canonical project state without passing validation.
+* Agent status must be visible on the project overview.

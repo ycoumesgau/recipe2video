@@ -76,6 +76,7 @@ export interface RecipeAgentArtifact {
   sizeBytes?: number;
   updatedAt?: string;
   content?: string;
+  source?: "sdk" | "github";
 }
 
 export interface CreateRecipeAgentInput {

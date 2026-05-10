@@ -104,8 +104,11 @@ test("sendRecipeAgentMessage sends the first message on the newly created agent"
         name: "recipe-analysis.json",
         path: "agent-recipes/video-1/recipe-analysis.json",
         content: "{\"ok\":true}",
+        source: "github",
       },
     ],
+    resultText:
+      'Done\n```json\n{"recipe2videoCheckpoint":{"branch":"recipe2video/video-1","commitSha":"abc1234567"}}\n```',
   });
 
   const result = await sendRecipeAgentMessage(
@@ -138,6 +141,7 @@ test("sendRecipeAgentMessage sends the first message on the newly created agent"
   });
   assert.equal(deps.updatedRuns[0]?.patch.status, "finished");
   assert.equal(deps.sessionUpdates.at(-1)?.agentStatus, "idle");
+  assert.equal(deps.statusUpdates.at(-1)?.status, "recipe_ingested");
 });
 
 test("sendRecipeAgentMessage recreates stale Cursor agents reported as missing", async () => {
@@ -152,6 +156,16 @@ test("sendRecipeAgentMessage recreates stale Cursor agents reported as missing",
       agentWorkspacePath: "agent-recipes/video-1",
     },
     sendMessageError: staleAgentError,
+    agentArtifacts: [
+      {
+        name: "recipe-analysis.json",
+        path: "agent-recipes/video-1/recipe-analysis.json",
+        content: "{\"ok\":true}",
+        source: "github",
+      },
+    ],
+    resultText:
+      'Done\n```json\n{"recipe2videoCheckpoint":{"branch":"recipe2video/video-1","commitSha":"abc1234567"}}\n```',
   });
 
   const result = await sendRecipeAgentMessage(
@@ -181,6 +195,7 @@ test("sendRecipeAgentMessage recreates stale Cursor agents reported as missing",
   });
   assert.equal(deps.sentFirstMessages.length, 1);
   assert.equal(deps.updatedRuns.at(-1)?.patch.status, "finished");
+  assert.equal(deps.statusUpdates.at(-1)?.status, "recipe_ingested");
 });
 
 test("sendRecipeAgentMessage preserves invalid artifacts and marks validation_failed", async () => {
@@ -196,8 +211,11 @@ test("sendRecipeAgentMessage preserves invalid artifacts and marks validation_fa
         name: "recipe-analysis.json",
         path: "agent-recipes/video-1/recipe-analysis.json",
         content: "{}",
+        source: "github",
       },
     ],
+    resultText:
+      'Done\n```json\n{"recipe2videoCheckpoint":{"branch":"recipe2video/video-1","commitSha":"abc1234567"}}\n```',
   });
 
   const result = await sendRecipeAgentMessage(
@@ -212,6 +230,71 @@ test("sendRecipeAgentMessage preserves invalid artifacts and marks validation_fa
 
   assert.equal(result.syncPlan.valid, false);
   assert.equal(deps.sessionUpdates.at(-1)?.agentStatus, "validation_failed");
+});
+
+test("sendRecipeAgentMessage fails recipe ingest when analysis artifact is missing", async () => {
+  const deps = createDeps({
+    project: {
+      ...baseProject,
+      cursorAgentId: "bc-existing",
+      cursorAgentRuntime: "cloud",
+      agentWorkspacePath: "agent-recipes/video-1",
+    },
+    agentArtifacts: [],
+    resultText:
+      'Done\n```json\n{"recipe2videoCheckpoint":{"branch":"recipe2video/video-1","commitSha":"abc1234567"}}\n```',
+  });
+
+  await assert.rejects(
+    () =>
+      sendRecipeAgentMessage(
+        {
+          videoId: "video-1",
+          requestedByUserId: "user-1",
+          stage: "recipe_ingest",
+          message: "Analyze recipe.",
+        },
+        deps,
+      ),
+    /recipe-analysis\.json/,
+  );
+
+  assert.equal(deps.updatedRuns.at(-1)?.patch.status, "error");
+  assert.equal(deps.sessionUpdates.at(-1)?.agentStatus, "failed");
+});
+
+test("sendRecipeAgentMessage fails recipe ingest without assistant checkpoint", async () => {
+  const deps = createDeps({
+    project: {
+      ...baseProject,
+      cursorAgentId: "bc-existing",
+      cursorAgentRuntime: "cloud",
+      agentWorkspacePath: "agent-recipes/video-1",
+    },
+    agentArtifacts: [
+      {
+        name: "recipe-analysis.json",
+        path: "agent-recipes/video-1/recipe-analysis.json",
+        content: "{\"ok\":true}",
+        source: "github",
+      },
+    ],
+    resultText: "Done",
+  });
+
+  await assert.rejects(
+    () =>
+      sendRecipeAgentMessage(
+        {
+          videoId: "video-1",
+          requestedByUserId: "user-1",
+          stage: "recipe_ingest",
+          message: "Analyze recipe.",
+        },
+        deps,
+      ),
+    /requires a Git checkpoint/i,
+  );
 });
 
 test("sendRecipeAgentMessage prefers GitHub artifact contents at the checkpoint SHA", async () => {
@@ -276,7 +359,7 @@ test("sendRecipeAgentMessage prefers GitHub artifact contents at the checkpoint 
   assert.equal(deps.sessionUpdates.at(-1)?.agentGitBranch, "recipe2video/video-1");
 });
 
-test("sendRecipeAgentMessage falls back to SDK artifacts when GitHub sync fails", async () => {
+test("sendRecipeAgentMessage rejects SDK JSON fallback when GitHub sync fails", async () => {
   const restore = installRecipeAgentEnv();
   const originalFetch = globalThis.fetch;
   const deps = createDeps({
@@ -291,6 +374,54 @@ test("sendRecipeAgentMessage falls back to SDK artifacts when GitHub sync fails"
         name: "recipe-analysis.json",
         path: "agent-recipes/video-1/recipe-analysis.json",
         content: "{\"title\":\"SDK version\"}",
+        source: "sdk",
+      },
+    ],
+    resultText:
+      'Done\n```json\n{"recipe2videoCheckpoint":{"branch":"recipe2video/video-1","commitSha":"abc1234567","manifestPath":"agent-recipes/video-1/checkpoint-manifest.json"}}\n```',
+  });
+
+  globalThis.fetch = (async () =>
+    new Response("rate limited", { status: 429 })) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      () =>
+        sendRecipeAgentMessage(
+          {
+            videoId: "video-1",
+            requestedByUserId: "user-1",
+            stage: "recipe_ingest",
+            message: "Analyze recipe.",
+          },
+          deps,
+        ),
+      /recipe-analysis\.json/i,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+  assert.equal(deps.updatedRuns.at(-1)?.patch.status, "error");
+  assert.equal(deps.sessionUpdates.at(-1)?.agentStatus, "failed");
+});
+
+test("sendRecipeAgentMessage keeps SDK markdown fallback on general stage", async () => {
+  const restore = installRecipeAgentEnv();
+  const originalFetch = globalThis.fetch;
+  const deps = createDeps({
+    project: {
+      ...baseProject,
+      cursorAgentId: "bc-existing",
+      cursorAgentRuntime: "cloud",
+      agentWorkspacePath: "agent-recipes/video-1",
+    },
+    agentArtifacts: [
+      {
+        name: "decisions.md",
+        path: "agent-recipes/video-1/decisions.md",
+        content: "# Decisions\n\n- SDK fallback.",
+        source: "sdk",
       },
     ],
     resultText:
@@ -305,8 +436,8 @@ test("sendRecipeAgentMessage falls back to SDK artifacts when GitHub sync fails"
       {
         videoId: "video-1",
         requestedByUserId: "user-1",
-        stage: "recipe_ingest",
-        message: "Analyze recipe.",
+        stage: "general",
+        message: "Update decisions.",
       },
       deps,
     );
@@ -316,10 +447,78 @@ test("sendRecipeAgentMessage falls back to SDK artifacts when GitHub sync fails"
   }
 
   const synced = deps.syncedArtifactBatches[0] as Array<{ name: string; content?: string }>;
-  const recipeAnalysis = synced.find((artifact) => artifact.name === "recipe-analysis.json");
+  const decisions = synced.find((artifact) => artifact.name === "decisions.md");
 
-  assert.equal(recipeAnalysis?.content, "{\"title\":\"SDK version\"}");
-  assert.equal(deps.updatedRuns.at(-1)?.patch.agentGitCommitSha, "abc1234567");
+  assert.equal(decisions?.content, "# Decisions\n\n- SDK fallback.");
+  assert.equal(deps.updatedRuns.at(-1)?.patch.status, "finished");
+});
+
+test("sendRecipeAgentMessage recovers artifacts from the branch head when manifest SHA is stale", async () => {
+  const restore = installRecipeAgentEnv();
+  const originalFetch = globalThis.fetch;
+  const branchHeadSha = "def7654321";
+  const staleSha = "abc1234567";
+  const deps = createDeps({
+    project: {
+      ...baseProject,
+      cursorAgentId: "bc-existing",
+      cursorAgentRuntime: "cloud",
+      agentWorkspacePath: "agent-recipes/video-1",
+    },
+    agentArtifacts: [],
+    resultText:
+      'Done\n```json\n{"recipe2videoCheckpoint":{"branch":"cursor/checkpoint-test","commitSha":"abc1234567","workspace":"agent-recipes/video-1","status":"completed"}}\n```',
+  });
+
+  globalThis.fetch = (async (url) => {
+    const href = String(url);
+
+    if (href.includes("/git/ref/heads/cursor/checkpoint-test")) {
+      return Response.json({ object: { sha: branchHeadSha } });
+    }
+
+    if (href.includes("checkpoint-manifest.json") && href.includes(staleSha)) {
+      return new Response(null, { status: 404 });
+    }
+
+    if (href.includes("checkpoint-manifest.json") && href.includes(branchHeadSha)) {
+      return jsonFileResponse({
+        workspace: "agent-recipes/video-1",
+        branch: "cursor/checkpoint-test",
+        commitSha: staleSha,
+        manifestPath: "agent-recipes/video-1/checkpoint-manifest.json",
+        artifactPaths: ["agent-recipes/video-1/decisions.md"],
+      });
+    }
+
+    if (href.includes("decisions.md") && href.includes(branchHeadSha)) {
+      return textFileResponse("# Decisions\n\n- GitHub branch head version.");
+    }
+
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+
+  try {
+    await sendRecipeAgentMessage(
+      {
+        videoId: "video-1",
+        requestedByUserId: "user-1",
+        stage: "general",
+        message: "Write checkpoint.",
+      },
+      deps,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+  }
+
+  const synced = deps.syncedArtifactBatches[0] as Array<{ name: string; content?: string }>;
+  const decisions = synced.find((artifact) => artifact.name === "decisions.md");
+
+  assert.equal(decisions?.content, "# Decisions\n\n- GitHub branch head version.");
+  assert.equal(deps.updatedRuns.at(-1)?.patch.agentGitCommitSha, branchHeadSha);
+  assert.equal(deps.sessionUpdates.at(-1)?.agentGitBranch, "cursor/checkpoint-test");
 });
 
 test("sendRecipeAgentMessage recovers artifacts from the branch head when manifest SHA is stale", async () => {
@@ -413,7 +612,12 @@ const baseProject: VideoProject = {
 
 function createDeps(input: {
   project: VideoProject;
-  agentArtifacts?: Array<{ name: string; path: string; content: string }>;
+  agentArtifacts?: Array<{
+    name: string;
+    path: string;
+    content: string;
+    source?: "sdk" | "github";
+  }>;
   resultText?: string;
   sendMessageError?: Error;
 }) {
@@ -423,6 +627,7 @@ function createDeps(input: {
   const updatedRuns: Array<{ id: string; patch: UpdateAgentRunInput }> = [];
   const syncedArtifactBatches: unknown[] = [];
   const sentFirstMessages: unknown[] = [];
+  const statusUpdates: Array<{ videoId: string; status: string }> = [];
 
   const streamEvents: Array<{
     agentRunId: string;
@@ -438,6 +643,7 @@ function createDeps(input: {
     updatedRuns: Array<{ id: string; patch: UpdateAgentRunInput }>;
     syncedArtifactBatches: unknown[];
     sentFirstMessages: unknown[];
+    statusUpdates: typeof statusUpdates;
     streamEvents: typeof streamEvents;
   } = {
     createdAgents,
@@ -446,6 +652,7 @@ function createDeps(input: {
     updatedRuns,
     syncedArtifactBatches,
     sentFirstMessages,
+    statusUpdates,
     streamEvents,
     persistAgentRunStreamEvent: async (event) => {
       streamEvents.push(event);
@@ -456,6 +663,10 @@ function createDeps(input: {
     async updateVideoAgentSession(videoId, patch) {
       sessionUpdates.push({ videoId, ...patch });
       return { ...input.project, ...patch };
+    },
+    async updateVideoStatus(videoId, status) {
+      statusUpdates.push({ videoId, status });
+      return { ...input.project, status };
     },
     recipeAgentService: {
       async createRecipeAgent(agentInput) {
@@ -567,16 +778,41 @@ function createDeps(input: {
     },
     async syncArtifacts(_supabase, syncInput) {
       syncedArtifactBatches.push(syncInput.artifacts);
+      const artifactRecords = syncInput.artifacts.map((artifact) => ({
+        artifactName: String(artifact.name),
+        videoId: "video-1",
+        artifactPath: artifact.path,
+        content: artifact.content ?? "",
+        contentHash: null,
+        validationStatus: "valid" as const,
+        validationErrors: [],
+      }));
+      const hasRecipeAnalysis = artifactRecords.some(
+        (artifact) => artifact.artifactName === "recipe-analysis.json",
+      );
+      const hasLogicalScenes = artifactRecords.some(
+        (artifact) => artifact.artifactName === "logical-scenes.json",
+      );
+      const hasSeedanceSegments = artifactRecords.some(
+        (artifact) => artifact.artifactName === "seedance-segments.json",
+      );
+      const isInvalid = syncInput.artifacts.some((artifact) => artifact.content === "{}");
       return {
-        valid: !syncInput.artifacts.some((artifact) => artifact.content === "{}"),
-        artifactRecords: [],
-        recipePatch: null,
-        logicalScenes: [],
-        segments: [],
+        valid: !isInvalid,
+        artifactRecords,
+        recipePatch: hasRecipeAnalysis
+          ? {
+              normalized: {} as never,
+              clarifyingQuestions: [] as never,
+              agentSyncedAt: "2026-05-10T00:00:00.000Z",
+            }
+          : null,
+        logicalScenes: hasLogicalScenes ? [{}] : [],
+        segments: hasSeedanceSegments ? [{}] : [],
         references: [],
         sunoPrompt: null,
         errors: [],
-      };
+      } as never;
     },
   };
 

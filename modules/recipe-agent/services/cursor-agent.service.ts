@@ -273,6 +273,7 @@ async function listRecipeArtifacts(input: {
       content: input.includeContents
         ? await downloadArtifactText(input.agent, artifact.path)
         : undefined,
+      source: "sdk" as const,
     })),
   );
 
@@ -298,11 +299,13 @@ async function listRecipeArtifactsFromConversation(input: {
   includeContents: boolean;
   workspacePath: string;
 }): Promise<RecipeAgentArtifact[]> {
-  if (!input.run.supports("conversation")) {
+  let conversation: Awaited<ReturnType<Run["conversation"]>>;
+
+  try {
+    conversation = await input.run.conversation();
+  } catch {
     return [];
   }
-
-  const conversation = await input.run.conversation();
   const artifactsByPath = new Map<string, RecipeAgentArtifact>();
 
   for (const item of walkUnknownValues(conversation)) {
@@ -327,10 +330,18 @@ function extractConversationReadArtifact(
     return null;
   }
 
-  const path = getNestedString(value, ["args", "path"]);
-  const content = getNestedString(value, ["result", "value", "content"]);
+  const path = getConversationArtifactPath(value);
+  if (!path) {
+    return null;
+  }
 
-  if (!path || content === undefined) {
+  const content = getConversationArtifactContent(path, value);
+
+  if (content === undefined || content.length === 0) {
+    return null;
+  }
+
+  if (path.endsWith(".json") && !isValidJson(content)) {
     return null;
   }
 
@@ -350,6 +361,7 @@ function extractConversationReadArtifact(
     path: normalizedPath,
     sizeBytes,
     content: input.includeContents ? content : undefined,
+    source: "sdk",
   };
 }
 
@@ -375,6 +387,42 @@ function getNestedString(value: Record<string, unknown>, path: string[]) {
   const nested = getNestedValue(value, path);
 
   return typeof nested === "string" ? nested : undefined;
+}
+
+function getConversationArtifactPath(value: Record<string, unknown>) {
+  return (
+    getNestedString(value, ["args", "path"]) ??
+    getNestedString(value, ["path"]) ??
+    getNestedString(value, ["message", "args", "path"])
+  );
+}
+
+function getConversationArtifactContent(
+  artifactPath: string,
+  value: Record<string, unknown>,
+) {
+  const candidate =
+    getNestedString(value, ["result", "value", "content"]) ??
+    getNestedString(value, ["result", "value", "newContent"]) ??
+    getNestedString(value, ["result", "value", "updatedContent"]) ??
+    getNestedString(value, ["result", "value", "fileContent"]) ??
+    getNestedString(value, ["result", "value", "text"]) ??
+    getNestedString(value, ["args", "content"]) ??
+    getNestedString(value, ["message", "args", "content"]);
+
+  if (candidate !== undefined) {
+    return candidate;
+  }
+
+  if (artifactPath.endsWith(".json")) {
+    return undefined;
+  }
+
+  const argsNewString =
+    getNestedString(value, ["args", "new_string"]) ??
+    getNestedString(value, ["message", "args", "new_string"]);
+
+  return argsNewString;
 }
 
 function getNestedNumber(value: Record<string, unknown>, path: string[]) {
@@ -490,5 +538,14 @@ function normalizePath(path: string) {
 }
 
 function normalizeWorkspacePath(path: string) {
-  return normalizePath(path).replace(/^\/workspace\//, "");
+  return normalizePath(path).replace(/^\/?workspace\//, "");
+}
+
+function isValidJson(content: string) {
+  try {
+    JSON.parse(content);
+    return true;
+  } catch {
+    return false;
+  }
 }

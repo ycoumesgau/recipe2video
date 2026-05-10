@@ -239,6 +239,58 @@ test("sendMessage falls back to conversation file reads when cloud artifacts are
       path: "agent-recipes/video-1/decisions.md",
       sizeBytes: 39,
       content: "# Decisions\n\n- Diagnostic artifact test.",
+      source: "sdk",
+    },
+  ]);
+});
+
+test("sendMessage recovers artifact content from conversation write steps", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  sdk.resumedAgent.artifacts = [];
+  sdk.resumedAgent.conversationSteps = [
+    {
+      type: "toolCall",
+      message: {
+        type: "write",
+        args: {
+          path: "/workspace/agent-recipes/video-1/recipe-analysis.json",
+          content: '{"title":"Recovered from write"}',
+        },
+        result: {
+          status: "success",
+          value: {
+            fileSize: 32,
+          },
+        },
+      },
+    },
+  ];
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  const result = await service.sendMessage({
+    agentId: "bc-existing",
+    videoId: "video-1",
+    stage: "recipe_ingest",
+    message: "Analyze recipe.",
+    includeArtifactContents: true,
+  });
+
+  assert.deepEqual(result.artifacts, [
+    {
+      name: "recipe-analysis.json",
+      path: "agent-recipes/video-1/recipe-analysis.json",
+      sizeBytes: 32,
+      content: '{"title":"Recovered from write"}',
+      source: "sdk",
     },
   ]);
 });
@@ -314,6 +366,7 @@ class FakeSdkAgent implements SDKAgent {
     content: string;
     fileSize: number;
   }> = [];
+  conversationSteps: Array<Record<string, unknown>> = [];
   assistantStreamText?: string;
   waitResult: string | undefined = "updated";
 
@@ -324,6 +377,7 @@ class FakeSdkAgent implements SDKAgent {
     return new FakeRun(
       this.agentId,
       this.conversationArtifacts,
+      this.conversationSteps,
       this.assistantStreamText,
       this.waitResult,
     );
@@ -358,13 +412,16 @@ class FakeRun implements Run {
       content: string;
       fileSize: number;
     }>,
+    private readonly conversationSteps: Array<Record<string, unknown>>,
     private readonly assistantStreamText: string | undefined,
     private readonly waitResult: string | undefined,
   ) {}
 
   supports(operation?: string): boolean {
     return (
-      (operation === "conversation" && this.conversationArtifacts.length > 0) ||
+      (operation === "conversation" &&
+        (this.conversationArtifacts.length > 0 ||
+          this.conversationSteps.length > 0)) ||
       (operation === "stream" && this.assistantStreamText !== undefined)
     );
   }
@@ -389,6 +446,17 @@ class FakeRun implements Run {
   }
 
   async conversation() {
+    if (this.conversationSteps.length > 0) {
+      return [
+        {
+          type: "agentConversationTurn",
+          turn: {
+            steps: this.conversationSteps,
+          },
+        },
+      ] as unknown as Awaited<ReturnType<Run["conversation"]>>;
+    }
+
     return [
       {
         type: "agentConversationTurn",

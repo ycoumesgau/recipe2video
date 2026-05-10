@@ -233,6 +233,7 @@ export async function supplementRecipeAgentArtifactsFromGithub(input: {
       path,
       content: text,
       sizeBytes: Buffer.byteLength(text, "utf8"),
+      source: "github",
     });
   }
 
