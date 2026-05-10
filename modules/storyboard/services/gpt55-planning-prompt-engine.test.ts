@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { CostLogWriter } from "@/modules/costs/cost.types";
-import type { OpenAiPlanningClient } from "./openai-planning-client";
+import type {
+  OpenAiPlanningClient,
+  OpenAiPlanningJsonRequest,
+} from "./openai-planning-client";
 import { createGpt55PlanningPromptEngine } from "./gpt55-planning-prompt-engine";
 
 test("live planning engine uses OpenAI JSON output and logs real token usage", async () => {
   const calls: string[] = [];
   const logs: unknown[] = [];
   const openAiClient: OpenAiPlanningClient = {
-    async generateJson(input) {
+    async generateJson<T>(input: OpenAiPlanningJsonRequest) {
       calls.push(input.operation);
 
       return {
@@ -28,7 +31,7 @@ test("live planning engine uses OpenAI JSON output and logs real token usage", a
             promptPolicySources: [],
           },
           clarifyingQuestions: [],
-        },
+        } as T,
         usage: { inputTokens: 42, outputTokens: 12 },
       };
     },

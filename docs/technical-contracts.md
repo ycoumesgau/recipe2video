@@ -955,6 +955,66 @@ Rules:
 
 ---
 
+## Cursor Recipe Agent Contract
+
+Recipe2Video can use the Cursor TypeScript SDK as the creative planning
+runtime for persistent per-recipe agents. A recipe agent is not a code
+contributor and must not open PRs for everyday recipe work. It is a creative
+worker with a filesystem workspace whose artifacts are validated and
+synchronized back into Supabase by the application.
+
+Required environment variables:
+
+```txt
+CURSOR_API_KEY=
+CURSOR_AGENT_REPO_URL=
+CURSOR_AGENT_STARTING_REF=main
+CURSOR_AGENT_MODEL=gpt-5.5
+CURSOR_AGENT_MODEL_THINKING=high
+CURSOR_AGENT_RUNTIME=cloud
+CURSOR_AGENT_LOCAL_CWD=
+```
+
+Runtime rules:
+
+* Default runtime is `cloud`.
+* Cloud agents clone `CURSOR_AGENT_REPO_URL` at `CURSOR_AGENT_STARTING_REF`.
+* Local runtime is reserved for development and uses `CURSOR_AGENT_LOCAL_CWD` or
+  `process.cwd()`.
+* `CURSOR_AGENT_MODEL_THINKING` is optional and maps to the Cursor SDK model
+  parameter `{ id: "thinking", value }` for models that support it.
+* The app stores the persistent Cursor `agentId` per video project in a later
+  data-model issue.
+* The app resumes the same agent for follow-up messages so recipe decisions are
+  not regenerated from scratch.
+* The agent does not receive Runway, Supabase, Mux, or Suno credentials for the
+  planning flow.
+
+Per-recipe workspace:
+
+```txt
+agent-recipes/{videoId}/
+  recipe-analysis.json
+  decisions.md
+  logical-scenes.json
+  seedance-segments.json
+  reference-plan.json
+  suno-prompt.md
+  changelog.md
+```
+
+Agent boundaries:
+
+* The agent may only write inside its `agent-recipes/{videoId}/` directory.
+* The agent must not modify app source code, migrations, package files, shared
+  rules, or docs.
+* The agent must not run Git operations, create branches, create PRs, or commit.
+* The agent must not call costly generation services.
+* The app validates all artifacts before syncing them into canonical project
+  tables.
+
+---
+
 ## Inngest Contract
 
 Required events:
