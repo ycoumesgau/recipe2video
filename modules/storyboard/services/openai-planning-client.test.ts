@@ -32,16 +32,28 @@ test("parseJsonObject rejects non-object JSON", () => {
 });
 
 test("createOpenAiPlanningClient returns parsed JSON and real usage", async () => {
+  let receivedInput:
+    | {
+        model: string;
+        input: string;
+        instructions: string;
+        reasoning?: { effort: string };
+      }
+    | undefined;
+
   const client = createOpenAiPlanningClient({
     apiKey: "sk-test",
     model: "gpt-5.5-high",
-    responsesCreate: async () => ({
-      output_text: "{\"ok\":true}",
-      usage: {
-        input_tokens: 12,
-        output_tokens: 5,
-      },
-    }),
+    responsesCreate: async (input) => {
+      receivedInput = input;
+      return {
+        output_text: "{\"ok\":true}",
+        usage: {
+          input_tokens: 12,
+          output_tokens: 5,
+        },
+      };
+    },
   });
 
   const result = await client.generateJson<{ ok: boolean }>({
@@ -51,4 +63,5 @@ test("createOpenAiPlanningClient returns parsed JSON and real usage", async () =
 
   assert.deepEqual(result.json, { ok: true });
   assert.deepEqual(result.usage, { inputTokens: 12, outputTokens: 5 });
+  assert.equal(receivedInput?.reasoning?.effort, "high");
 });

@@ -21,7 +21,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -79,32 +85,40 @@ export function CostDashboard({ data }: { data: CostDashboardData }) {
               <ListFilter className="h-4 w-4" />
               Provider
             </span>
-            <Select
-              aria-label="Filter cost logs by provider"
-              onChange={(event) => setProviderFilter(event.target.value)}
-              value={providerFilter}
-            >
-              <option value="all">All providers</option>
-              {data.providerOptions.map((provider) => (
-                <option key={provider} value={provider}>
-                  {providerLabel(provider)}
-                </option>
-              ))}
+            <Select value={providerFilter} onValueChange={setProviderFilter}>
+              <SelectTrigger
+                aria-label="Filter cost logs by provider"
+                className="w-full font-normal md:min-w-48"
+              >
+                <SelectValue placeholder="Pick a provider" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="all">All providers</SelectItem>
+                {data.providerOptions.map((provider) => (
+                  <SelectItem key={provider} value={provider}>
+                    {providerLabel(provider)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </label>
           <label className="space-y-1 text-sm">
             <span className="text-muted-foreground">Model</span>
-            <Select
-              aria-label="Filter cost logs by model"
-              onChange={(event) => setModelFilter(event.target.value)}
-              value={modelFilter}
-            >
-              <option value="all">All models</option>
-              {data.modelOptions.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
+            <Select value={modelFilter} onValueChange={setModelFilter}>
+              <SelectTrigger
+                aria-label="Filter cost logs by model"
+                className="w-full font-normal md:min-w-48"
+              >
+                <SelectValue placeholder="Pick a model" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="all">All models</SelectItem>
+                {data.modelOptions.map((model) => (
+                  <SelectItem key={model} value={model}>
+                    {model}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </label>
           </div>

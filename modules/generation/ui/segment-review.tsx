@@ -21,7 +21,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentChatPanel } from "@/modules/feedback/ui/agent-chat-panel";
 import { RecipeMuxPlayer } from "@/modules/media-assets/ui/mux-player";
@@ -483,14 +489,18 @@ function RegenerationForm({
         <Label htmlFor="selectedVideoModel">Regeneration model</Label>
         <Select
           defaultValue={project?.selectedVideoModel ?? "seedance2"}
-          id="selectedVideoModel"
           name="selectedVideoModel"
         >
-          {VIDEO_MODEL_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
+          <SelectTrigger className="w-full font-normal" id="selectedVideoModel">
+            <SelectValue placeholder="Pick a video model" />
+          </SelectTrigger>
+          <SelectContent position="popper">
+            {VIDEO_MODEL_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </div>
       <p className="text-xs text-muted-foreground">

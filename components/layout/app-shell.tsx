@@ -70,24 +70,32 @@ export function AppShell({
         </aside>
 
         <div className="flex min-w-0 flex-col">
-          <header className="flex h-16 items-center justify-between border-b px-4 lg:px-6">
-            <div>
+          <header className="flex min-h-14 flex-shrink-0 flex-wrap items-start gap-x-4 gap-y-3 border-b px-4 py-3 lg:min-h-16 lg:flex-nowrap lg:items-center lg:justify-between lg:px-6">
+            <div className="min-w-0 shrink-0 flex-1 basis-full sm:flex-none md:basis-auto">
               <p className="text-sm font-medium text-muted-foreground">
                 Production cockpit
               </p>
-              <p className="text-lg font-semibold">Runway API Hackathon</p>
+              <p className="text-lg font-semibold leading-snug break-words sm:max-md:text-base">
+                Runway API Hackathon
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" title={`${formatCredits(creditsUsed)} used`}>
+            <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2 sm:w-auto sm:max-w-none sm:justify-end">
+              <Badge
+                variant="secondary"
+                title={`${formatCredits(creditsUsed)} used`}
+              >
                 Credits left: {formatCredits(creditsRemaining)}
               </Badge>
               <Badge variant={activeTaskCount > 0 ? "default" : "outline"}>
                 {activeTaskCount} active task{activeTaskCount === 1 ? "" : "s"}
               </Badge>
-              <Badge className="hidden md:inline-flex" variant="outline">
+              <Badge
+                className="hidden min-w-0 max-w-[min(240px,calc(100vw-18rem))] truncate md:inline-flex"
+                variant="outline"
+              >
                 {userEmail}
               </Badge>
-              <form action={signOutAction}>
+              <form action={signOutAction} className="shrink-0">
                 <Button size="sm" type="submit" variant="ghost">
                   Sign out
                 </Button>

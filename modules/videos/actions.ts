@@ -16,7 +16,7 @@ export async function createVideoDraftAction(
     const result = await createVideoDraft({
       recipeUrl: getString(formData, "recipeUrl"),
       pastedRecipeText: getString(formData, "pastedRecipeText"),
-      demoRecipeId: getString(formData, "demoRecipeId"),
+      demoRecipeId: normalizeDemoRecipeId(getString(formData, "demoRecipeId")),
       sourceFiles: formData
         .getAll("recipePhotos")
         .filter((value): value is File => value instanceof File),
@@ -46,6 +46,13 @@ export async function createVideoDraftAction(
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : undefined;
+}
+
+function normalizeDemoRecipeId(raw: string | undefined) {
+  if (raw === undefined || raw === "" || raw === "__no_demo") {
+    return undefined;
+  }
+  return raw;
 }
 
 function getNumber(formData: FormData, key: string) {

@@ -16,7 +16,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import {
   uploadMediaAssetToMuxAction,
@@ -75,12 +81,17 @@ export function MuxUploadTestPanel({
             {candidates.length > 0 ? (
               <div className="space-y-2">
                 <Label htmlFor="mediaAssetSelect">Stored video candidate</Label>
-                <Select id="mediaAssetSelect" name="mediaAssetId">
-                  {candidates.map((asset) => (
-                    <option key={asset.id} value={asset.id}>
-                      {formatAssetLabel(asset)}
-                    </option>
-                  ))}
+                <Select defaultValue={candidates[0]!.id} name="mediaAssetId">
+                  <SelectTrigger id="mediaAssetSelect">
+                    <SelectValue placeholder="Pick a candidate" />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    {candidates.map((asset) => (
+                      <SelectItem key={asset.id} value={asset.id}>
+                        {formatAssetLabel(asset)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
             ) : (
