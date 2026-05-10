@@ -979,7 +979,9 @@ downloadRunwayOutput(outputUrl: string): Promise<Blob>
 
 ## OpenAI Contract
 
-Use OpenAI directly for:
+Use OpenAI directly for fallback or narrowly scoped planning utilities. The
+primary creative planning path is the persistent Cursor recipe agent described
+below.
 
 * recipe reasoning
 * storyboard generation
@@ -1069,6 +1071,9 @@ Required events:
 'video.recipe.ingest.requested'
 'video.storyboard.generate.requested'
 'video.references.generate.requested'
+'recipe.agent.create.requested'
+'recipe.agent.message.requested'
+'recipe.agent.sync.requested'
 'segment.generation.requested'
 'segment.generation.poll.requested'
 'segment.output.persist.requested'

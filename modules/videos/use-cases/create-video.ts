@@ -15,7 +15,10 @@ import type {
 } from "@/modules/videos/video.types";
 import { inngest } from "@/inngest/client";
 import { INNGEST_EVENTS } from "@/inngest/events";
-import type { RecipeIngestRequestedData } from "@/inngest/events";
+import {
+  buildRecipeAgentMessagePayload,
+  type CreateVideoDraftIntent,
+} from "./create-video-agent-message";
 
 export interface CreateVideoDraftInput {
   recipeUrl?: string;
@@ -28,6 +31,7 @@ export interface CreateVideoDraftInput {
   selectedImageModel?: string;
   selectedTtsModel?: string;
   selectedSfxModel?: string;
+  intent?: CreateVideoDraftIntent;
 }
 
 export interface CreateVideoDraftResult {
@@ -41,6 +45,7 @@ export async function createVideoDraft(
   const pastedRecipeText = normalizeOptionalText(input.pastedRecipeText);
   const demoRecipeId = normalizeOptionalText(input.demoRecipeId);
   const sourceFiles = input.sourceFiles.filter(isRealFile);
+  const intent = input.intent ?? "analyze";
 
   assertAtLeastOneRecipeSource({
     recipeUrl,
@@ -81,6 +86,8 @@ export async function createVideoDraft(
       source: sourceSummary,
       productionDefaults,
       recipeExtractionRequested: false,
+      agentPlanningRequested: intent === "analyze" && sourceSummary.type !== "demo",
+      planningSource: "cursor_recipe_agent",
     },
     selectedVideoModel: productionDefaults.videoModel,
     selectedImageModel: productionDefaults.imageModel,
@@ -103,71 +110,25 @@ export async function createVideoDraft(
     });
   }
 
-  // Trigger the durable ingest workflow for url, photos, and text sources.
-  // Demo fixtures keep their dedicated load action and do not need OpenAI.
-  const ingestPayload = buildIngestPayload({
+  // Trigger the persistent recipe-agent workflow for url, photos, and text
+  // sources. Demo fixtures keep their dedicated load action and do not need
+  // Cursor/OpenAI.
+  const agentPayload = buildRecipeAgentMessagePayload({
     videoId: project.id,
     profileId: profile.id,
     sourceSummary,
+    productionDefaults,
     pastedRecipeText,
+    intent,
   });
-  if (ingestPayload) {
+  if (agentPayload) {
     await inngest.send({
-      name: INNGEST_EVENTS.videoRecipeIngestRequested,
-      data: ingestPayload,
+      name: INNGEST_EVENTS.recipeAgentMessageRequested,
+      data: agentPayload,
     });
   }
 
   return { videoId: project.id };
-}
-
-function buildIngestPayload(input: {
-  videoId: string;
-  profileId: string;
-  sourceSummary: RecipeSourceSummary;
-  pastedRecipeText?: string;
-}): RecipeIngestRequestedData | null {
-  const { videoId, profileId, sourceSummary, pastedRecipeText } = input;
-
-  if (sourceSummary.type === "demo") {
-    return null;
-  }
-
-  const baseData = {
-    videoId,
-    requestedByUserId: profileId,
-    isAllowlisted: true as const,
-  };
-
-  if (sourceSummary.type === "url") {
-    return {
-      ...baseData,
-      sourceType: "url",
-      recipeUrl: sourceSummary.recipeUrl ?? null,
-      recipeText: null,
-      photoDescriptions: null,
-    };
-  }
-
-  if (sourceSummary.type === "photos") {
-    return {
-      ...baseData,
-      sourceType: "photos",
-      recipeUrl: sourceSummary.recipeUrl ?? null,
-      recipeText: pastedRecipeText ?? null,
-      // Photo descriptions stay as filenames until vision-based extraction is
-      // wired. They give the planning prompt at least a hint about each shot.
-      photoDescriptions: sourceSummary.uploadedFileNames ?? [],
-    };
-  }
-
-  return {
-    ...baseData,
-    sourceType: "text",
-    recipeUrl: null,
-    recipeText: pastedRecipeText ?? null,
-    photoDescriptions: null,
-  };
 }
 
 function normalizeOptionalText(value: FormDataEntryValue | string | undefined) {
