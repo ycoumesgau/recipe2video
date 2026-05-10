@@ -23,7 +23,8 @@ export type RecipeAgentStatus =
   | "running"
   | "needs_sync"
   | "validation_failed"
-  | "failed";
+  | "failed"
+  | "needs_input";
 
 export type RecipeAgentRunStatus =
   | "queued"
@@ -50,6 +51,10 @@ export interface RecipeAgentConfig {
   repoUrl?: string;
   startingRef?: string;
   localCwd?: string;
+  /**
+   * Fine-grained PAT with read access to `repoUrl` for artifact sync by commit SHA.
+   */
+  githubToken?: string;
 }
 
 export interface RecipeAgentWorkspace {
@@ -84,6 +89,21 @@ export interface SendRecipeAgentMessageInput {
   stage: RecipeAgentStage;
   message: string;
   includeArtifactContents?: boolean;
+  /**
+   * Set after the DB run row exists so streamed Cursor events can be persisted.
+   */
+  getAgentRunId?: () => string | undefined;
+  onStreamEvent?: RecipeAgentStreamEventHandler;
+}
+
+export type RecipeAgentStreamEventHandler = (
+  event: RecipeAgentStreamEvent,
+) => void | Promise<void>;
+
+export interface RecipeAgentStreamEvent {
+  seq: number;
+  eventType: string;
+  payload: Record<string, unknown>;
 }
 
 export interface RecipeAgentRunResult {
@@ -94,6 +114,11 @@ export interface RecipeAgentRunResult {
   durationMs?: number;
   workspacePath: string;
   artifacts: RecipeAgentArtifact[];
+  streamMeta?: RecipeAgentRunStreamMeta;
+}
+
+export interface RecipeAgentRunStreamMeta {
+  needsUserInput: boolean;
 }
 
 export interface CursorAgentSdkAdapter {
@@ -118,6 +143,9 @@ export interface AgentRun {
   completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  agentGitBranch?: string | null;
+  agentGitCommitSha?: string | null;
+  needsUserInput: boolean;
 }
 
 export interface CreateAgentRunInput {
@@ -132,6 +160,9 @@ export interface CreateAgentRunInput {
   createdBy?: string | null;
   startedAt?: string;
   completedAt?: string | null;
+  agentGitBranch?: string | null;
+  agentGitCommitSha?: string | null;
+  needsUserInput?: boolean;
 }
 
 export interface UpdateAgentRunInput {
@@ -140,6 +171,9 @@ export interface UpdateAgentRunInput {
   resultSummary?: string | null;
   error?: string | null;
   completedAt?: string | null;
+  agentGitBranch?: string | null;
+  agentGitCommitSha?: string | null;
+  needsUserInput?: boolean;
 }
 
 export interface AgentArtifact {
@@ -172,4 +206,15 @@ export interface UpdateVideoAgentSessionInput {
   lastAgentRunId?: string | null;
   lastAgentSyncAt?: string | null;
   agentStatus?: RecipeAgentStatus;
+  agentGitBranch?: string | null;
+  agentGitCommitSha?: string | null;
+}
+
+export interface AgentRunTimelineEvent {
+  id: string;
+  agentRunId: string;
+  seq: number;
+  eventType: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
 }

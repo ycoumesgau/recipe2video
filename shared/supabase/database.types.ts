@@ -76,6 +76,8 @@ export type Database = {
           last_agent_run_id: string | null;
           last_agent_sync_at: string | null;
           agent_status: string;
+          agent_git_branch: string | null;
+          agent_git_commit_sha: string | null;
         };
         Insert: {
           id?: string;
@@ -101,6 +103,8 @@ export type Database = {
           last_agent_run_id?: string | null;
           last_agent_sync_at?: string | null;
           agent_status?: string;
+          agent_git_branch?: string | null;
+          agent_git_commit_sha?: string | null;
         };
         Update: {
           id?: string;
@@ -126,6 +130,8 @@ export type Database = {
           last_agent_run_id?: string | null;
           last_agent_sync_at?: string | null;
           agent_status?: string;
+          agent_git_branch?: string | null;
+          agent_git_commit_sha?: string | null;
         };
         Relationships: [];
       };
@@ -535,6 +541,9 @@ export type Database = {
           completed_at: string | null;
           created_at: string;
           updated_at: string;
+          agent_git_branch: string | null;
+          agent_git_commit_sha: string | null;
+          needs_user_input: boolean;
         };
         Insert: {
           id?: string;
@@ -551,6 +560,9 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          agent_git_branch?: string | null;
+          agent_git_commit_sha?: string | null;
+          needs_user_input?: boolean;
         };
         Update: {
           id?: string;
@@ -567,6 +579,36 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          agent_git_branch?: string | null;
+          agent_git_commit_sha?: string | null;
+          needs_user_input?: boolean;
+        };
+        Relationships: [];
+      };
+      agent_run_events: {
+        Row: {
+          id: string;
+          agent_run_id: string;
+          seq: number;
+          event_type: string;
+          payload: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          agent_run_id: string;
+          seq: number;
+          event_type: string;
+          payload?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          agent_run_id?: string;
+          seq?: number;
+          event_type?: string;
+          payload?: Json;
+          created_at?: string;
         };
         Relationships: [];
       };

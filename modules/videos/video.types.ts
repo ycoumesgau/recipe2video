@@ -51,6 +51,8 @@ export interface VideoProject {
   lastAgentRunId?: string | null;
   lastAgentSyncAt?: string | null;
   agentStatus: RecipeAgentStatus;
+  agentGitBranch?: string | null;
+  agentGitCommitSha?: string | null;
 }
 
 export interface CreateVideoProjectInput {

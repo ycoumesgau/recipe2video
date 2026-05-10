@@ -1,27 +1,35 @@
 import { Agent } from "@cursor/sdk";
 
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
-import {
-  getVideoProjectById,
-} from "@/modules/videos/repositories/video.repository";
+import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import type { VideoProject } from "@/modules/videos/video.types";
 
+import { resolveRecipeAgentConfig } from "../recipe-agent.config";
 import {
   createAgentRun,
+  insertAgentRunEvent,
   updateAgentRun,
   updateVideoAgentSession,
 } from "../repositories/recipe-agent.repository";
 import type {
   AgentRun,
   CreateAgentRunInput,
+  RecipeAgentArtifact,
   RecipeAgentRunStatus,
   RecipeAgentSession,
   RecipeAgentStage,
+  RecipeAgentStreamEventHandler,
   UpdateAgentRunInput,
   UpdateVideoAgentSessionInput,
 } from "../recipe-agent.types";
+import { extractAssistantCheckpoint } from "../services/checkpoint-parse";
 import type { CursorRecipeAgentService } from "../services/cursor-agent.service";
 import { createCursorRecipeAgentService } from "../services/cursor-agent.service";
+import {
+  fetchCheckpointManifestFromGithub,
+  parseGithubRepoFromUrl,
+  supplementRecipeAgentArtifactsFromGithub,
+} from "../services/github-recipe-artifacts.service";
 import {
   syncRecipeAgentArtifacts,
   type RecipeAgentArtifactSyncPlan,
@@ -51,6 +59,16 @@ export interface RecipeAgentOrchestrationDependencies {
     supabase: SupabaseDataClient | undefined,
     input: Parameters<typeof syncRecipeAgentArtifacts>[1],
   ): Promise<RecipeAgentArtifactSyncPlan>;
+  /**
+   * Persist streamed Cursor SDK events for the current DB `agent_runs` row.
+   * Defaults to Supabase insert when using `createDefaultDependencies`.
+   */
+  persistAgentRunStreamEvent?: (input: {
+    agentRunId: string;
+    seq: number;
+    eventType: string;
+    payload: Record<string, unknown>;
+  }) => Promise<void>;
 }
 
 export async function ensureRecipeAgent(
@@ -103,12 +121,34 @@ export async function sendRecipeAgentMessage(
   let run: AgentRun | undefined;
   let session: RecipeAgentSession | undefined;
 
+  const handleStreamEvent: RecipeAgentStreamEventHandler = async (event) => {
+    const runId = run?.id;
+
+    if (!runId) {
+      return;
+    }
+
+    await deps.persistAgentRunStreamEvent?.({
+      agentRunId: runId,
+      seq: event.seq,
+      eventType: event.eventType,
+      payload: event.payload,
+    });
+  };
+
   try {
     const result = await sendMessageWithExistingOrNewAgent();
+    const enriched = await enrichArtifactsWithGithub({
+      result,
+      project: currentProject,
+    });
     const syncPlan = await deps.syncArtifacts(input.supabase, {
       videoId: input.videoId,
-      artifacts: result.artifacts,
+      artifacts: enriched.artifacts,
     });
+
+    const needsUserInput = result.streamMeta?.needsUserInput ?? false;
+
     const runStatus: RecipeAgentRunStatus =
       result.status === "finished" ? "finished" : result.status;
 
@@ -120,14 +160,26 @@ export async function sendRecipeAgentMessage(
       cursorRunId: result.runId,
       status: runStatus,
       resultSummary: result.result ?? null,
-      error: runStatus === "error" ? result.result ?? "Cursor agent run failed." : null,
+      error:
+        runStatus === "error"
+          ? result.result ?? "Cursor agent run failed."
+          : null,
       completedAt: new Date().toISOString(),
+      agentGitBranch: enriched.gitBranch ?? null,
+      agentGitCommitSha: enriched.gitSha ?? null,
+      needsUserInput,
     });
 
     await deps.updateVideoAgentSession(input.videoId, {
       lastAgentRunId: result.runId,
       lastAgentSyncAt: new Date().toISOString(),
-      agentStatus: syncPlan.valid ? "idle" : "validation_failed",
+      agentGitBranch: enriched.gitBranch ?? null,
+      agentGitCommitSha: enriched.gitSha ?? null,
+      agentStatus: needsUserInput
+        ? "needs_input"
+        : syncPlan.valid
+          ? "idle"
+          : "validation_failed",
     });
 
     return {
@@ -174,6 +226,8 @@ export async function sendRecipeAgentMessage(
           stage: input.stage,
           message: input.message,
           includeArtifactContents: true,
+          getAgentRunId: () => run?.id,
+          onStreamEvent: handleStreamEvent,
         });
       } catch (error) {
         if (!isCursorAgentNotFoundError(error)) {
@@ -216,6 +270,7 @@ export async function sendRecipeAgentMessage(
 
         run = await createRunningAgentRun(createdSession);
       },
+      onStreamEvent: handleStreamEvent,
     });
 
     session = created.session;
@@ -233,6 +288,93 @@ export async function sendRecipeAgentMessage(
       createdBy: input.requestedByUserId,
     });
   }
+}
+
+async function enrichArtifactsWithGithub(input: {
+  result: {
+    artifacts: RecipeAgentArtifact[];
+    result?: string;
+    workspacePath: string;
+  };
+  project: VideoProject;
+}): Promise<{
+  artifacts: RecipeAgentArtifact[];
+  gitBranch: string | null;
+  gitSha: string | null;
+}> {
+  let artifacts = input.result.artifacts;
+  let gitBranch: string | null = input.project.agentGitBranch ?? null;
+  let gitSha: string | null = input.project.agentGitCommitSha ?? null;
+
+  let config: ReturnType<typeof resolveRecipeAgentConfig> | undefined;
+
+  try {
+    config = resolveRecipeAgentConfig();
+  } catch {
+    return { artifacts, gitBranch, gitSha };
+  }
+
+  const assistantCheckpoint = extractAssistantCheckpoint(input.result.result);
+
+  if (assistantCheckpoint?.recipe2videoCheckpoint.branch) {
+    gitBranch = assistantCheckpoint.recipe2videoCheckpoint.branch;
+  }
+
+  if (assistantCheckpoint?.recipe2videoCheckpoint.commitSha) {
+    gitSha = assistantCheckpoint.recipe2videoCheckpoint.commitSha;
+  }
+
+  const repo = config.repoUrl ? parseGithubRepoFromUrl(config.repoUrl) : null;
+  const token = config.githubToken;
+
+  if (!repo || !token) {
+    return { artifacts, gitBranch, gitSha };
+  }
+
+  const workspacePath = input.result.workspacePath;
+  const ref = gitSha ?? gitBranch;
+
+  if (!ref) {
+    return { artifacts, gitBranch, gitSha };
+  }
+
+  try {
+    const manifest = await fetchCheckpointManifestFromGithub({
+      owner: repo.owner,
+      repo: repo.repo,
+      workspacePath,
+      ref,
+      token,
+    });
+
+    const supplementRef = manifest?.commitSha ?? ref;
+
+    artifacts = await supplementRecipeAgentArtifactsFromGithub({
+      workspacePath,
+      artifacts,
+      artifactPaths: manifest?.artifactPaths,
+      preferGithub: true,
+      owner: repo.owner,
+      repo: repo.repo,
+      ref: supplementRef,
+      token,
+    });
+
+    if (manifest?.branch) {
+      gitBranch = manifest.branch;
+    }
+
+    if (manifest?.commitSha) {
+      gitSha = manifest.commitSha;
+    }
+  } catch (error) {
+    console.warn(
+      "[recipe-agent] GitHub artifact sync failed; falling back to Cursor SDK artifacts:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+
+  return { artifacts, gitBranch, gitSha };
 }
 
 function getExistingRecipeAgentSession(
@@ -281,9 +423,23 @@ function createDefaultDependencies(
         resume: (agentId, options) => Agent.resume(agentId, options),
       },
     }),
-    createAgentRun: (input) => createAgentRun(supabase, input),
+    createAgentRun: (runInput) => createAgentRun(supabase, runInput),
     updateAgentRun: (id, patch) => updateAgentRun(supabase, id, patch),
-    syncArtifacts: (syncSupabase, input) =>
-      syncRecipeAgentArtifacts(syncSupabase ?? supabase, input),
+    syncArtifacts: (syncSupabase, syncInput) =>
+      syncRecipeAgentArtifacts(syncSupabase ?? supabase, syncInput),
+    persistAgentRunStreamEvent: async (event) => {
+      try {
+        await insertAgentRunEvent(supabase, event);
+      } catch (err) {
+        if (process.env.NODE_ENV !== "development") {
+          throw err;
+        }
+
+        console.warn(
+          "[recipe-agent] Skipping agent_run_events row in development (table missing or RLS):",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    },
   };
 }

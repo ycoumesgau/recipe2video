@@ -11,9 +11,11 @@ import type {
   RecipeAgentArtifact,
   RecipeAgentConfig,
   RecipeAgentRunResult,
+  RecipeAgentRunStreamMeta,
   RecipeAgentSession,
   SendRecipeAgentMessageInput,
 } from "../recipe-agent.types";
+import { summarizeCursorStreamEvent } from "./cursor-agent-stream";
 import {
   buildRecipeAgentWorkspace,
   getRecipeAgentArtifactName,
@@ -97,6 +99,7 @@ export function createCursorRecipeAgentService(
             message: input.message,
             includeArtifactContents: input.includeArtifactContents,
             workspacePath: workspace.workspacePath,
+            onStreamEvent: input.onStreamEvent,
           }),
         };
       } finally {
@@ -120,6 +123,7 @@ export function createCursorRecipeAgentService(
           message: input.message,
           includeArtifactContents: input.includeArtifactContents,
           workspacePath: workspace.workspacePath,
+          onStreamEvent: input.onStreamEvent,
         });
       } finally {
         await disposeAgent(agent);
@@ -405,6 +409,7 @@ async function sendMessageWithAgent(input: {
   message: string;
   includeArtifactContents?: boolean;
   workspacePath: string;
+  onStreamEvent?: SendRecipeAgentMessageInput["onStreamEvent"];
 }): Promise<RecipeAgentRunResult> {
   const run = await input.agent.send(
     buildRecipeAgentUserMessage({
@@ -413,6 +418,7 @@ async function sendMessageWithAgent(input: {
       workspacePath: input.workspacePath,
     }),
   );
+  const streamMeta = await consumeAgentRunStream(run, input.onStreamEvent);
   const result = await run.wait();
   const artifacts = await listRecipeArtifacts({
     agent: input.agent,
@@ -429,7 +435,33 @@ async function sendMessageWithAgent(input: {
     durationMs: result.durationMs,
     workspacePath: input.workspacePath,
     artifacts,
+    streamMeta,
   };
+}
+
+async function consumeAgentRunStream(
+  run: Run,
+  onStreamEvent?: SendRecipeAgentMessageInput["onStreamEvent"],
+): Promise<RecipeAgentRunStreamMeta> {
+  if (!run.supports("stream")) {
+    return { needsUserInput: false };
+  }
+
+  let seq = 0;
+  let needsUserInput = false;
+
+  for await (const event of run.stream()) {
+    seq += 1;
+    const summarized = summarizeCursorStreamEvent(event, seq);
+
+    if (summarized.eventType === "request") {
+      needsUserInput = true;
+    }
+
+    await onStreamEvent?.(summarized);
+  }
+
+  return { needsUserInput };
 }
 
 function buildAgentName(input: CreateRecipeAgentInput) {

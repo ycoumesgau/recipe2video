@@ -40,6 +40,9 @@ export function resolveRecipeAgentConfig(
       repoUrl,
       startingRef:
         env.CURSOR_AGENT_STARTING_REF ?? DEFAULT_RECIPE_AGENT_STARTING_REF,
+      githubToken: emptyToUndefined(
+        env.RECIPE_AGENT_GITHUB_TOKEN ?? env.GITHUB_TOKEN,
+      ),
     };
   }
 

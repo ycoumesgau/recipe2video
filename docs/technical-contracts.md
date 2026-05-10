@@ -1023,7 +1023,13 @@ CURSOR_AGENT_MODEL_CONTEXT=272k
 CURSOR_AGENT_MODEL_FAST=false
 CURSOR_AGENT_RUNTIME=cloud
 CURSOR_AGENT_LOCAL_CWD=
+RECIPE_AGENT_GITHUB_TOKEN=
 ```
+
+Optional: `RECIPE_AGENT_GITHUB_TOKEN` (or `GITHUB_TOKEN` in dev) is a fine-grained PAT
+with read access to `CURSOR_AGENT_REPO_URL`. The app uses the GitHub Contents API to
+fetch `checkpoint-manifest.json` and large recipe artifacts at the exact commit SHA
+after a run. Without it, artifact recovery falls back to the Cursor SDK payloads only.
 
 Runtime rules:
 
