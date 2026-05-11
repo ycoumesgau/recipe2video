@@ -6,6 +6,7 @@ import { fromJson, toJson } from "@/shared/supabase/json";
 import type {
   AssemblyAudioSync,
   AssemblyRemotionProps,
+  AssemblyTimelineState,
   Composition,
 } from "../assembly.types";
 import type { ExportStatus } from "../export-status";
@@ -17,11 +18,38 @@ export interface SaveCompositionInput {
   videoId: string;
   segmentOrder: string[];
   audioMediaAssetId?: string | null;
-  audioSync: AssemblyAudioSync;
+  /**
+   * Legacy single-track audio sync. Kept for forward compatibility but the
+   * new {@link timelineState} field is the source of truth and is what
+   * actually gets persisted in `compositions.audio_sync` (the column hosts
+   * either shape thanks to its JSON typing).
+   */
+  audioSync?: AssemblyAudioSync;
+  /**
+   * New timeline shape: per-segment trims + array of audio clips.
+   * Persisted in `compositions.audio_sync` as `{ schema: 'timeline_v2', ... }`.
+   */
+  timelineState?: AssemblyTimelineState;
   remotionProps: AssemblyRemotionProps;
   exportStatus?: ExportStatus;
   exportMediaAssetId?: string | null;
   createdBy?: string | null;
+}
+
+function serializeAudioSyncColumn(
+  input: Pick<SaveCompositionInput, "timelineState" | "audioSync">,
+) {
+  if (input.timelineState) {
+    return toJson(input.timelineState);
+  }
+  if (input.audioSync) {
+    return toJson(input.audioSync);
+  }
+  return toJson({
+    schema: "timeline_v2",
+    segmentTrims: {},
+    audioClips: [],
+  });
 }
 
 export async function getLatestCompositionByVideoId(
@@ -52,7 +80,7 @@ export async function createComposition(
       export_media_asset_id: input.exportMediaAssetId ?? null,
       segment_order: toJson(input.segmentOrder),
       audio_media_asset_id: input.audioMediaAssetId ?? null,
-      audio_sync: toJson(input.audioSync),
+      audio_sync: serializeAudioSyncColumn(input),
       remotion_props: toJson(input.remotionProps),
       export_status: input.exportStatus ?? "pending",
       created_by: input.createdBy ?? null,
@@ -97,7 +125,7 @@ export async function upsertDraftComposition(
       .update({
         segment_order: toJson(input.segmentOrder),
         audio_media_asset_id: input.audioMediaAssetId ?? null,
-        audio_sync: toJson(input.audioSync),
+        audio_sync: serializeAudioSyncColumn(input),
         remotion_props: toJson(input.remotionProps),
         export_status: input.exportStatus ?? "pending",
       })

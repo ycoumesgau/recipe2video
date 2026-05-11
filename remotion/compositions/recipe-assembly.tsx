@@ -6,46 +6,45 @@ import {
   useCurrentFrame,
 } from "remotion";
 
-import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
+import type {
+  AssemblyAudioClip,
+  AssemblyAudioTrack,
+  AssemblyRemotionProps,
+  AssemblySegmentClip,
+} from "@/modules/assembly/assembly.types";
 
 export function RecipeAssemblyComposition({
   audio,
-  audioSync,
+  audioClips,
   fps,
   segments,
 }: AssemblyRemotionProps) {
-  const segmentFrames = segments.map((segment) =>
-    secondsToFrames(segment.durationSeconds, fps),
-  );
-  const { segmentStarts, totalDurationFrames } = segmentFrames.reduce<{
-    segmentStarts: number[];
-    totalDurationFrames: number;
-  }>(
-    (timeline, frames) => ({
-      segmentStarts: [
-        ...timeline.segmentStarts,
-        timeline.totalDurationFrames,
-      ],
-      totalDurationFrames: timeline.totalDurationFrames + frames,
-    }),
-    { segmentStarts: [], totalDurationFrames: 0 },
-  );
+  const segmentTimeline = computeSegmentTimeline(segments, fps);
+  const totalDurationFrames = computeTotalDurationFrames({
+    segmentTimeline,
+    audioClips,
+    fps,
+  });
 
   return (
     <AbsoluteFill style={{ backgroundColor: "black" }}>
       {segments.map((segment, index) => {
-        const from = segmentStarts[index] ?? 0;
-        const durationInFrames = segmentFrames[index] ?? fps * 5;
+        const layout = segmentTimeline[index];
+        if (!layout) {
+          return null;
+        }
 
         return (
           <Sequence
-            durationInFrames={durationInFrames}
-            from={from}
+            durationInFrames={layout.durationFrames}
+            from={layout.fromFrames}
             key={`${segment.segmentId}-${segment.mediaAssetId}`}
           >
             <Video
+              endAt={secondsToFrames(segment.outSeconds, fps)}
               muted
               src={segment.sourceUrl}
+              startFrom={secondsToFrames(segment.inSeconds, fps)}
               style={{
                 height: "100%",
                 objectFit: "cover",
@@ -57,14 +56,17 @@ export function RecipeAssemblyComposition({
         );
       })}
 
-      {audio ? (
-        <AssemblyAudio
-          audioSync={audioSync}
-          fps={fps}
-          sourceUrl={audio.sourceUrl}
-          totalDurationFrames={totalDurationFrames}
-        />
-      ) : null}
+      {audio
+        ? audioClips.map((clip) => (
+            <AssemblyAudioRender
+              audio={audio}
+              clip={clip}
+              fps={fps}
+              key={clip.id}
+              totalDurationFrames={totalDurationFrames}
+            />
+          ))
+        : null}
     </AbsoluteFill>
   );
 }
@@ -93,59 +95,101 @@ function SegmentTitle({ title }: { title: string }) {
   );
 }
 
-function AssemblyAudio({
-  audioSync,
+function AssemblyAudioRender({
+  audio,
+  clip,
   fps,
-  sourceUrl,
   totalDurationFrames,
 }: {
-  audioSync: AssemblyRemotionProps["audioSync"];
+  audio: AssemblyAudioTrack;
+  clip: AssemblyAudioClip;
   fps: number;
-  sourceUrl: string;
   totalDurationFrames: number;
 }) {
   const frame = useCurrentFrame();
-  const offsetFrames = secondsToFrames(audioSync.offsetSeconds, fps);
-  const fadeInFrames = secondsToFrames(audioSync.fadeInSeconds, fps);
-  const fadeOutFrames = secondsToFrames(audioSync.fadeOutSeconds, fps);
-  const audioStartsAt = Math.max(offsetFrames, 0);
-  const startFrom = Math.max(
-    secondsToFrames(audioSync.cutFromSeconds, fps) - Math.min(offsetFrames, 0),
+  const startFrame = Math.max(
+    secondsToFrames(clip.startOnTimelineSeconds, fps),
     0,
   );
-  const audioFrame = frame - audioStartsAt;
+  const inFrames = secondsToFrames(clip.inSeconds, fps);
+  const outFrames = secondsToFrames(clip.outSeconds, fps);
+  const audioDurationFrames = Math.max(outFrames - inFrames, 1);
+  const remainingFrames = Math.max(totalDurationFrames - startFrame, 1);
+  const durationFrames = Math.min(audioDurationFrames, remainingFrames);
+  const fadeInFrames = secondsToFrames(clip.fadeInSeconds, fps);
+  const fadeOutFrames = secondsToFrames(clip.fadeOutSeconds, fps);
+  const localFrame = frame - startFrame;
   const fadeInVolume =
-    fadeInFrames > 0 ? clamp(audioFrame / fadeInFrames, 0, 1) : 1;
-  const framesUntilEnd = totalDurationFrames - frame;
+    fadeInFrames > 0 ? clamp(localFrame / fadeInFrames, 0, 1) : 1;
+  const framesUntilEnd = durationFrames - localFrame;
   const fadeOutVolume =
     fadeOutFrames > 0 ? clamp(framesUntilEnd / fadeOutFrames, 0, 1) : 1;
+  const baseVolume = clamp(clip.volume, 0, 2);
 
   return (
-    <Sequence from={audioStartsAt}>
+    <Sequence durationInFrames={durationFrames} from={startFrame}>
       <Audio
-        src={sourceUrl}
-        startFrom={startFrom}
-        volume={Math.min(fadeInVolume, fadeOutVolume)}
+        src={audio.sourceUrl}
+        startFrom={inFrames}
+        volume={baseVolume * Math.min(fadeInVolume, fadeOutVolume)}
       />
     </Sequence>
   );
 }
 
+interface SegmentLayout {
+  fromFrames: number;
+  durationFrames: number;
+}
+
+function computeSegmentTimeline(
+  segments: AssemblySegmentClip[],
+  fps: number,
+): SegmentLayout[] {
+  let cursor = 0;
+  return segments.map((segment) => {
+    const trimmed = Math.max(segment.outSeconds - segment.inSeconds, 0);
+    const durationFrames = Math.max(secondsToFrames(trimmed, fps), 1);
+    const fromFrames = cursor;
+    cursor += durationFrames;
+    return { fromFrames, durationFrames };
+  });
+}
+
+function computeTotalDurationFrames({
+  segmentTimeline,
+  audioClips,
+  fps,
+}: {
+  segmentTimeline: SegmentLayout[];
+  audioClips: AssemblyAudioClip[];
+  fps: number;
+}) {
+  const lastSegment = segmentTimeline[segmentTimeline.length - 1];
+  const segmentEnd = lastSegment
+    ? lastSegment.fromFrames + lastSegment.durationFrames
+    : 0;
+  const audioEnd = audioClips.reduce((max, clip) => {
+    const start = secondsToFrames(clip.startOnTimelineSeconds, fps);
+    const trimmed = Math.max(clip.outSeconds - clip.inSeconds, 0);
+    return Math.max(max, start + secondsToFrames(trimmed, fps));
+  }, 0);
+  return Math.max(segmentEnd, audioEnd, fps);
+}
+
 export function getAssemblyDurationInFrames(
-  props: Pick<AssemblyRemotionProps, "fps" | "segments">,
+  props: Pick<AssemblyRemotionProps, "fps" | "segments" | "audioClips">,
 ) {
-  return Math.max(
-    props.segments.reduce(
-      (total, segment) =>
-        total + secondsToFrames(segment.durationSeconds, props.fps),
-      0,
-    ),
-    props.fps,
-  );
+  const segmentTimeline = computeSegmentTimeline(props.segments, props.fps);
+  return computeTotalDurationFrames({
+    segmentTimeline,
+    audioClips: props.audioClips,
+    fps: props.fps,
+  });
 }
 
 function secondsToFrames(seconds: number, fps: number) {
-  return Math.max(Math.round(seconds * fps), 1);
+  return Math.max(Math.round(seconds * fps), 0);
 }
 
 function clamp(value: number, min: number, max: number) {

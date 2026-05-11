@@ -8,13 +8,24 @@ import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
 import type {
+  AssemblyAudioClip,
   AssemblyAudioSync,
   AssemblyAudioTrack,
   AssemblyRemotionProps,
   AssemblySegmentClip,
+  AssemblyTimelineState,
   Composition,
 } from "../assembly.types";
 import { getLatestCompositionByVideoId } from "../repositories/assembly.repository";
+import {
+  applySegmentTrims,
+  createDefaultAudioClip,
+  getDefaultAudioSync,
+  projectLegacyAudioSync,
+  readTimelineState,
+} from "../timeline-state";
+
+export { getDefaultAudioSync, getEmptyTimelineState } from "../timeline-state";
 
 const DEFAULT_FPS = 30;
 const DEFAULT_WIDTH = 720;
@@ -30,6 +41,7 @@ export interface AssemblyPageData {
   missingAcceptedSegments: SeedanceSegment[];
   audioTrack: AssemblyAudioTrack | null;
   finalExports: MediaAsset[];
+  timelineState: AssemblyTimelineState;
 }
 
 export async function getAssemblyPageData(
@@ -43,28 +55,54 @@ export async function getAssemblyPageData(
     getLatestCompositionByVideoId(supabase, videoId),
   ]);
 
-  const acceptedSegments = segments.filter((segment) => segment.status === "accepted");
+  const acceptedSegments = segments.filter(
+    (segment) => segment.status === "accepted",
+  );
   const audioTrack = await buildAudioTrack(
     mediaAssets,
     composition?.audioMediaAssetId ?? null,
   );
-  const availableSegments = await buildAssemblySegments(
+  const baseSegments = await buildAssemblySegments(
     acceptedSegments,
     mediaAssets,
   );
   const missingAcceptedSegments = acceptedSegments.filter(
-    (segment) =>
-      !availableSegments.some((clip) => clip.segmentId === segment.id),
+    (segment) => !baseSegments.some((clip) => clip.segmentId === segment.id),
+  );
+
+  const persistedTimelineState = readTimelineState(
+    composition?.audioSync ?? null,
+    {
+      audioMediaAssetId: composition?.audioMediaAssetId,
+      audioDurationSeconds: audioTrack?.durationSeconds,
+    },
+  );
+
+  // If the composition has a linked Suno track but no audio clip stored yet
+  // (e.g. it was just uploaded) seed a default clip so the UI shows it on the
+  // timeline immediately.
+  const seededAudioClips = ensureAudioClipForLinkedTrack(
+    persistedTimelineState.audioClips,
+    audioTrack,
+  );
+  const timelineState: AssemblyTimelineState = {
+    ...persistedTimelineState,
+    audioClips: seededAudioClips,
+  };
+
+  const trimmedSegments = applySegmentTrims(
+    baseSegments,
+    timelineState.segmentTrims,
   );
   const orderedSegments = orderSegments(
-    availableSegments,
+    trimmedSegments,
     readSegmentOrder(composition),
   );
-  const audioSync = readAudioSync(composition);
+
   const remotionProps = buildRemotionProps({
     segments: orderedSegments,
     audioTrack,
-    audioSync,
+    audioClips: timelineState.audioClips,
   });
 
   return {
@@ -72,17 +110,18 @@ export async function getAssemblyPageData(
     projectStatus: project?.status ?? "assembling",
     composition,
     remotionProps,
-    availableSegments,
+    availableSegments: trimmedSegments,
     missingAcceptedSegments,
     audioTrack,
     finalExports: mediaAssets.filter((asset) => asset.type === "final_export"),
+    timelineState,
   };
 }
 
 export function buildRemotionProps(input: {
   segments: AssemblySegmentClip[];
   audioTrack: AssemblyAudioTrack | null;
-  audioSync: AssemblyAudioSync;
+  audioClips: AssemblyAudioClip[];
 }): AssemblyRemotionProps {
   return {
     fps: DEFAULT_FPS,
@@ -90,17 +129,38 @@ export function buildRemotionProps(input: {
     height: DEFAULT_HEIGHT,
     segments: input.segments,
     audio: input.audioTrack,
-    audioSync: input.audioSync,
+    audioSync: legacyFromAudioClips(input.audioClips),
+    audioClips: input.audioClips,
   };
 }
 
-export function getDefaultAudioSync(): AssemblyAudioSync {
-  return {
-    offsetSeconds: 0,
-    cutFromSeconds: 0,
-    fadeInSeconds: 0,
-    fadeOutSeconds: 0,
-  };
+function legacyFromAudioClips(
+  audioClips: AssemblyAudioClip[],
+): AssemblyAudioSync {
+  if (audioClips.length === 0) {
+    return getDefaultAudioSync();
+  }
+  return projectLegacyAudioSync(audioClips);
+}
+
+function ensureAudioClipForLinkedTrack(
+  audioClips: AssemblyAudioClip[],
+  audioTrack: AssemblyAudioTrack | null,
+): AssemblyAudioClip[] {
+  if (!audioTrack) {
+    return audioClips;
+  }
+
+  if (audioClips.some((clip) => clip.mediaAssetId === audioTrack.mediaAssetId)) {
+    return audioClips;
+  }
+
+  const seeded = createDefaultAudioClip({
+    mediaAssetId: audioTrack.mediaAssetId,
+    durationSeconds: audioTrack.durationSeconds,
+  });
+
+  return [...audioClips, seeded];
 }
 
 async function buildAssemblySegments(
@@ -116,14 +176,18 @@ async function buildAssemblySegments(
       continue;
     }
 
+    const durationSeconds =
+      mediaAsset.durationSeconds ?? segment.durationTarget ?? 5;
+
     clips.push({
       segmentId: segment.id,
       mediaAssetId: mediaAsset.id,
       generationId: mediaAsset.generationId,
       title: segment.title,
       position: segment.position,
-      durationSeconds:
-        mediaAsset.durationSeconds ?? segment.durationTarget ?? 5,
+      durationSeconds,
+      inSeconds: 0,
+      outSeconds: durationSeconds,
       sourceUrl: await createStorageSignedUrlForAsset(mediaAsset),
       storageBucket: mediaAsset.storageBucket,
       storagePath: mediaAsset.storagePath,
@@ -205,7 +269,9 @@ function orderSegments(
     return [...segments].sort((a, b) => a.position - b.position);
   }
 
-  const segmentById = new Map(segments.map((segment) => [segment.segmentId, segment]));
+  const segmentById = new Map(
+    segments.map((segment) => [segment.segmentId, segment]),
+  );
   const ordered = segmentOrder
     .map((segmentId) => segmentById.get(segmentId))
     .filter((segment): segment is AssemblySegmentClip => Boolean(segment));
@@ -221,30 +287,6 @@ function readSegmentOrder(composition: Composition | null) {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
-}
-
-function readAudioSync(composition: Composition | null): AssemblyAudioSync {
-  const value = composition?.audioSync;
-  const defaults = getDefaultAudioSync();
-
-  if (!isRecord(value)) {
-    return defaults;
-  }
-
-  return {
-    offsetSeconds: readNumber(value.offsetSeconds, defaults.offsetSeconds),
-    cutFromSeconds: readNumber(value.cutFromSeconds, defaults.cutFromSeconds),
-    fadeInSeconds: readNumber(value.fadeInSeconds, defaults.fadeInSeconds),
-    fadeOutSeconds: readNumber(value.fadeOutSeconds, defaults.fadeOutSeconds),
-  };
-}
-
-function readNumber(value: unknown, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function createStorageSignedUrlForAsset(mediaAsset: MediaAsset) {
