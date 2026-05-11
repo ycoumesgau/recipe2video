@@ -61,6 +61,7 @@ export interface SegmentGenerationRequestedData extends WorkflowAuthData {
 export interface SegmentGenerationPollRequestedData extends WorkflowAuthData {
   generationId: string;
   taskId: string;
+  nextPollDelaySeconds?: number;
 }
 
 export interface SegmentOutputPersistRequestedData extends WorkflowAuthData {
@@ -90,6 +91,7 @@ interface SegmentWorkflowBaseDeps {
 
 export interface RequestSegmentGenerationDeps extends SegmentWorkflowBaseDeps {
   isGenerationQueuePaused(): boolean;
+  hasActiveGenerationForSegment(segmentId: string): Promise<boolean>;
   getSegmentById(segmentId: string): Promise<SeedanceSegment | null>;
   getVideoProjectById(videoId: string): Promise<VideoProject | null>;
   /**
@@ -176,7 +178,12 @@ export interface UploadSegmentMuxDeps {
 export async function requestSegmentGenerationWorkflow(
   data: SegmentGenerationRequestedData,
   deps: RequestSegmentGenerationDeps,
-): Promise<{ generationId?: string; runwayTaskId?: string; paused?: boolean }> {
+): Promise<{
+  generationId?: string;
+  runwayTaskId?: string;
+  paused?: boolean;
+  alreadyActive?: boolean;
+}> {
   assertWorkflowAllowed(data);
 
   const segment = await requireSegment(deps.getSegmentById, data.segmentId);
@@ -185,6 +192,12 @@ export async function requestSegmentGenerationWorkflow(
   if (deps.isGenerationQueuePaused()) {
     await deps.updateSegmentStatus(segment.id, "blocked");
     return { paused: true };
+  }
+
+  if (await deps.hasActiveGenerationForSegment(segment.id)) {
+    // Idempotence guard: multiple clicks (or duplicate events) should never
+    // spawn parallel paid Runway tasks for the same segment.
+    return { alreadyActive: true };
   }
 
   assertSeedance2Selected(video);
@@ -220,6 +233,8 @@ export async function requestSegmentGenerationWorkflow(
         referenceCount: getSeedanceReferenceInputCount(generationInput),
       },
       runwayTaskId: runwayTask.id,
+      runwayTaskStatus: "PENDING",
+      runwayProgress: null,
       status: runwayTask.generationStatus ?? "queued",
       costCredits,
       durationSeconds: segment.durationTarget,
@@ -247,6 +262,7 @@ export async function requestSegmentGenerationWorkflow(
       data: {
         generationId: generation.id,
         taskId: runwayTask.id,
+        nextPollDelaySeconds: 6,
         requestedByUserId: data.requestedByUserId,
         isAllowlisted: true,
       },
@@ -287,9 +303,12 @@ export async function pollSegmentGenerationWorkflow(
   }
 
   const task = await deps.getRunwayTask(taskId);
+  const runwayProgress = normalizeRunwayProgress(task.progress, task.status);
   await deps.updateGenerationStatus({
     generationId: generation.id,
     status: task.generationStatus,
+    runwayTaskStatus: task.status,
+    runwayProgress,
     completedAt: task.isTerminal ? deps.now() : undefined,
   });
 
@@ -350,6 +369,7 @@ export async function pollSegmentGenerationWorkflow(
     data: {
       generationId: generation.id,
       taskId,
+      nextPollDelaySeconds: computeNextPollDelaySeconds(task),
       requestedByUserId: data.requestedByUserId,
       isAllowlisted: true,
     },
@@ -648,6 +668,43 @@ function assertSeedance2DurationValid(segment: SeedanceSegment) {
 
 function estimateSeedanceCredits(durationSeconds: number) {
   return Math.ceil(durationSeconds * RUNWAY_SEEDANCE2_CREDITS_PER_SECOND);
+}
+
+function normalizeRunwayProgress(
+  progress: number | undefined,
+  status: RunwayTaskStatus["status"],
+) {
+  if (status === "SUCCEEDED") {
+    return 100;
+  }
+  if (status === "FAILED" || status === "CANCELLED") {
+    return null;
+  }
+  if (typeof progress !== "number" || Number.isNaN(progress)) {
+    return null;
+  }
+
+  if (progress <= 1) {
+    return Number((progress * 100).toFixed(2));
+  }
+
+  return Number(Math.min(progress, 100).toFixed(2));
+}
+
+function computeNextPollDelaySeconds(task: RunwayTaskStatus) {
+  if (task.status === "THROTTLED") {
+    return 25;
+  }
+
+  if (task.status === "PENDING") {
+    return 15;
+  }
+
+  if (task.status === "RUNNING") {
+    return 6;
+  }
+
+  return 8;
 }
 
 export function workflowStatusForRecipeResult(input: {

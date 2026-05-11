@@ -186,6 +186,7 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
     },
     {
       isGenerationQueuePaused: () => false,
+      hasActiveGenerationForSegment: async () => false,
       getSegmentById: async () => baseSegment,
       getVideoProjectById: async () => baseVideo,
       resolveSegmentSeedanceReferences: async () => [
@@ -241,6 +242,7 @@ test("requestSegmentGenerationWorkflow blocks new generation when the global que
     },
     {
       isGenerationQueuePaused: () => true,
+      hasActiveGenerationForSegment: async () => false,
       getSegmentById: async () => baseSegment,
       getVideoProjectById: async () => baseVideo,
       resolveSegmentSeedanceReferences: async () => [],
@@ -263,6 +265,48 @@ test("requestSegmentGenerationWorkflow blocks new generation when the global que
 
   assert.equal(result.paused, true);
   assert.deepEqual(segmentStatuses, ["blocked"]);
+});
+
+test("requestSegmentGenerationWorkflow is idempotent when a segment already has an active generation", async () => {
+  let runwayCalled = false;
+  let generationCreated = false;
+
+  const result = await requestSegmentGenerationWorkflow(
+    {
+      segmentId: "segment-1",
+      requestedByUserId: "user-1",
+      isAllowlisted: true,
+    },
+    {
+      isGenerationQueuePaused: () => false,
+      hasActiveGenerationForSegment: async () => true,
+      getSegmentById: async () => baseSegment,
+      getVideoProjectById: async () => baseVideo,
+      resolveSegmentSeedanceReferences: async () => [],
+      updateSegmentStatus: async (_segmentId, status) => ({
+        ...baseSegment,
+        status,
+      }),
+      createGeneration: async () => {
+        generationCreated = true;
+        return baseGeneration;
+      },
+      startSeedanceGeneration: async () => {
+        runwayCalled = true;
+        return {
+          id: "task-1",
+          endpoint: "text_to_video",
+          generationStatus: "queued",
+        };
+      },
+      logCost: async (input) => baseCostLog(input.operation),
+      sendEvent: async () => {},
+    },
+  );
+
+  assert.equal(result.alreadyActive, true);
+  assert.equal(runwayCalled, false);
+  assert.equal(generationCreated, false);
 });
 
 test("requestSegmentGenerationWorkflow uses JIT signed URLs from the resolver", async () => {
@@ -297,6 +341,7 @@ test("requestSegmentGenerationWorkflow uses JIT signed URLs from the resolver", 
     },
     {
       isGenerationQueuePaused: () => false,
+      hasActiveGenerationForSegment: async () => false,
       getSegmentById: async () => segmentWithTwoRefs,
       getVideoProjectById: async () => baseVideo,
       resolveSegmentSeedanceReferences: async () => [
@@ -358,6 +403,7 @@ test("requestSegmentGenerationWorkflow accepts the agent's PascalCase alias when
     },
     {
       isGenerationQueuePaused: () => false,
+      hasActiveGenerationForSegment: async () => false,
       getSegmentById: async () => ({
         ...baseSegment,
         references: [
@@ -429,6 +475,7 @@ test("requestSegmentGenerationWorkflow detects the global kitchen reference via 
     },
     {
       isGenerationQueuePaused: () => false,
+      hasActiveGenerationForSegment: async () => false,
       getSegmentById: async () => ({
         ...baseSegment,
         references: [
@@ -489,6 +536,7 @@ test("requestSegmentGenerationWorkflow blocks when required reference asset is n
         },
         {
           isGenerationQueuePaused: () => false,
+          hasActiveGenerationForSegment: async () => false,
           getSegmentById: async () => ({
             ...baseSegment,
             references: [
@@ -537,6 +585,7 @@ test("requestSegmentGenerationWorkflow blocks when Seedance reference limit is e
         },
         {
           isGenerationQueuePaused: () => false,
+          hasActiveGenerationForSegment: async () => false,
           getSegmentById: async () => ({
             ...baseSegment,
             references: Array.from({ length: 10 }, (_, index) => ({
@@ -603,6 +652,7 @@ test("requestSegmentGenerationWorkflow blocks when a reference exceeds Runway's 
         },
         {
           isGenerationQueuePaused: () => false,
+          hasActiveGenerationForSegment: async () => false,
           getSegmentById: async () => baseSegment,
           getVideoProjectById: async () => baseVideo,
           resolveSegmentSeedanceReferences: async () => [
@@ -654,6 +704,7 @@ test("requestSegmentGenerationWorkflow blocks when segment duration is below See
         },
         {
           isGenerationQueuePaused: () => false,
+          hasActiveGenerationForSegment: async () => false,
           getSegmentById: async () => ({
             ...baseSegment,
             durationTarget: 4,
@@ -693,6 +744,7 @@ test("requestSegmentGenerationWorkflow blocks when segment duration exceeds Seed
         },
         {
           isGenerationQueuePaused: () => false,
+          hasActiveGenerationForSegment: async () => false,
           getSegmentById: async () => ({
             ...baseSegment,
             durationTarget: 16,

@@ -1,12 +1,16 @@
 import { readFileSync } from "node:fs";
 
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import type { Database } from "@/shared/supabase/database.types";
 
 const VIDEO_ID = "3dd86fd1-8ddf-442a-b123-635b5eee5037";
 const RUNWAY_OUTPUTS_BUCKET = "runway-outputs";
 const MUX_VIDEO_API_BASE_URL = "https://api.mux.com/video/v1";
 const MUX_SIGNED_URL_TTL_SECONDS = 60 * 60;
 const MUX_BASIC_ESTIMATED_USD_PER_SECOND = 0.005;
+type RecoverySupabaseClient = SupabaseClient<Database>;
 
 type RecoveryTarget = {
   position: number;
@@ -73,7 +77,7 @@ const RECOVERY_TARGETS: RecoveryTarget[] = [
 loadDotenvLocal();
 
 async function main() {
-  const supabase = createClient(
+  const supabase: RecoverySupabaseClient = createClient<Database>(
     requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
     requireEnv("SUPABASE_SECRET_KEY"),
     { auth: { persistSession: false } },
@@ -272,7 +276,7 @@ async function main() {
 }
 
 async function persistMissingRunwayOutput(input: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: RecoverySupabaseClient;
   outputUrl: string;
   segmentId: string;
   generationId: string;
@@ -326,7 +330,7 @@ async function persistMissingRunwayOutput(input: {
 }
 
 async function uploadAssetToMux(input: {
-  supabase: ReturnType<typeof createClient>;
+  supabase: RecoverySupabaseClient;
   asset: {
     id: string;
     storage_bucket: string | null;

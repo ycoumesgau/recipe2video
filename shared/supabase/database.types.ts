@@ -434,6 +434,8 @@ export type Database = {
           model: string;
           model_params: Json;
           runway_task_id: string | null;
+          runway_task_status: string | null;
+          runway_progress: number | null;
           status: string;
           cost_credits: number | null;
           duration_seconds: number | null;
@@ -448,6 +450,8 @@ export type Database = {
           model: string;
           model_params?: Json;
           runway_task_id?: string | null;
+          runway_task_status?: string | null;
+          runway_progress?: number | null;
           status?: string;
           cost_credits?: number | null;
           duration_seconds?: number | null;
@@ -462,6 +466,8 @@ export type Database = {
           model?: string;
           model_params?: Json;
           runway_task_id?: string | null;
+          runway_task_status?: string | null;
+          runway_progress?: number | null;
           status?: string;
           cost_credits?: number | null;
           duration_seconds?: number | null;
