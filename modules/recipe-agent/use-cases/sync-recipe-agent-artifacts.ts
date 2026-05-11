@@ -18,6 +18,11 @@ import {
   replaceAgentReferenceAssetsForVideo,
   type CreateReferenceAssetInput,
 } from "@/modules/references/repositories/reference.repository";
+import { findAssetLibraryByCanonicalNames } from "@/modules/references/repositories/asset-library.repository";
+import {
+  replaceSegmentReferencesForSegments,
+  type SegmentReferenceMapping,
+} from "@/modules/references/repositories/segment-references.repository";
 import {
   LogicalScenesEnvelopeSchema,
   RecipeAnalysisResultSchema,
@@ -37,37 +42,68 @@ import {
   upsertAgentArtifact,
 } from "../repositories/recipe-agent.repository";
 
-const ReferencePlanSchema = z
+const ReferencePlanEntrySchema = z
   .object({
-    references: z.array(
-      z
-        .object({
-          id: z.string().optional(),
-          type: z.string().min(1),
-          canonicalName: z.string().min(1),
-          role: z.string().min(1),
-          priority: z.number().optional(),
-          source: z.string().optional(),
-          prompt: z.string().nullable().optional(),
-          runwayUri: z.string().nullable().optional(),
-          mediaAssetId: z.string().nullable().optional(),
-          usedInSegmentIds: z.array(z.string()).optional(),
-          status: z
-            .enum([
-              "planned",
-              "generating",
-              "generated",
-              "approved",
-              "rejected",
-              "uploaded_to_runway",
-              "failed",
-            ])
-            .optional(),
-        })
-        .strict(),
-    ),
+    id: z.string().optional(),
+    type: z.string().min(1),
+    canonicalName: z.string().min(1),
+    role: z.string().min(1),
+    priority: z.number().optional(),
+    source: z.string().optional(),
+    prompt: z.string().nullable().optional(),
+    runwayUri: z.string().nullable().optional(),
+    mediaAssetId: z.string().nullable().optional(),
+    usedInSegmentIds: z.array(z.string()).optional(),
+    status: z
+      .enum([
+        "planned",
+        "generating",
+        "generated",
+        "approved",
+        "rejected",
+        "uploaded_to_runway",
+        "failed",
+      ])
+      .optional(),
   })
   .strict();
+
+const ReferencePlanSchema = z
+  .object({
+    references: z.array(ReferencePlanEntrySchema).superRefine((references, ctx) => {
+      // Enforce one logical entry per canonicalName. A canonical asset (kitchen
+      // background, character pose, utensil, recipe state) reused across N
+      // Seedance segments must be declared ONCE in the plan and reused via
+      // `usedInSegmentIds`. Without this guarantee the agent can produce a
+      // plan with N copies of `island_default` that look distinct but point
+      // at the same physical asset, defeating the de-duplication on disk and
+      // in `reference_assets`.
+      const counts = new Map<string, number[]>();
+      for (let index = 0; index < references.length; index += 1) {
+        const key = references[index].canonicalName.trim().toLowerCase();
+        const existing = counts.get(key);
+        if (existing) {
+          existing.push(index);
+        } else {
+          counts.set(key, [index]);
+        }
+      }
+      for (const [name, indexes] of counts.entries()) {
+        if (indexes.length > 1) {
+          for (const index of indexes) {
+            ctx.addIssue({
+              code: "custom",
+              path: [index, "canonicalName"],
+              message: `Duplicate reference canonicalName '${name}' (appears ${indexes.length} times). Consolidate via usedInSegmentIds.`,
+            });
+          }
+        }
+      }
+    }),
+  })
+  .strict();
+
+type ReferencePlanEntry = z.infer<typeof ReferencePlanEntrySchema>;
 
 interface BuildRecipeAgentArtifactSyncPlanInput {
   videoId: string;
@@ -84,7 +120,12 @@ export interface RecipeAgentArtifactSyncPlan {
   } | null;
   logicalScenes: CreateLogicalSceneInput[];
   segments: ReturnType<typeof toCreateSegmentInput>[];
-  references: CreateReferenceAssetInput[];
+  /**
+   * Raw reference-plan entries from `reference-plan.json`. Resolution against
+   * `asset_library` (library vs recipe-specific) is performed at sync time,
+   * not at plan-build time, so the plan stays IO-free and unit-testable.
+   */
+  referencesRaw: ReferencePlanEntry[];
   sunoPrompt: string | null;
   errors: string[];
 }
@@ -97,7 +138,7 @@ export function buildRecipeAgentArtifactSyncPlan(
   let recipePatch: RecipeAgentArtifactSyncPlan["recipePatch"] = null;
   let logicalScenes: CreateLogicalSceneInput[] = [];
   let segments: RecipeAgentArtifactSyncPlan["segments"] = [];
-  let references: CreateReferenceAssetInput[] = [];
+  let referencesRaw: ReferencePlanEntry[] = [];
   let sunoPrompt: string | null = null;
 
   for (const artifact of input.artifacts) {
@@ -144,18 +185,8 @@ export function buildRecipeAgentArtifactSyncPlan(
     }
 
     if (artifact.name === "reference-plan.json") {
-      references = (validation.value as z.infer<typeof ReferencePlanSchema>)
-        .references.map((reference) => ({
-          id: reference.id,
-          videoId: input.videoId,
-          mediaAssetId: reference.mediaAssetId ?? null,
-          type: reference.type,
-          canonicalName: reference.canonicalName,
-          source: reference.source ?? "agent_reference_plan",
-          runwayUri: reference.runwayUri ?? null,
-          prompt: buildReferencePrompt(reference),
-          status: reference.status ?? "planned",
-        }));
+      referencesRaw = (validation.value as z.infer<typeof ReferencePlanSchema>)
+        .references;
     }
 
     if (artifact.name === "suno-prompt.md") {
@@ -169,7 +200,7 @@ export function buildRecipeAgentArtifactSyncPlan(
     recipePatch,
     logicalScenes,
     segments,
-    references,
+    referencesRaw,
     sunoPrompt,
     errors,
   };
@@ -197,8 +228,12 @@ export async function syncRecipeAgentArtifacts(
     await replaceLogicalScenesForVideo(supabase, input.videoId, plan.logicalScenes);
   }
 
+  let persistedSegments: Awaited<
+    ReturnType<typeof replaceSegmentsForVideo>
+  > = [];
+
   if (plan.segments.length > 0) {
-    const persistedSegments = await replaceSegmentsForVideo(
+    persistedSegments = await replaceSegmentsForVideo(
       supabase,
       input.videoId,
       plan.segments,
@@ -212,12 +247,89 @@ export async function syncRecipeAgentArtifacts(
     });
   }
 
-  if (plan.references.length > 0) {
-    await replaceAgentReferenceAssetsForVideo(
-      supabase,
-      input.videoId,
-      plan.references,
-    );
+  // ---------------------------------------------------------------------
+  // References: resolve library vs recipe-specific, then wire to segments.
+  //
+  // We do this AFTER segments have been persisted because building rows in
+  // `segment_references` requires the DB UUIDs returned by
+  // `replaceSegmentsForVideo`. Resolution rules:
+  //   - If a canonicalName matches an entry in `asset_library`, the segment
+  //     is wired to `library_asset_id` and NO row is created in
+  //     `reference_assets`.
+  //   - Otherwise we insert a recipe-specific row in `reference_assets`
+  //     and wire the segment to `recipe_reference_id`.
+  // ---------------------------------------------------------------------
+
+  const allCanonicalNames = collectCanonicalNamesForResolution(
+    plan.referencesRaw,
+    persistedSegments,
+  );
+
+  const libraryIndex = await findAssetLibraryByCanonicalNames(
+    supabase,
+    allCanonicalNames,
+  );
+
+  const recipeSpecificInputs: CreateReferenceAssetInput[] = plan.referencesRaw
+    .filter((entry) => !libraryIndex.has(entry.canonicalName))
+    .map((entry) => ({
+      id: entry.id,
+      videoId: input.videoId,
+      mediaAssetId: entry.mediaAssetId ?? null,
+      type: entry.type,
+      canonicalName: entry.canonicalName,
+      source: entry.source ?? "agent_reference_plan",
+      runwayUri: entry.runwayUri ?? null,
+      prompt: buildReferencePrompt(entry),
+      status: entry.status ?? "planned",
+    }));
+
+  const persistedRecipeRefs = await replaceAgentReferenceAssetsForVideo(
+    supabase,
+    input.videoId,
+    recipeSpecificInputs,
+  );
+
+  const recipeRefIndex = new Map(
+    persistedRecipeRefs.map((reference) => [reference.canonicalName, reference]),
+  );
+
+  if (persistedSegments.length > 0) {
+    const mappings: SegmentReferenceMapping[] = [];
+
+    for (const segment of persistedSegments) {
+      // Track skipped references so we surface them in `plan.errors` but
+      // still persist the well-formed rows: a single unresolvable reference
+      // shouldn't block the rest of the storyboard's wiring.
+      let position = 0;
+      for (const segmentReference of segment.references) {
+        const libraryEntry = libraryIndex.get(segmentReference.name);
+        const recipeEntry = recipeRefIndex.get(segmentReference.name);
+
+        if (!libraryEntry && !recipeEntry) {
+          plan.errors.push(
+            `segment '${segment.title}' (${segment.id}) references '${segmentReference.name}' which is not in asset_library nor declared in reference-plan.json.`,
+          );
+          continue;
+        }
+
+        mappings.push({
+          segmentId: segment.id,
+          libraryAssetId: libraryEntry?.id ?? null,
+          recipeReferenceId: libraryEntry ? null : recipeEntry?.id ?? null,
+          role: segmentReference.role,
+          position,
+          required: segmentReference.required ?? true,
+        });
+
+        position += 1;
+      }
+    }
+
+    await replaceSegmentReferencesForSegments(supabase, {
+      segmentIds: persistedSegments.map((segment) => segment.id),
+      mappings,
+    });
   }
 
   if (plan.sunoPrompt) {
@@ -318,6 +430,31 @@ function toCreateSegmentInput(videoId: string, segment: SeedanceSegment) {
     status: segment.status,
     createdBy: segment.createdBy ?? null,
   };
+}
+
+/**
+ * Aggregate every canonical name we may need to resolve against
+ * `asset_library`: those declared in `reference-plan.json` PLUS those used in
+ * `segment.references[].name`. Segments can mention library assets directly
+ * (e.g. "KitchenIslandDefault") without the agent re-declaring them in the
+ * plan; we want those still wired through `segment_references.library_asset_id`.
+ */
+function collectCanonicalNamesForResolution(
+  referencesRaw: ReferencePlanEntry[],
+  persistedSegments: { references: { name: string }[] }[],
+): string[] {
+  const names = new Set<string>();
+  for (const entry of referencesRaw) {
+    names.add(entry.canonicalName);
+  }
+  for (const segment of persistedSegments) {
+    for (const reference of segment.references) {
+      if (reference.name) {
+        names.add(reference.name);
+      }
+    }
+  }
+  return Array.from(names);
 }
 
 function buildReferencePrompt(reference: {

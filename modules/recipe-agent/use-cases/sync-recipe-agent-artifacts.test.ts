@@ -119,7 +119,8 @@ test("buildRecipeAgentArtifactSyncPlan validates and maps complete artifacts", (
   assert.equal(plan.recipePatch?.normalized?.title, "Paris-Brest");
   assert.equal(plan.logicalScenes.length, 30);
   assert.equal(plan.segments.length, 5);
-  assert.equal(plan.references.length, 1);
+  assert.equal(plan.referencesRaw.length, 1);
+  assert.equal(plan.referencesRaw[0]?.canonicalName, "KitchenIslandDefault");
   assert.equal(plan.sunoPrompt, "# Suno\n\nPrompt body");
 });
 
