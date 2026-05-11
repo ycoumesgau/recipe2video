@@ -1,4 +1,4 @@
-import type { ThreadAssistantMessagePart, ThreadMessage } from "@assistant-ui/core";
+import type { ThreadAssistantMessagePart, ThreadMessage } from "@assistant-ui/react";
 
 import type { RecipeAgentChatMessage } from "../recipe-agent.types";
 
