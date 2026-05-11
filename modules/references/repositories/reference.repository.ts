@@ -20,6 +20,12 @@ export interface CreateReferenceAssetInput {
   status?: ReferenceStatus;
 }
 
+/**
+ * Return the recipe-specific reference_assets for a video. Used to live with
+ * `OR video_id IS NULL` so legacy globals stored in this table appeared too,
+ * but globals now live in `asset_library`; callers compose the two sources
+ * (library + recipe-specific) themselves via `getReferenceReviewData`.
+ */
 export async function listReferenceAssetsForVideo(
   supabase: SupabaseDataClient,
   videoId: string,
@@ -27,7 +33,7 @@ export async function listReferenceAssetsForVideo(
   const { data, error } = await supabase
     .from("reference_assets")
     .select("*")
-    .or(`video_id.is.null,video_id.eq.${videoId}`)
+    .eq("video_id", videoId)
     .order("created_at", { ascending: true });
 
   throwIfSupabaseError(error, "listReferenceAssetsForVideo failed");

@@ -111,6 +111,29 @@ export async function listSegmentReferencesForSegments(
   return data.map(mapSegmentReferenceRow);
 }
 
+/**
+ * Single-roundtrip read of every segment_reference row tied to a video. We
+ * join against `segments` server-side via the FK relation and filter on
+ * `segments.video_id`. Caller is responsible for resolving
+ * `library_asset_id` / `recipe_reference_id` against their respective tables.
+ */
+export async function listSegmentReferencesForVideo(
+  supabase: SupabaseDataClient,
+  videoId: string,
+): Promise<SegmentReferenceLink[]> {
+  const { data, error } = await supabase
+    .from("segment_references")
+    .select("*, segments!inner(video_id)")
+    .eq("segments.video_id", videoId)
+    .order("segment_id", { ascending: true })
+    .order("position", { ascending: true });
+
+  throwIfSupabaseError(error, "listSegmentReferencesForVideo failed");
+  // The PostgREST join surfaces `segments` as a nested object on each row;
+  // strip it before returning so the caller only deals with the link shape.
+  return data.map((row) => mapSegmentReferenceRow(row as unknown as SegmentReferenceRow));
+}
+
 function assertMappingsAreValid(mappings: SegmentReferenceMapping[]) {
   for (const mapping of mappings) {
     const hasLibrary = Boolean(mapping.libraryAssetId);

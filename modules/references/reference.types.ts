@@ -19,6 +19,14 @@ export interface ReferenceAssetReviewItem {
   mediaAsset?: MediaAsset | null;
   previewUrl?: string | null;
   usedInSegments: string[];
+  /**
+   * True when the reference comes from the global `asset_library`. Library
+   * entries are synthesized into a ReferenceAsset shape for UI uniformity,
+   * but they must NOT expose approve/reject/regenerate/upload actions on the
+   * per-video references page: those would silently mutate global state. The
+   * library is owned by the dedicated /library admin page.
+   */
+  isLibraryGlobal?: boolean;
 }
 
 export interface SegmentReferenceReadiness {
