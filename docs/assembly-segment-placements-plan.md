@@ -222,12 +222,59 @@ This is the order we'll deploy to keep production safe:
 
 Each deploy is independently revertable because the reader stays tolerant of all three shapes throughout.
 
-## Open questions (for review)
+## Resolutions on the open questions
 
-1. **Should we split `compositions.segment_order` into a normalised `composition_placements` table?** A separate table would be cleaner and queryable, but it's a real SQL migration and we don't currently need to query placements outside the JSON. Recommendation: **stay on JSON for now**, revisit once we have a query that needs it.
-2. **Cross-segment "ripple delete"?** When the user removes a placement, do the right-side placements shift left to fill the gap (current behaviour), or stay put (introducing a hole on the timeline)? Recommendation: **keep ripple** for video — matches the user's mental model of "stitched short-form clips" — and keep audio free-positioned (already the case today).
-3. **Sidebar bin behaviour**: should a segment that already appears in N placements still be draggable from the bin? Recommendation: **yes** — it's how reuse works.
-4. **Naming**: `placementId` vs `clipId`. The wider codebase uses `clip` already (`AssemblySegmentClip`, `AssemblyAudioClip`), so `clipId` would read more naturally. Open to either. Recommendation: stick with `placementId` to disambiguate from `AssemblyAudioClip.id`.
+### 1. JSON vs normalised `composition_placements` table — **JSON, with a deferred upgrade path**
+
+We map every realistic query against placements to whether it needs a normalised row layout to perform well, then weigh the cost.
+
+| Use case | Frequency in Recipe2Video today | JSON enough? | Notes |
+|---|---|---|---|
+| Load the editor for a composition (read by `composition_id`) | very hot | ✅ JSON | Single row, single parse. A normalised table would force a JOIN for the same data. |
+| Save a composition (user clicks "Save") | hot | ✅ JSON | One atomic `UPDATE` on the JSON column. Normalised table = `DELETE` + N `INSERT`s in a transaction; same end-state, more plumbing and more contention. |
+| "Which Seedance segments are never used by any composition?" (find paid-but-orphaned generations) | rare, batch admin | ⚠️ JSON works but is heavy (full-scan + parse) | Same answer is already reachable today via `media_assets` orphan detection. Not a sufficient motivator on its own. |
+| "For this `media_asset`, where is it used?" (safe storage GC before soft-delete) | rare, but matters | ⚠️ JSON with a GIN index | `WHERE segment_order @> '[{"segmentId": "..."}]'` is fine with `CREATE INDEX ... USING GIN (segment_order jsonb_path_ops)`. Normalised table is faster but the gap is a non-issue at our row count. |
+| "Aggregate Runway cost of a final export" | medium, dashboard "Costs" | ✅ JSON | Already served by `cost_logs.generation_id → generations.segment_id`. A given `media_asset` was generated **once** even if it appears in N placements, so the placements layer adds nothing here. |
+| "Average number of cuts per project" (product analytics) | nice-to-have, never asked | ⚠️ Heavy in JSON | `SELECT AVG(jsonb_array_length(segment_order->'placements'))` — slow but acceptable for a weekly cron. |
+| "Find compositions where segment X is trimmed to <50% of its source" (debug "is this segment always cut short? prompt too long?") | rare, product debug | ⚠️ Heavy in JSON | The textbook case where a normalised table shines. But the data isn't exploited by the product today. |
+| Concurrent multi-user editing on the same timeline | not on the roadmap | ✅ JSON | Multi-user editing needs more than a table anyway (CRDT, op log). Not a justification for normalising now. |
+
+The classical NLE-style features that *would* benefit from a normalised table — cross-project clip library, per-clip parallel rendering, version diffing — are not on the Recipe2Video backlog today.
+
+**Trigger conditions for revisiting this decision** (commit to migrate the day any of these happens):
+
+1. A "library of reusable clips across projects" feature lands.
+2. We need product analytics like "average cut rate per generation across all users".
+3. Concurrent editing on the same timeline appears at the backlog.
+
+Until then, **stay on JSON**. If/when the storage GC reverse-lookup or any other admin query gets hot, add a `GIN` index on `compositions.segment_order` (~10 lines of migration) before going as far as a normalised table. The migration from JSON to a table is mechanical when needed: a single `tsx` script iterates compositions, parses the JSON and `INSERT`s rows. The `SegmentPlacement` TypeScript contract does not change — only an extra repository layer is added.
+
+### 2. Ripple delete on video, free position on audio — **keep**
+
+When the user removes a video placement, the right-side placements shift left to close the gap. Matches the "stitched short-form clip" mental model that the rest of the editor already follows (sequential video track, no holes). Audio stays free-positioned, as it already is in `timeline_v2`.
+
+### 3. A segment in the bin is always re-droppable — **yes**
+
+A `seedance_segment` in the sidebar bin can be dragged onto the timeline regardless of how many placements already reference it. Matches every NLE convention and is precisely the value the placements model unlocks.
+
+### 4. Naming — **`placementId`**
+
+`AssemblyAudioClip.id` already exists in the codebase, so `clipId` would collide visually. `placementId` is unambiguous and signals the new concept introduced by this PR.
+
+## Implementation packaging — **single PR, no need for the 3-deploy rollout**
+
+The earlier "Rollout sequence" section above is conservative: 3 independently revertable deploys, useful when readers/writers can be deployed asynchronously and external consumers exist. For Recipe2Video that's overkill:
+
+- The reader is tolerant of all three legacy shapes throughout the change, so flipping reads and writes in the same deploy is safe.
+- There's a single environment and a single consumer of `compositions.audio_sync` / `compositions.segment_order`: the assembly module itself.
+- A single deploy means the reviewer sees the full contract change in one place, which is clearer than three sequential PRs that each leave the codebase in a transitional state.
+
+The implementation will land as a small PR sequence:
+
+- **PR A — placements contract**: types (`SegmentPlacement` + `placementId`), tolerant `readPlacementsState`, repository, server actions, `get-assembly-data`, Remotion composition iterating placements. UI behaviour unchanged. Tests cover read tolerance for the three legacy shapes. *No visible product change.*
+- **PR B — split / middle-cut UX**: extend the `S` / `Del` keyboard shortcuts to the video track in `TimelineEditor`. Walkthrough video covers the five-click middle-cut workflow. *Pure UI change; depends on PR A.*
+
+The optional one-shot DB sweep script is unchanged from above and remains a "ship if/when we want clean JSON in the DB", not a prerequisite.
 
 ## Definition of done
 
