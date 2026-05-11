@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test \"modules/**/*.test.ts\"",
+    "seed:asset-library": "tsx --env-file=.env.local scripts/seed-asset-library.ts",
     "postinstall": "node scripts/ensure-sqlite3.mjs"
   },
   "dependencies": {
