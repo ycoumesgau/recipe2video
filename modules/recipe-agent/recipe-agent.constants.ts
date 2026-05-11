@@ -12,6 +12,7 @@ export const RECIPE_AGENT_ARTIFACT_NAMES = [
   "logical-scenes.json",
   "seedance-segments.json",
   "reference-plan.json",
+  "suno-prompt.json",
   "suno-prompt.md",
   "changelog.md",
 ] as const;
@@ -21,4 +22,5 @@ export const RECIPE_AGENT_JSON_ARTIFACT_NAMES = [
   "logical-scenes.json",
   "seedance-segments.json",
   "reference-plan.json",
+  "suno-prompt.json",
 ] as const;

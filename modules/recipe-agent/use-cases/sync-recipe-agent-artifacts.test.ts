@@ -122,6 +122,90 @@ test("buildRecipeAgentArtifactSyncPlan validates and maps complete artifacts", (
   assert.equal(plan.referencesRaw.length, 1);
   assert.equal(plan.referencesRaw[0]?.canonicalName, "KitchenIslandDefault");
   assert.equal(plan.sunoPrompt, "# Suno\n\nPrompt body");
+  assert.equal(plan.sunoPromptV2, null);
+});
+
+test("buildRecipeAgentArtifactSyncPlan maps valid suno-prompt.json to sunoPromptV2", () => {
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "suno-prompt.json",
+        JSON.stringify({
+          schemaVersion: 1,
+          fields: {
+            styleOfMusic: "Synth pop",
+            excludeStyles: "Metal",
+            title: "Kitchen Glow",
+            autoLyricsPrompt: "Write about baking.",
+            shortVersionPlan: "Use chorus for Reels.",
+          },
+        }),
+      ),
+    ],
+  });
+
+  assert.equal(plan.valid, true);
+  assert.ok(plan.sunoPromptV2);
+  assert.equal(plan.sunoPromptV2?.fields.title, "Kitchen Glow");
+});
+
+test("buildRecipeAgentArtifactSyncPlan invalid suno-prompt.json does not add blocking errors", () => {
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact("suno-prompt.json", "{not valid json"),
+    ],
+  });
+
+  assert.equal(plan.valid, true);
+  assert.equal(plan.sunoPromptV2, null);
+  const record = plan.artifactRecords.find((r) => r.artifactName === "suno-prompt.json");
+  assert.equal(record?.validationStatus, "invalid");
+});
+
+test("buildRecipeAgentArtifactSyncPlan rejects malformed suno-prompt.json schema without blocking errors", () => {
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [artifact("suno-prompt.json", JSON.stringify({ schemaVersion: 1 }))],
+  });
+
+  assert.equal(plan.valid, true);
+  assert.equal(plan.sunoPromptV2, null);
+  const record = plan.artifactRecords.find((r) => r.artifactName === "suno-prompt.json");
+  assert.equal(record?.validationStatus, "invalid");
+});
+
+test("buildRecipeAgentArtifactSyncPlan accepts valid recipe-analysis alongside invalid suno JSON", () => {
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "recipe-analysis.json",
+        JSON.stringify({
+          recipe: {
+            title: "Paris-Brest",
+            sourceType: "text",
+            ingredients: [],
+            steps: [],
+            subRecipes: [],
+            assumptions: [],
+            timing: null,
+            criticalTransformations: [],
+            visualTextureOpportunities: [],
+            possibleHooks: [],
+            promptPolicySources: [],
+          },
+          clarifyingQuestions: [],
+        }),
+      ),
+      artifact("suno-prompt.json", JSON.stringify({ schemaVersion: 1 })),
+    ],
+  });
+
+  assert.equal(plan.valid, true);
+  assert.ok(plan.recipePatch);
+  assert.equal(plan.sunoPromptV2, null);
 });
 
 test("buildRecipeAgentArtifactSyncPlan keeps invalid artifacts out of sync plan", () => {
