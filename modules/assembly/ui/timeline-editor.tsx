@@ -43,7 +43,7 @@ const VIDEO_TRACK_HEIGHT = 84;
 const AUDIO_TRACK_HEIGHT = 84;
 const TIMELINE_HEIGHT =
   TRACK_RULER_HEIGHT + VIDEO_TRACK_HEIGHT + AUDIO_TRACK_HEIGHT + 8;
-const TRIM_HANDLE_WIDTH = 8;
+const TRIM_HANDLE_WIDTH = 14;
 const SNAP_TOLERANCE_PX = 6;
 const MIN_CLIP_DURATION = 0.2;
 
@@ -95,6 +95,46 @@ type DragMode =
       pointerId: number;
     };
 
+/**
+ * Proposed-but-not-yet-committed drag state. Rendered as a translucent
+ * overlay (ghost) so the clip itself stays at its committed geometry until
+ * the user releases the pointer. This matches the trim UX of CapCut /
+ * Premiere / DaVinci where the clip width does not change while dragging an
+ * edge — only a visual indicator moves.
+ *
+ * Reorder (`segment-move`) is intentionally NOT deferred: clips snapping into
+ * their new slot during the drag is the expected feedback for reorder and
+ * was not flagged as a UX problem.
+ */
+type PendingDrag =
+  | null
+  | {
+      kind: "segment-trim";
+      segmentId: string;
+      side: "left" | "right";
+      nextInSeconds: number;
+      nextOutSeconds: number;
+    }
+  | {
+      kind: "audio-trim";
+      clipId: string;
+      side: "left" | "right";
+      nextInSeconds: number;
+      nextOutSeconds: number;
+      nextStart: number;
+    }
+  | {
+      kind: "audio-move";
+      clipId: string;
+      nextStart: number;
+    }
+  | {
+      kind: "audio-fade";
+      clipId: string;
+      side: "in" | "out";
+      nextFade: number;
+    };
+
 export interface TimelineEditorProps {
   audioTrack: AssemblyAudioTrack | null;
   audioClips: AssemblyAudioClip[];
@@ -131,6 +171,7 @@ export function TimelineEditor({
     | { kind: "audio"; clipId: string }
     | null
   >(null);
+  const [pendingDrag, setPendingDrag] = useState<PendingDrag>(null);
 
   const segmentLayout = useMemo(() => {
     const result: Array<{ startSeconds: number; durationSeconds: number }> = [];
@@ -390,27 +431,29 @@ export function TimelineEditor({
         if (!segment) {
           return;
         }
-        const next = [...segments];
-        const idx = next.findIndex((s) => s.segmentId === drag.segmentId);
-        if (idx === -1) {
-          return;
-        }
+        let nextInSeconds = drag.initialInSeconds;
+        let nextOutSeconds = drag.initialOutSeconds;
         if (drag.side === "left") {
-          const inSeconds = clamp(
+          nextInSeconds = clamp(
             drag.initialInSeconds + deltaSeconds,
             0,
             drag.initialOutSeconds - MIN_CLIP_DURATION,
           );
-          next[idx] = { ...segment, inSeconds };
         } else {
-          const outSeconds = clamp(
+          nextOutSeconds = clamp(
             drag.initialOutSeconds + deltaSeconds,
             drag.initialInSeconds + MIN_CLIP_DURATION,
             segment.durationSeconds,
           );
-          next[idx] = { ...segment, outSeconds };
         }
-        onSegmentsChange(next);
+        // Defer commit to pointerup so neighbours don't reflow during drag.
+        setPendingDrag({
+          kind: "segment-trim",
+          segmentId: drag.segmentId,
+          side: drag.side,
+          nextInSeconds,
+          nextOutSeconds,
+        });
       } else if (drag.kind === "segment-move") {
         const draggedIdx = segments.findIndex(
           (s) => s.segmentId === drag.segmentId,
@@ -454,86 +497,128 @@ export function TimelineEditor({
           };
         }
       } else if (drag.kind === "audio-move") {
-        const next = audioClips.map((clip) => {
-          if (clip.id !== drag.clipId) {
-            return clip;
-          }
-          const startOnTimelineSeconds = Math.max(
-            snap(drag.initialStart + deltaSeconds, [
-              clip.startOnTimelineSeconds,
-            ]),
+        const nextStart = Math.max(
+          snap(drag.initialStart + deltaSeconds, [drag.initialStart]),
+          0,
+        );
+        setPendingDrag({ kind: "audio-move", clipId: drag.clipId, nextStart });
+      } else if (drag.kind === "audio-trim") {
+        let nextInSeconds = drag.initialInSeconds;
+        let nextOutSeconds = drag.initialOutSeconds;
+        let nextStart = drag.initialStart;
+        if (drag.side === "left") {
+          // Trim left = pull or push the in-point AND shift the timeline
+          // start by the same amount, like a typical NLE.
+          nextInSeconds = clamp(
+            drag.initialInSeconds + deltaSeconds,
+            0,
+            drag.initialOutSeconds - MIN_CLIP_DURATION,
+          );
+          nextStart = Math.max(
+            drag.initialStart + (nextInSeconds - drag.initialInSeconds),
             0,
           );
-          return { ...clip, startOnTimelineSeconds };
-        });
-        onAudioClipsChange(next);
-      } else if (drag.kind === "audio-trim") {
-        const next = audioClips.map((clip) => {
-          if (clip.id !== drag.clipId) {
-            return clip;
-          }
-          if (drag.side === "left") {
-            // Trim left = pull or push the in-point AND shift the timeline
-            // start by the same amount, like a typical NLE.
-            const newIn = clamp(
-              drag.initialInSeconds + deltaSeconds,
-              0,
-              drag.initialOutSeconds - MIN_CLIP_DURATION,
-            );
-            const startOnTimelineSeconds = Math.max(
-              drag.initialStart + (newIn - drag.initialInSeconds),
-              0,
-            );
-            return {
-              ...clip,
-              inSeconds: newIn,
-              startOnTimelineSeconds,
-            };
-          }
-          const newOut = Math.max(
+        } else {
+          nextOutSeconds = Math.max(
             drag.initialOutSeconds + deltaSeconds,
             drag.initialInSeconds + MIN_CLIP_DURATION,
           );
-          return { ...clip, outSeconds: newOut };
+        }
+        setPendingDrag({
+          kind: "audio-trim",
+          clipId: drag.clipId,
+          side: drag.side,
+          nextInSeconds,
+          nextOutSeconds,
+          nextStart,
         });
-        onAudioClipsChange(next);
       } else if (drag.kind === "audio-fade") {
-        const next = audioClips.map((clip) => {
-          if (clip.id !== drag.clipId) {
-            return clip;
-          }
-          const totalLength = Math.max(
-            clip.outSeconds - clip.inSeconds,
-            MIN_CLIP_DURATION,
+        const clip = audioClips.find((c) => c.id === drag.clipId);
+        if (!clip) {
+          return;
+        }
+        const totalLength = Math.max(
+          clip.outSeconds - clip.inSeconds,
+          MIN_CLIP_DURATION,
+        );
+        let nextFade = drag.initialFade;
+        if (drag.side === "in") {
+          nextFade = clamp(
+            drag.initialFade + deltaSeconds,
+            0,
+            Math.max(totalLength - clip.fadeOutSeconds, 0),
           );
-          if (drag.side === "in") {
-            const fadeInSeconds = clamp(
-              drag.initialFade + deltaSeconds,
-              0,
-              Math.max(totalLength - clip.fadeOutSeconds, 0),
-            );
-            return { ...clip, fadeInSeconds };
-          }
+        } else {
           // Fade-out handle pulls leftward.
-          const fadeOutSeconds = clamp(
+          nextFade = clamp(
             drag.initialFade - deltaSeconds,
             0,
             Math.max(totalLength - clip.fadeInSeconds, 0),
           );
-          return { ...clip, fadeOutSeconds };
+        }
+        setPendingDrag({
+          kind: "audio-fade",
+          clipId: drag.clipId,
+          side: drag.side,
+          nextFade,
         });
-        onAudioClipsChange(next);
       }
     },
-    [
-      audioClips,
-      onAudioClipsChange,
-      onSegmentsChange,
-      pxPerSecond,
-      segmentLayout,
-      segments,
-      snap,
-    ],
+    [audioClips, onSegmentsChange, pxPerSecond, segmentLayout, segments, snap],
+  );
+
+  const commitPendingDrag = useCallback(
+    (pending: PendingDrag) => {
+      if (!pending) {
+        return;
+      }
+      if (pending.kind === "segment-trim") {
+        onSegmentsChange(
+          segments.map((segment) =>
+            segment.segmentId === pending.segmentId
+              ? {
+                  ...segment,
+                  inSeconds: pending.nextInSeconds,
+                  outSeconds: pending.nextOutSeconds,
+                }
+              : segment,
+          ),
+        );
+      } else if (pending.kind === "audio-move") {
+        onAudioClipsChange(
+          audioClips.map((clip) =>
+            clip.id === pending.clipId
+              ? { ...clip, startOnTimelineSeconds: pending.nextStart }
+              : clip,
+          ),
+        );
+      } else if (pending.kind === "audio-trim") {
+        onAudioClipsChange(
+          audioClips.map((clip) =>
+            clip.id === pending.clipId
+              ? {
+                  ...clip,
+                  inSeconds: pending.nextInSeconds,
+                  outSeconds: pending.nextOutSeconds,
+                  startOnTimelineSeconds: pending.nextStart,
+                }
+              : clip,
+          ),
+        );
+      } else if (pending.kind === "audio-fade") {
+        onAudioClipsChange(
+          audioClips.map((clip) => {
+            if (clip.id !== pending.clipId) {
+              return clip;
+            }
+            return pending.side === "in"
+              ? { ...clip, fadeInSeconds: pending.nextFade }
+              : { ...clip, fadeOutSeconds: pending.nextFade };
+          }),
+        );
+      }
+    },
+    [audioClips, onAudioClipsChange, onSegmentsChange, segments],
   );
 
   const handleTracksPointerUp = useCallback(
@@ -541,9 +626,15 @@ export function TimelineEditor({
       const drag = dragModeRef.current;
       if (drag.kind !== "idle" && drag.pointerId === event.pointerId) {
         dragModeRef.current = { kind: "idle" };
+        // Capture the latest pending value off the React state via a
+        // functional setter so we always commit the freshest preview.
+        setPendingDrag((current) => {
+          commitPendingDrag(current);
+          return null;
+        });
       }
     },
-    [],
+    [commitPendingDrag],
   );
 
   const handleSplitAtPlayhead = useCallback(() => {
@@ -718,6 +809,7 @@ export function TimelineEditor({
             className="relative"
             onPointerMove={handleTracksPointerMove}
             onPointerUp={handleTracksPointerUp}
+            onPointerCancel={handleTracksPointerUp}
             style={{
               height: VIDEO_TRACK_HEIGHT + AUDIO_TRACK_HEIGHT + 8,
               width: timelineWidthPx,
@@ -796,6 +888,17 @@ export function TimelineEditor({
                   })
                 : null}
             </TrackLane>
+
+            <DragGhost
+              audioClips={audioClips}
+              audioTrackHeight={AUDIO_TRACK_HEIGHT}
+              audioTrackTop={VIDEO_TRACK_HEIGHT + 8}
+              pendingDrag={pendingDrag}
+              pxPerSecond={pxPerSecond}
+              segmentLayout={segmentLayout}
+              segments={segments}
+              videoTrackHeight={VIDEO_TRACK_HEIGHT}
+            />
           </div>
 
           <Playhead
@@ -1042,14 +1145,15 @@ function TrimHandle({
 }) {
   return (
     <div
+      aria-label={side === "left" ? "Trim start" : "Trim end"}
       className={cn(
-        "z-10 flex shrink-0 cursor-ew-resize items-center justify-center bg-white/15 transition-colors hover:bg-white/30",
-        side === "left" ? "rounded-l-md" : "rounded-r-md ml-auto",
+        "z-20 flex shrink-0 cursor-ew-resize items-center justify-center bg-foreground/20 transition-colors hover:bg-foreground/40",
+        side === "left" ? "rounded-l-md" : "ml-auto rounded-r-md",
       )}
       onPointerDown={onPointerDown}
       style={{ width: TRIM_HANDLE_WIDTH }}
     >
-      <div className="h-4 w-0.5 bg-white/70" />
+      <div className="h-5 w-0.5 bg-foreground/80" />
     </div>
   );
 }
@@ -1116,6 +1220,222 @@ function Playhead({
     >
       <div className="absolute -left-[5px] -top-[5px] h-2.5 w-2.5 rotate-45 bg-rose-500" />
       <div className="h-full w-px bg-rose-500" />
+    </div>
+  );
+}
+
+/**
+ * Renders the deferred-commit drag preview. The committed clip stays at its
+ * persisted geometry; this overlay shows where the change will land once the
+ * user releases the pointer, plus a small label with the magnitude of the
+ * delta in seconds. Only renders when a deferred drag is active.
+ */
+function DragGhost({
+  audioClips,
+  audioTrackHeight,
+  audioTrackTop,
+  pendingDrag,
+  pxPerSecond,
+  segmentLayout,
+  segments,
+  videoTrackHeight,
+}: {
+  audioClips: AssemblyAudioClip[];
+  audioTrackHeight: number;
+  audioTrackTop: number;
+  pendingDrag: PendingDrag;
+  pxPerSecond: number;
+  segmentLayout: Array<{ startSeconds: number; durationSeconds: number }>;
+  segments: AssemblySegmentClip[];
+  videoTrackHeight: number;
+}) {
+  if (!pendingDrag) {
+    return null;
+  }
+
+  if (pendingDrag.kind === "segment-trim") {
+    const idx = segments.findIndex(
+      (segment) => segment.segmentId === pendingDrag.segmentId,
+    );
+    const segment = segments[idx];
+    const layout = segmentLayout[idx];
+    if (!segment || !layout) {
+      return null;
+    }
+    const deltaSeconds =
+      pendingDrag.side === "left"
+        ? pendingDrag.nextInSeconds - segment.inSeconds
+        : pendingDrag.nextOutSeconds - segment.outSeconds;
+    const newEdgeOffsetSeconds =
+      pendingDrag.side === "left"
+        ? pendingDrag.nextInSeconds - segment.inSeconds
+        : layout.durationSeconds +
+          (pendingDrag.nextOutSeconds - segment.outSeconds);
+    const ghostX = (layout.startSeconds + newEdgeOffsetSeconds) * pxPerSecond;
+    const originalEdgeX =
+      pendingDrag.side === "left"
+        ? layout.startSeconds * pxPerSecond
+        : (layout.startSeconds + layout.durationSeconds) * pxPerSecond;
+    return (
+      <GhostBoundary
+        deltaSeconds={deltaSeconds}
+        ghostX={ghostX}
+        originalEdgeX={originalEdgeX}
+        topPx={0}
+        heightPx={videoTrackHeight}
+      />
+    );
+  }
+
+  if (pendingDrag.kind === "audio-trim") {
+    const clip = audioClips.find((c) => c.id === pendingDrag.clipId);
+    if (!clip) {
+      return null;
+    }
+    const originalLeftX = clip.startOnTimelineSeconds * pxPerSecond;
+    const originalRightX =
+      (clip.startOnTimelineSeconds + (clip.outSeconds - clip.inSeconds)) *
+      pxPerSecond;
+    const ghostX =
+      pendingDrag.side === "left"
+        ? pendingDrag.nextStart * pxPerSecond
+        : (pendingDrag.nextStart +
+            (pendingDrag.nextOutSeconds - pendingDrag.nextInSeconds)) *
+          pxPerSecond;
+    const originalEdgeX =
+      pendingDrag.side === "left" ? originalLeftX : originalRightX;
+    const deltaSeconds =
+      pendingDrag.side === "left"
+        ? pendingDrag.nextInSeconds - clip.inSeconds
+        : pendingDrag.nextOutSeconds - clip.outSeconds;
+    return (
+      <GhostBoundary
+        deltaSeconds={deltaSeconds}
+        ghostX={ghostX}
+        originalEdgeX={originalEdgeX}
+        topPx={audioTrackTop}
+        heightPx={audioTrackHeight}
+      />
+    );
+  }
+
+  if (pendingDrag.kind === "audio-move") {
+    const clip = audioClips.find((c) => c.id === pendingDrag.clipId);
+    if (!clip) {
+      return null;
+    }
+    const widthPx = (clip.outSeconds - clip.inSeconds) * pxPerSecond;
+    const ghostX = pendingDrag.nextStart * pxPerSecond;
+    const deltaSeconds = pendingDrag.nextStart - clip.startOnTimelineSeconds;
+    return (
+      <div
+        aria-hidden
+        className="pointer-events-none absolute z-30"
+        style={{
+          height: audioTrackHeight - 2,
+          left: ghostX,
+          top: audioTrackTop + 1,
+          width: Math.max(widthPx, 1),
+        }}
+      >
+        <div className="h-full w-full rounded-md border-2 border-dashed border-rose-400 bg-rose-400/10" />
+        <DeltaLabel
+          deltaSeconds={deltaSeconds}
+          leftPx={Math.min(widthPx / 2, 60)}
+          topPx={-22}
+        />
+      </div>
+    );
+  }
+
+  if (pendingDrag.kind === "audio-fade") {
+    const clip = audioClips.find((c) => c.id === pendingDrag.clipId);
+    if (!clip) {
+      return null;
+    }
+    const leftEdgePx = clip.startOnTimelineSeconds * pxPerSecond;
+    const widthPx = (clip.outSeconds - clip.inSeconds) * pxPerSecond;
+    const rightEdgePx = leftEdgePx + widthPx;
+    const ghostX =
+      pendingDrag.side === "in"
+        ? leftEdgePx + pendingDrag.nextFade * pxPerSecond
+        : rightEdgePx - pendingDrag.nextFade * pxPerSecond;
+    const originalEdgeX =
+      pendingDrag.side === "in"
+        ? leftEdgePx + clip.fadeInSeconds * pxPerSecond
+        : rightEdgePx - clip.fadeOutSeconds * pxPerSecond;
+    const deltaSeconds =
+      pendingDrag.nextFade -
+      (pendingDrag.side === "in" ? clip.fadeInSeconds : clip.fadeOutSeconds);
+    return (
+      <GhostBoundary
+        deltaSeconds={deltaSeconds}
+        ghostX={ghostX}
+        originalEdgeX={originalEdgeX}
+        topPx={audioTrackTop}
+        heightPx={audioTrackHeight}
+      />
+    );
+  }
+
+  return null;
+}
+
+function GhostBoundary({
+  deltaSeconds,
+  ghostX,
+  heightPx,
+  originalEdgeX,
+  topPx,
+}: {
+  deltaSeconds: number;
+  ghostX: number;
+  heightPx: number;
+  originalEdgeX: number;
+  topPx: number;
+}) {
+  const leftPx = Math.min(ghostX, originalEdgeX);
+  const widthPx = Math.max(Math.abs(ghostX - originalEdgeX), 1);
+  return (
+    <>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute z-30 bg-foreground/15"
+        style={{
+          height: heightPx,
+          left: leftPx,
+          top: topPx,
+          width: widthPx,
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute z-30 w-px bg-foreground"
+        style={{ height: heightPx, left: ghostX, top: topPx }}
+      />
+      <DeltaLabel deltaSeconds={deltaSeconds} leftPx={ghostX + 4} topPx={topPx + 4} />
+    </>
+  );
+}
+
+function DeltaLabel({
+  deltaSeconds,
+  leftPx,
+  topPx,
+}: {
+  deltaSeconds: number;
+  leftPx: number;
+  topPx: number;
+}) {
+  const sign = deltaSeconds > 0 ? "+" : deltaSeconds < 0 ? "−" : "±";
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute z-30 rounded-sm bg-foreground px-1 text-[10px] tabular-nums text-background shadow-sm"
+      style={{ left: leftPx, top: topPx }}
+    >
+      {sign}
+      {Math.abs(deltaSeconds).toFixed(2)}s
     </div>
   );
 }

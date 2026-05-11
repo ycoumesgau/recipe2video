@@ -168,74 +168,39 @@ export function AssemblyWorkspace({
         </Alert>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(360px,0.48fr)]">
-        <section className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Remotion preview</CardTitle>
-              <CardDescription>
-                Player source files are signed Supabase Storage originals, not
-                Mux HLS streams. The timeline below drives the player.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {segments.length > 0 ? (
-                <div className="overflow-hidden rounded-xl border bg-black">
-                  <Player
-                    component={RecipeAssemblyComposition}
-                    compositionHeight={initialRemotionProps.height}
-                    compositionWidth={initialRemotionProps.width}
-                    controls
-                    durationInFrames={durationInFrames}
-                    fps={initialRemotionProps.fps}
-                    inputProps={remotionProps}
-                    ref={playerRef}
-                    style={{
-                      aspectRatio: `${initialRemotionProps.width} / ${initialRemotionProps.height}`,
-                      maxHeight: 720,
-                      width: "100%",
-                    }}
-                  />
-                </div>
-              ) : (
-                <EmptyPreview />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Timeline editor</CardTitle>
-              <CardDescription>
-                Drag clips to reorder, drag clip edges to trim, drag audio
-                anywhere on the timeline, and pull the corner to fade. Snaps
-                to the playhead and to neighbouring clip edges.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {segments.length > 0 ? (
-                <TimelineEditor
-                  audioClips={audioClips}
-                  audioTrack={initialRemotionProps.audio ?? null}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.4fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Remotion preview</CardTitle>
+            <CardDescription>
+              Player source files are signed Supabase Storage originals, not
+              Mux HLS streams. The timeline below drives the player.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {segments.length > 0 ? (
+              <div className="overflow-hidden rounded-xl border bg-black">
+                <Player
+                  component={RecipeAssemblyComposition}
+                  compositionHeight={initialRemotionProps.height}
+                  compositionWidth={initialRemotionProps.width}
+                  controls
+                  durationInFrames={durationInFrames}
                   fps={initialRemotionProps.fps}
-                  onAudioClipsChange={handleAudioClipsChange}
-                  onSegmentsChange={handleSegmentsChange}
-                  playerRef={playerRef}
-                  segments={segments}
+                  inputProps={remotionProps}
+                  ref={playerRef}
+                  style={{
+                    aspectRatio: `${initialRemotionProps.width} / ${initialRemotionProps.height}`,
+                    maxHeight: 720,
+                    width: "100%",
+                  }}
                 />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Accept segment variants before assembling the final sequence.
-                </p>
-              )}
-              <AddAudioClipButton
-                audioClips={audioClips}
-                audioTrack={initialRemotionProps.audio ?? null}
-                onChange={handleAudioClipsChange}
-              />
-            </CardContent>
-          </Card>
-        </section>
+              </div>
+            ) : (
+              <EmptyPreview />
+            )}
+          </CardContent>
+        </Card>
 
         <aside className="space-y-6">
           <Card>
@@ -361,6 +326,40 @@ export function AssemblyWorkspace({
           </Card>
         </aside>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Timeline editor</CardTitle>
+          <CardDescription>
+            Drag clips to reorder, drag clip edges to trim (the change commits
+            on release so you can read the magnitude before letting go), drag
+            audio anywhere on the timeline, and pull the corner to fade. Snaps
+            to the playhead and to neighbouring clip edges.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {segments.length > 0 ? (
+            <TimelineEditor
+              audioClips={audioClips}
+              audioTrack={initialRemotionProps.audio ?? null}
+              fps={initialRemotionProps.fps}
+              onAudioClipsChange={handleAudioClipsChange}
+              onSegmentsChange={handleSegmentsChange}
+              playerRef={playerRef}
+              segments={segments}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Accept segment variants before assembling the final sequence.
+            </p>
+          )}
+          <AddAudioClipButton
+            audioClips={audioClips}
+            audioTrack={initialRemotionProps.audio ?? null}
+            onChange={handleAudioClipsChange}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }

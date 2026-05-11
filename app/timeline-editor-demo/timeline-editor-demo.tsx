@@ -119,39 +119,72 @@ export function TimelineEditorDemo() {
   });
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(360px,0.48fr)]">
-      <Card>
-        <CardHeader>
-          <CardTitle>Remotion preview</CardTitle>
-          <CardDescription>Driven live by the timeline state below.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-hidden rounded-xl border bg-black">
-            <Player
-              component={TimelineDemoComposition}
-              compositionHeight={remotionProps.height}
-              compositionWidth={remotionProps.width}
-              controls
-              durationInFrames={durationInFrames}
-              fps={remotionProps.fps}
-              inputProps={remotionProps}
-              ref={playerRef}
-              style={{
-                aspectRatio: `${remotionProps.width} / ${remotionProps.height}`,
-                maxHeight: 480,
-                width: "100%",
-              }}
-            />
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-6">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.4fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Remotion preview</CardTitle>
+            <CardDescription>
+              Driven live by the timeline state below.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-hidden rounded-xl border bg-black">
+              <Player
+                component={TimelineDemoComposition}
+                compositionHeight={remotionProps.height}
+                compositionWidth={remotionProps.width}
+                controls
+                durationInFrames={durationInFrames}
+                fps={remotionProps.fps}
+                inputProps={remotionProps}
+                ref={playerRef}
+                style={{
+                  aspectRatio: `${remotionProps.width} / ${remotionProps.height}`,
+                  maxHeight: 480,
+                  width: "100%",
+                }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Live state</CardTitle>
+            <CardDescription>
+              What the timeline editor would persist on save.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <pre className="max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
+              {JSON.stringify(
+                {
+                  segmentTrims: Object.fromEntries(
+                    segments.map((s) => [
+                      s.segmentId,
+                      { inSeconds: s.inSeconds, outSeconds: s.outSeconds },
+                    ]),
+                  ),
+                  segmentOrder: segments.map((s) => s.segmentId),
+                  audioClips,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Timeline editor</CardTitle>
           <CardDescription>
             Drag bodies to move/reorder, drag clip edges to trim, drag the
-            audio corners to fade. Press space to play/pause, S to split.
+            audio corners to fade. The trim/move/fade preview ghost commits
+            on release. Press <kbd>Space</kbd> to play/pause, <kbd>S</kbd> to
+            split, <kbd>Del</kbd> to remove.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -165,33 +198,6 @@ export function TimelineEditorDemo() {
             playerRef={playerRef}
             segments={segments}
           />
-        </CardContent>
-      </Card>
-
-      <Card className="xl:col-span-2">
-        <CardHeader>
-          <CardTitle>Live state</CardTitle>
-          <CardDescription>
-            What the timeline editor would persist on save.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <pre className="max-h-[280px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
-            {JSON.stringify(
-              {
-                segmentTrims: Object.fromEntries(
-                  segments.map((s) => [
-                    s.segmentId,
-                    { inSeconds: s.inSeconds, outSeconds: s.outSeconds },
-                  ]),
-                ),
-                segmentOrder: segments.map((s) => s.segmentId),
-                audioClips,
-              },
-              null,
-              2,
-            )}
-          </pre>
         </CardContent>
       </Card>
     </div>
