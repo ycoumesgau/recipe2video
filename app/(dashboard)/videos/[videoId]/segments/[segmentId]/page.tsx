@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import { SegmentReview } from "@/modules/generation/ui/segment-review";
 import {
   getSegmentReviewData,
@@ -58,6 +59,8 @@ export default async function SegmentReviewPage({
         segmentId={segmentId}
         videoId={videoId}
       />
+
+      <GenerationRscSync enabled={data.hasActiveGeneration} pollMs={4_000} />
     </div>
   );
 }
@@ -79,6 +82,7 @@ async function loadSegmentReview(videoId: string, segmentId: string): Promise<{
         project: null,
         segment: null,
         variants: [],
+        hasActiveGeneration: false,
         feedbacks: [],
         referenceResolutions: [],
       },

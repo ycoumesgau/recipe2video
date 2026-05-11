@@ -52,6 +52,7 @@ export interface SegmentReviewData {
   project: VideoProject | null;
   segment: SeedanceSegment | null;
   variants: SegmentVariantReviewItem[];
+  hasActiveGeneration: boolean;
   feedbacks: SegmentFeedback[];
   /**
    * Per-reference resolution status used by the segment review UI to show
@@ -76,6 +77,7 @@ export async function getSegmentReviewData(
       project: null,
       segment: null,
       variants: [],
+      hasActiveGeneration: false,
       feedbacks: [],
       referenceResolutions: [],
     };
@@ -101,6 +103,9 @@ export async function getSegmentReviewData(
   return {
     project,
     segment,
+    hasActiveGeneration: generations.some((generation) =>
+      ["pending", "queued", "processing"].includes(generation.status),
+    ),
     feedbacks,
     referenceResolutions,
     variants: generations.map((generation) => ({

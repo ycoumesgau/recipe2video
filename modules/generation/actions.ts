@@ -19,7 +19,10 @@ import { getVideoProjectById } from "@/modules/videos/repositories/video.reposit
 import { VIDEO_MODEL_OPTIONS } from "@/modules/videos/video.constants";
 
 import { RUNWAY_DEFAULT_VIDEO_MODEL } from "./runway.constants";
-import { getGenerationById } from "./repositories/generation.repository";
+import {
+  getGenerationById,
+  hasActiveGenerationForSegment,
+} from "./repositories/generation.repository";
 
 export async function acceptSegmentVariantAction(formData: FormData) {
   const ids = getSegmentReviewIds(formData);
@@ -116,6 +119,12 @@ export async function requestSegmentRegenerationAction(formData: FormData) {
       );
     }
 
+    if (await hasActiveGenerationForSegment(supabase, ids.segmentId)) {
+      throw new Error(
+        "A generation is already running for this segment. Wait for completion before launching another one.",
+      );
+    }
+
     await updateSegmentStatus(supabase, ids.segmentId, "queued");
     await inngest.send({
       name: INNGEST_EVENTS.segmentGenerationRequested,
@@ -138,6 +147,91 @@ export async function requestSegmentRegenerationAction(formData: FormData) {
     }
 
     redirectWithNotice(ids, "error", getActionErrorMessage(error));
+  }
+}
+
+export async function launchSelectedSegmentsAction(formData: FormData) {
+  const videoId = requireString(formData, "videoId");
+  const requestedSegmentIds = Array.from(
+    new Set(
+      formData
+        .getAll("segmentIds")
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  );
+
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+
+    if (requestedSegmentIds.length === 0) {
+      throw new Error("Select at least one segment to launch.");
+    }
+
+    const supabase = createSupabaseAdminClient();
+    const launchableStatuses = new Set([
+      "ready",
+      "review",
+      "rejected",
+      "failed",
+      "accepted",
+    ]);
+
+    let launched = 0;
+    let skipped = 0;
+
+    for (const segmentId of requestedSegmentIds) {
+      const segment = await getSegmentById(supabase, segmentId);
+      if (!segment || segment.videoId !== videoId) {
+        skipped += 1;
+        continue;
+      }
+
+      if (!launchableStatuses.has(segment.status)) {
+        skipped += 1;
+        continue;
+      }
+
+      if (await hasActiveGenerationForSegment(supabase, segment.id)) {
+        skipped += 1;
+        continue;
+      }
+
+      await updateSegmentStatus(supabase, segment.id, "queued");
+      await inngest.send({
+        name: INNGEST_EVENTS.segmentGenerationRequested,
+        data: {
+          segmentId: segment.id,
+          requestedByUserId: profile.id,
+          isAllowlisted: true,
+        },
+      });
+      launched += 1;
+    }
+
+    revalidatePath(`/videos/${videoId}`);
+    revalidatePath(`/videos/${videoId}/segments`);
+
+    const message =
+      skipped > 0
+        ? `${launched} segment(s) queued, ${skipped} skipped.`
+        : `${launched} segment(s) queued.`;
+    redirect(
+      `/videos/${videoId}/segments?notice=success&message=${encodeURIComponent(
+        message,
+      )}`,
+    );
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+    const message = getActionErrorMessage(error);
+    redirect(
+      `/videos/${videoId}/segments?notice=error&message=${encodeURIComponent(
+        message,
+      )}`,
+    );
   }
 }
 

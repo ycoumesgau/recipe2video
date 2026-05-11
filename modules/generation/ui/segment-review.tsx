@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -152,6 +153,7 @@ export function SegmentReview({
 
         <div className="space-y-4">
           <PromptPanel
+            hasActiveGeneration={data.hasActiveGeneration}
             project={data.project}
             segment={data.segment}
             variantCount={data.variants.length}
@@ -166,6 +168,7 @@ export function SegmentReview({
 
         <div className="space-y-4">
           <StatusPanel
+            hasActiveGeneration={data.hasActiveGeneration}
             project={data.project}
             segmentStatus={data.segment.status}
             variantCount={data.variants.length}
@@ -194,6 +197,7 @@ export function SegmentReview({
         </TabsContent>
         <TabsContent value="prompt">
           <PromptPanel
+            hasActiveGeneration={data.hasActiveGeneration}
             project={data.project}
             segment={data.segment}
             variantCount={data.variants.length}
@@ -384,6 +388,21 @@ function VariantCard({
         />
         <Metric label="Created" value={formatDate(generation.createdAt)} />
       </div>
+      {generation.runwayTaskStatus ? (
+        <div className="space-y-2 rounded-lg border bg-muted/20 p-2">
+          <p className="text-xs text-muted-foreground">
+            Runway status: <span className="font-medium">{generation.runwayTaskStatus}</span>
+          </p>
+          {typeof generation.runwayProgress === "number" ? (
+            <div className="space-y-1">
+              <Progress value={generation.runwayProgress} />
+              <p className="text-[11px] text-muted-foreground">
+                {generation.runwayProgress.toFixed(0)}%
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="grid gap-2 text-xs md:grid-cols-2">
         <Metric
           label="Supabase original"
@@ -431,11 +450,13 @@ function VariantActionButton({
 }
 
 function PromptPanel({
+  hasActiveGeneration,
   project,
   segment,
   variantCount,
   videoId,
 }: {
+  hasActiveGeneration: boolean;
   project: VideoProject | null;
   segment: NonNullable<SegmentReviewData["segment"]>;
   variantCount: number;
@@ -470,6 +491,7 @@ function PromptPanel({
           <Metric label="Reference count" value={String(segment.references.length)} />
         </div>
         <RegenerationForm
+          hasActiveGeneration={hasActiveGeneration}
           hasExistingVariants={variantCount > 0}
           project={project}
           segmentId={segment.id}
@@ -481,11 +503,13 @@ function PromptPanel({
 }
 
 function RegenerationForm({
+  hasActiveGeneration,
   hasExistingVariants,
   project,
   segmentId,
   videoId,
 }: {
+  hasActiveGeneration: boolean;
   hasExistingVariants: boolean;
   project: VideoProject | null;
   segmentId: string;
@@ -524,10 +548,16 @@ function RegenerationForm({
         The selected model is shown before queueing. The current workflow only
         queues the project generation model and never silently falls back.
       </p>
-      <Button type="submit">
+      <Button type="submit" disabled={hasActiveGeneration}>
         <RefreshCcw className="h-4 w-4" />
         {hasExistingVariants ? "Request regeneration" : "Generate this segment"}
       </Button>
+      {hasActiveGeneration ? (
+        <p className="text-xs text-muted-foreground">
+          A generation is already active for this segment. Wait for completion
+          before launching another one.
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -706,10 +736,12 @@ function computeResolutionStatus(resolution: SegmentReferenceResolutionItem): {
 }
 
 function StatusPanel({
+  hasActiveGeneration,
   project,
   segmentStatus,
   variantCount,
 }: {
+  hasActiveGeneration: boolean;
   project: VideoProject | null;
   segmentStatus: SegmentStatus;
   variantCount: number;
@@ -726,6 +758,9 @@ function StatusPanel({
         <div className="flex flex-wrap gap-2">
           <Badge variant={segmentStatusVariant[segmentStatus]}>{segmentStatus}</Badge>
           <Badge variant="secondary">{variantCount} variants</Badge>
+          {hasActiveGeneration ? (
+            <Badge variant="outline">generation active</Badge>
+          ) : null}
           {project ? <Badge variant="outline">{project.selectedVideoModel}</Badge> : null}
         </div>
         <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">

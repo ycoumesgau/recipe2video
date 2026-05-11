@@ -30,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import {
   cancelGenerationAction,
   retryGenerationAction,
@@ -39,6 +40,7 @@ import { listActiveGenerations } from "@/modules/generation/repositories/generat
 import type { Generation } from "@/modules/generation/generation.types";
 import type { GenerationStatus } from "@/modules/generation/generation-status";
 import { getGenerationQueuePaused } from "@/modules/generation/repositories/queue-state.repository";
+import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
 import { getSegmentById } from "@/modules/storyboard/repositories/segment.repository";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
@@ -56,6 +58,8 @@ interface ActiveTaskRow {
   startedAt: string;
   triggeredBy: string | null;
   runwayTaskId: string | null;
+  runwayTaskStatus: RunwayTaskStatusValue | null;
+  runwayProgress: number | null;
 }
 
 export default async function ActiveGenerationsPage() {
@@ -124,6 +128,8 @@ export default async function ActiveGenerationsPage() {
         </Alert>
       ) : null}
 
+      <GenerationRscSync enabled={rows.length > 0} />
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -153,6 +159,7 @@ export default async function ActiveGenerationsPage() {
                   <TableHead>Segment</TableHead>
                   <TableHead>Model</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Runway</TableHead>
                   <TableHead>Progress</TableHead>
                   <TableHead className="text-right">Cost est.</TableHead>
                   <TableHead>Started</TableHead>
@@ -172,8 +179,25 @@ export default async function ActiveGenerationsPage() {
                         {task.status}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      {task.runwayTaskStatus ? (
+                        <Badge
+                          variant={
+                            task.runwayTaskStatus === "THROTTLED"
+                              ? "destructive"
+                              : "outline"
+                          }
+                        >
+                          {task.runwayTaskStatus}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
                     <TableCell className="min-w-32">
-                      <Progress value={progressForStatus(task.status)} />
+                      <Progress
+                        value={progressForGeneration(task.status, task.runwayProgress)}
+                      />
                     </TableCell>
                     <TableCell className="text-right">
                       {formatCredits(task.costCredits)}
@@ -291,6 +315,8 @@ async function decorateGeneration(
     startedAt: generation.createdAt,
     triggeredBy: generation.triggeredBy ?? null,
     runwayTaskId: generation.runwayTaskId ?? null,
+    runwayTaskStatus: generation.runwayTaskStatus ?? null,
+    runwayProgress: generation.runwayProgress ?? null,
   };
 }
 
@@ -309,7 +335,14 @@ function statusBadgeVariant(
   return "default";
 }
 
-function progressForStatus(status: GenerationStatus): number {
+function progressForGeneration(
+  status: GenerationStatus,
+  runwayProgress: number | null,
+): number {
+  if (typeof runwayProgress === "number") {
+    return Math.max(0, Math.min(100, runwayProgress));
+  }
+
   if (status === "succeeded") return 100;
   if (status === "processing") return 65;
   if (status === "queued" || status === "pending") return 25;

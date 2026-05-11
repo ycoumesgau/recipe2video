@@ -60,6 +60,8 @@ export async function retryGenerationAction(formData: FormData) {
     await updateGenerationStatus(supabase, {
       generationId: generation.id,
       status: "queued",
+      runwayTaskStatus: "PENDING",
+      runwayProgress: null,
     });
 
     await inngest.send({

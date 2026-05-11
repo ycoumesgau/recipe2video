@@ -9,6 +9,7 @@ import type {
   UpdateGenerationStatusInput,
 } from "../generation.types";
 import type { GenerationStatus } from "../generation-status";
+import type { RunwayTaskStatusValue } from "../runway.types";
 
 type GenerationRow = Database["public"]["Tables"]["generations"]["Row"];
 
@@ -23,6 +24,8 @@ export async function createGeneration(
       model: input.model,
       model_params: input.modelParams ?? {},
       runway_task_id: input.runwayTaskId ?? null,
+      runway_task_status: input.runwayTaskStatus ?? null,
+      runway_progress: input.runwayProgress ?? null,
       status: input.status ?? "pending",
       cost_credits: input.costCredits ?? null,
       duration_seconds: input.durationSeconds ?? null,
@@ -123,6 +126,20 @@ export async function countActiveGenerationsForSegments(
   return count ?? 0;
 }
 
+export async function hasActiveGenerationForSegment(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+): Promise<boolean> {
+  const { count, error } = await supabase
+    .from("generations")
+    .select("id", { count: "exact", head: true })
+    .eq("segment_id", segmentId)
+    .in("status", ACTIVE_GENERATION_STATUSES);
+
+  throwIfSupabaseError(error, "hasActiveGenerationForSegment failed");
+  return (count ?? 0) > 0;
+}
+
 export async function updateGenerationStatus(
   supabase: SupabaseDataClient,
   input: UpdateGenerationStatusInput,
@@ -133,6 +150,14 @@ export async function updateGenerationStatus(
 
   if (input.mediaAssetId !== undefined) {
     updates.media_asset_id = input.mediaAssetId;
+  }
+
+  if (input.runwayTaskStatus !== undefined) {
+    updates.runway_task_status = input.runwayTaskStatus;
+  }
+
+  if (input.runwayProgress !== undefined) {
+    updates.runway_progress = input.runwayProgress;
   }
 
   if (input.costCredits !== undefined) {
@@ -182,6 +207,8 @@ export function mapGeneration(row: GenerationRow): Generation {
     model: row.model,
     modelParams: fromJson<Record<string, unknown>>(row.model_params) ?? {},
     runwayTaskId: row.runway_task_id,
+    runwayTaskStatus: row.runway_task_status as RunwayTaskStatusValue | null,
+    runwayProgress: row.runway_progress,
     status: row.status as GenerationStatus,
     costCredits: row.cost_credits,
     durationSeconds: row.duration_seconds,

@@ -4,6 +4,7 @@ import { logCost } from "@/modules/costs/repositories/cost.repository";
 import {
   createGeneration,
   getGenerationById,
+  hasActiveGenerationForSegment,
   updateGenerationStatus,
 } from "@/modules/generation/repositories/generation.repository";
 import { getGenerationQueuePaused } from "@/modules/generation/repositories/queue-state.repository";
@@ -38,7 +39,7 @@ import {
 import { INNGEST_EVENTS } from "../events";
 import type { FeedbackApplyRequestedData } from "../events";
 
-const POLL_DELAY = "5s";
+const DEFAULT_POLL_DELAY_SECONDS = 5;
 
 export const requestSegmentGeneration = inngest.createFunction(
   {
@@ -65,6 +66,8 @@ export const requestSegmentGeneration = inngest.createFunction(
 
     return requestSegmentGenerationWorkflow(data, {
       isGenerationQueuePaused: () => queuePaused,
+      hasActiveGenerationForSegment: (segmentId) =>
+        hasActiveGenerationForSegment(supabase, segmentId),
       getSegmentById: (segmentId) => getSegmentById(supabase, segmentId),
       getVideoProjectById: (videoId) => getVideoProjectById(supabase, videoId),
       resolveSegmentSeedanceReferences: (segmentId) =>
@@ -110,6 +113,8 @@ export const applySegmentFeedbackRegeneration = inngest.createFunction(
       },
       {
         isGenerationQueuePaused: () => queuePaused,
+        hasActiveGenerationForSegment: (segmentId) =>
+          hasActiveGenerationForSegment(supabase, segmentId),
         getSegmentById: (segmentId) => getSegmentById(supabase, segmentId),
         getVideoProjectById: (videoId) => getVideoProjectById(supabase, videoId),
         resolveSegmentSeedanceReferences: (segmentId) =>
@@ -141,7 +146,12 @@ export const pollSegmentGeneration = inngest.createFunction(
 
     await assertAllowlistedUser(data.requestedByUserId);
 
-    await step.sleep("wait before polling Runway", POLL_DELAY);
+    const requestedDelaySeconds = Number(data.nextPollDelaySeconds);
+    const delaySeconds =
+      Number.isFinite(requestedDelaySeconds) && requestedDelaySeconds > 0
+        ? Math.max(5, Math.min(30, Math.round(requestedDelaySeconds)))
+        : DEFAULT_POLL_DELAY_SECONDS;
+    await step.sleep("wait before polling Runway", `${delaySeconds}s`);
 
     return pollSegmentGenerationWorkflow(data, {
       getGenerationById: (generationId) =>

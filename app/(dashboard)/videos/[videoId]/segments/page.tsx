@@ -9,10 +9,13 @@ import { ProjectSegmentsList } from "@/modules/videos/ui/project-segments-list";
 
 export default async function ProjectSegmentsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ videoId: string }>;
+  searchParams: Promise<{ notice?: string; message?: string }>;
 }) {
   const { videoId } = await params;
+  const query = await searchParams;
   const { project, dataError, seedanceSegments } =
     await loadSegmentsPageData(videoId);
 
@@ -36,6 +39,16 @@ export default async function ProjectSegmentsPage({
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Segment data unavailable</AlertTitle>
           <AlertDescription>{dataError}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {query.notice && query.message ? (
+        <Alert variant={query.notice === "error" ? "destructive" : "default"}>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>
+            {query.notice === "error" ? "Batch launch failed" : "Batch launch updated"}
+          </AlertTitle>
+          <AlertDescription>{query.message}</AlertDescription>
         </Alert>
       ) : null}
 
