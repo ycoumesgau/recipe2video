@@ -1,0 +1,171 @@
+import "server-only";
+
+import type { SupabaseDataClient } from "@/shared/supabase/client.types";
+import type { Database } from "@/shared/supabase/database.types";
+import { throwIfSupabaseError } from "@/shared/supabase/errors";
+import { createStorageSignedUrl } from "@/modules/media-assets/services/storage.service";
+import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.constants";
+
+/**
+ * Time-to-live for the signed URLs we hand to Runway. The Seedance API
+ * downloads each reference within seconds of receiving the request, so
+ * anything north of ~5 minutes is plenty. We use 15 minutes to give us
+ * generous slack against clock skew and queue jitter without ever creating
+ * a "long-lived" URL the user could leak.
+ */
+const RUNWAY_SIGNED_URL_TTL_SECONDS = 60 * 15;
+
+export interface SeedanceReferenceInput {
+  /** Stable position used to order references[] when calling Runway. */
+  position: number;
+  role: string;
+  required: boolean;
+  /**
+   * Fresh, short-lived HTTPS URL Seedance can download. Never persisted:
+   * regenerated on every retry to survive the 1h+ delays between user
+   * approvals and Runway re-runs (per the user's spec: "potentiellement
+   * on va relancer certains segments Seedance […], mon URL sera morte").
+   */
+  uri: string;
+  canonicalName: string;
+  /** Source we resolved from, useful for logging and debugging. */
+  source: "asset_library" | "reference_assets";
+}
+
+type SegmentReferenceJoinRow = {
+  id: string;
+  segment_id: string;
+  position: number;
+  role: string;
+  required: boolean;
+  library_asset_id: string | null;
+  recipe_reference_id: string | null;
+  asset_library:
+    | {
+        id: string;
+        canonical_name: string;
+        media_asset_id: string | null;
+      }
+    | null;
+  reference_assets:
+    | {
+        id: string;
+        canonical_name: string;
+        media_asset_id: string | null;
+      }
+    | null;
+};
+
+type MediaAssetStoragePick = Pick<
+  Database["public"]["Tables"]["media_assets"]["Row"],
+  "id" | "storage_bucket" | "storage_path"
+>;
+
+/**
+ * Resolve the Seedance reference inputs for a segment, generating ONE fresh
+ * signed URL per reference at call time. The function is idempotent and
+ * stateless: the caller can invoke it any number of times (initial run,
+ * retry, manual re-run hours later) and always get a brand-new URL set.
+ *
+ * Resolution order:
+ *   1. Load `segment_references` for the segment with both joins
+ *      (`asset_library`, `reference_assets`).
+ *   2. Collect every media_asset id (library OR recipe) needed.
+ *   3. Single-shot read of media_assets to fetch storage_bucket + path.
+ *   4. Issue signed URLs in parallel.
+ *
+ * Throws if a row references a media asset that has no storage path: that
+ * means the asset has not been uploaded yet, and Seedance cannot consume it.
+ */
+export async function resolveSegmentSeedanceReferences(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+): Promise<SeedanceReferenceInput[]> {
+  const { data: links, error } = await supabase
+    .from("segment_references")
+    .select(
+      "id, segment_id, position, role, required, library_asset_id, recipe_reference_id, asset_library:asset_library!segment_references_library_asset_id_fkey(id, canonical_name, media_asset_id), reference_assets:reference_assets!segment_references_recipe_reference_id_fkey(id, canonical_name, media_asset_id)",
+    )
+    .eq("segment_id", segmentId)
+    .order("position", { ascending: true });
+
+  throwIfSupabaseError(error, "resolveSegmentSeedanceReferences failed");
+
+  const rows = (links ?? []) as unknown as SegmentReferenceJoinRow[];
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const mediaAssetIds = Array.from(
+    new Set(
+      rows
+        .map((row) => row.asset_library?.media_asset_id ?? row.reference_assets?.media_asset_id ?? null)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+
+  const mediaById = await fetchMediaAssetStorageLocations(supabase, mediaAssetIds);
+
+  const results: SeedanceReferenceInput[] = [];
+  for (const row of rows) {
+    const isLibrary = Boolean(row.library_asset_id);
+    const joined = isLibrary ? row.asset_library : row.reference_assets;
+    if (!joined) {
+      throw new Error(
+        `segment_references row ${row.id} has neither asset_library nor reference_assets join populated (segment ${segmentId}).`,
+      );
+    }
+
+    const mediaAssetId = joined.media_asset_id;
+    if (!mediaAssetId) {
+      throw new Error(
+        `Reference '${joined.canonical_name}' on segment ${segmentId} is missing a media_asset_id; cannot generate a signed URL.`,
+      );
+    }
+
+    const storage = mediaById.get(mediaAssetId);
+    if (!storage?.storage_bucket || !storage.storage_path) {
+      throw new Error(
+        `media_asset ${mediaAssetId} for reference '${joined.canonical_name}' has no storage location yet.`,
+      );
+    }
+
+    const uri = await createStorageSignedUrl(supabase, {
+      bucket: storage.storage_bucket as MediaStorageBucket,
+      path: storage.storage_path,
+      expiresInSeconds: RUNWAY_SIGNED_URL_TTL_SECONDS,
+    });
+
+    results.push({
+      position: row.position,
+      role: row.role,
+      required: row.required,
+      canonicalName: joined.canonical_name,
+      uri,
+      source: isLibrary ? "asset_library" : "reference_assets",
+    });
+  }
+
+  return results;
+}
+
+async function fetchMediaAssetStorageLocations(
+  supabase: SupabaseDataClient,
+  mediaAssetIds: string[],
+): Promise<Map<string, MediaAssetStoragePick>> {
+  const result = new Map<string, MediaAssetStoragePick>();
+  if (mediaAssetIds.length === 0) {
+    return result;
+  }
+
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("id, storage_bucket, storage_path")
+    .in("id", mediaAssetIds);
+
+  throwIfSupabaseError(error, "fetchMediaAssetStorageLocations failed");
+  for (const row of data ?? []) {
+    result.set(row.id, row as MediaAssetStoragePick);
+  }
+  return result;
+}

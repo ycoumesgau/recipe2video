@@ -1059,6 +1059,13 @@ with read access to `CURSOR_AGENT_REPO_URL`. The app uses the GitHub Contents AP
 fetch `checkpoint-manifest.json` and large recipe artifacts at the exact commit SHA
 after a run. Without it, artifact recovery falls back to the Cursor SDK payloads only.
 
+For the `/library` admin page to auto-commit the regenerated
+`.cursor/skills/asset-reference-system/SKILL.md` back into the agent workspace
+repo, the same PAT also needs `Contents: Write` on that repository. Without write
+access, the library mutation still persists to Supabase but the skill push is
+reported as `skipped` and the agent will keep seeing the previous inventory until
+an operator pushes the file manually.
+
 Runtime rules:
 
 * Default runtime is `cloud`.

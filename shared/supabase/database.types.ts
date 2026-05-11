@@ -318,6 +318,7 @@ export type Database = {
           video_id: string | null;
           media_asset_id: string | null;
           type: string;
+          category: string | null;
           canonical_name: string;
           source: string;
           runway_uri: string | null;
@@ -330,6 +331,7 @@ export type Database = {
           video_id?: string | null;
           media_asset_id?: string | null;
           type: string;
+          category?: string | null;
           canonical_name: string;
           source: string;
           runway_uri?: string | null;
@@ -342,11 +344,84 @@ export type Database = {
           video_id?: string | null;
           media_asset_id?: string | null;
           type?: string;
+          category?: string | null;
           canonical_name?: string;
           source?: string;
           runway_uri?: string | null;
           prompt?: string | null;
           status?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      asset_library: {
+        Row: {
+          id: string;
+          canonical_name: string;
+          aliases: string[];
+          category: string;
+          media_asset_id: string | null;
+          description: string | null;
+          status: string;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          canonical_name: string;
+          aliases?: string[];
+          category: string;
+          media_asset_id?: string | null;
+          description?: string | null;
+          status?: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          canonical_name?: string;
+          aliases?: string[];
+          category?: string;
+          media_asset_id?: string | null;
+          description?: string | null;
+          status?: string;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      segment_references: {
+        Row: {
+          id: string;
+          segment_id: string;
+          library_asset_id: string | null;
+          recipe_reference_id: string | null;
+          role: string;
+          position: number;
+          required: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          segment_id: string;
+          library_asset_id?: string | null;
+          recipe_reference_id?: string | null;
+          role: string;
+          position: number;
+          required?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          segment_id?: string;
+          library_asset_id?: string | null;
+          recipe_reference_id?: string | null;
+          role?: string;
+          position?: number;
+          required?: boolean;
           created_at?: string;
         };
         Relationships: [];

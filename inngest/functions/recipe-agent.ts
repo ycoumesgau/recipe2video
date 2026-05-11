@@ -4,9 +4,6 @@ import {
   updateVideoAgentSession,
 } from "@/modules/recipe-agent/repositories/recipe-agent.repository";
 import {
-  sendRecipeAgentMessage,
-} from "@/modules/recipe-agent/use-cases/orchestrate-recipe-agent";
-import {
   syncRecipeAgentArtifacts,
 } from "@/modules/recipe-agent/use-cases/sync-recipe-agent-artifacts";
 
@@ -30,6 +27,10 @@ export const createRecipeAgentWorkflow = inngest.createFunction(
 
     await assertAllowlistedUser(data.requestedByUserId);
 
+    const { sendRecipeAgentMessage } = await import(
+      "@/modules/recipe-agent/use-cases/orchestrate-recipe-agent"
+    );
+
     return sendRecipeAgentMessage({
       supabase,
       videoId: data.videoId,
@@ -52,6 +53,10 @@ export const sendRecipeAgentMessageWorkflow = inngest.createFunction(
     const data = event.data as RecipeAgentMessageRequestedData;
 
     await assertAllowlistedUser(data.requestedByUserId);
+
+    const { sendRecipeAgentMessage } = await import(
+      "@/modules/recipe-agent/use-cases/orchestrate-recipe-agent"
+    );
 
     return sendRecipeAgentMessage({
       supabase,
