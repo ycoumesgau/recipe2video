@@ -35,7 +35,25 @@ test("getCostDashboardData separates failed and rejected generation spend", () =
 });
 
 test("getRunwayBudgetState warns at 20% and 10% remaining credits", () => {
-  assert.equal(getRunwayBudgetState(39_999).warningLevel, null);
-  assert.equal(getRunwayBudgetState(40_000).warningLevel, 20);
-  assert.equal(getRunwayBudgetState(45_000).warningLevel, 10);
+  assert.equal(
+    getRunwayBudgetState(39_999, {
+      runwayCreditBalance: 10_001,
+      maxMonthlyCreditSpend: 50_000,
+    }).warningLevel,
+    null,
+  );
+  assert.equal(
+    getRunwayBudgetState(40_000, {
+      runwayCreditBalance: 10_000,
+      maxMonthlyCreditSpend: 50_000,
+    }).warningLevel,
+    20,
+  );
+  assert.equal(
+    getRunwayBudgetState(45_000, {
+      runwayCreditBalance: 5_000,
+      maxMonthlyCreditSpend: 50_000,
+    }).warningLevel,
+    10,
+  );
 });

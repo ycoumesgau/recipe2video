@@ -1,4 +1,5 @@
 import { getRunwayBudgetState } from "@/modules/costs/get-cost-dashboard-data";
+import type { RunwayOrganizationBalance } from "@/modules/costs/runway-organization-balance";
 
 import { ACTIONABLE_VIDEO_STATUSES } from "./video-status";
 import type {
@@ -114,9 +115,14 @@ const SEEDED_ACTIVE_QUEUE: ActiveGenerationQueueItem[] = [
 export function getVideoDashboardData(
   persistedProjects: VideoProject[] = [],
   thumbnailByProjectId: Map<string, string> = new Map(),
-  options: { includeSeededDemos?: boolean } = {},
+  options: {
+    includeSeededDemos?: boolean;
+    runwayBalance?: RunwayOrganizationBalance | null;
+    runwayCreditsUsedLogged?: number;
+  } = {},
 ): VideoDashboardData {
-  const includeSeededDemos = options.includeSeededDemos ?? true;
+  const includeSeededDemos = options.includeSeededDemos ?? false;
+  const activeQueue = includeSeededDemos ? SEEDED_ACTIVE_QUEUE : [];
   const projects = [
     ...persistedProjects.map((project) =>
       mapPersistedProject(project, thumbnailByProjectId.get(project.id) ?? null),
@@ -126,29 +132,49 @@ export function getVideoDashboardData(
   const activeVideos = projects.filter(
     (project) => project.status !== "exported" && project.status !== "failed",
   ).length;
-  const segmentsGenerating = SEEDED_ACTIVE_QUEUE.filter(
+  const segmentsGenerating = activeQueue.filter(
     (task) => task.status === "processing" || task.status === "queued",
   ).length;
   const projectsWaitingForReview = projects.filter((project) =>
     ACTIONABLE_VIDEO_STATUSES.includes(project.status),
   ).length;
-  const creditsUsed = projects.reduce(
+  const creditsUsedProjectTotals = projects.reduce(
     (total, project) => total + project.totalCostCredits,
     0,
   );
-  const budget = getRunwayBudgetState(creditsUsed);
+  const runwayCreditsUsedLogged =
+    options.runwayCreditsUsedLogged ?? creditsUsedProjectTotals;
+  const budget = getRunwayBudgetState(runwayCreditsUsedLogged, {
+    runwayCreditBalance: options.runwayBalance?.creditBalance ?? null,
+    maxMonthlyCreditSpend: options.runwayBalance?.maxMonthlyCreditSpend ?? null,
+  });
   const estimatedCreditsRemaining = budget.creditsRemaining;
   const videosCompleted = projects.filter(
     (project) => project.status === "exported",
   ).length;
 
+  const creditsDisplayed = includeSeededDemos
+    ? creditsUsedProjectTotals
+    : runwayCreditsUsedLogged;
+  const creditsHelper = includeSeededDemos
+    ? "Includes seeded demo projects"
+    : "Runway credits logged in cost_logs for this workspace";
+
+  const remainingHelper = budget.runwayBalanceKnown
+    ? options.runwayBalance?.maxMonthlyCreditSpend
+      ? `${budget.percentRemaining}% vs Runway monthly spend cap`
+      : `${budget.percentRemaining}% vs balance + app-logged usage`
+    : "Runway balance unavailable — set RUNWAYML_API_SECRET";
+
   return {
     projects,
-    activeQueue: SEEDED_ACTIVE_QUEUE,
-    creditsUsed,
+    activeQueue,
+    creditsUsed: creditsDisplayed,
     estimatedCreditsRemaining,
     budgetWarningLevel: budget.warningLevel,
     budgetPercentRemaining: budget.percentRemaining,
+    usesMockDashboardDemos: includeSeededDemos,
+    runwayBalanceKnown: budget.runwayBalanceKnown,
     kpis: [
       {
         label: "Active videos",
@@ -158,7 +184,9 @@ export function getVideoDashboardData(
       {
         label: "Segments generating",
         value: String(segmentsGenerating),
-        helper: "Queued or processing tasks",
+        helper: includeSeededDemos
+          ? "Queued or processing (seeded queue)"
+          : "From the active generations queue",
       },
       {
         label: "Projects waiting for review",
@@ -167,13 +195,15 @@ export function getVideoDashboardData(
       },
       {
         label: "Runway credits used",
-        value: creditsUsed.toLocaleString("en-US"),
-        helper: "Seeded estimate across projects",
+        value: creditsDisplayed.toLocaleString("en-US"),
+        helper: creditsHelper,
       },
       {
-        label: "Estimated credits remaining",
-        value: estimatedCreditsRemaining.toLocaleString("en-US"),
-        helper: `${budget.percentRemaining}% of hackathon credits left`,
+        label: "Runway credits remaining",
+        value: budget.runwayBalanceKnown
+          ? estimatedCreditsRemaining.toLocaleString("en-US")
+          : "n/a",
+        helper: remainingHelper,
       },
       {
         label: "Videos completed",

@@ -181,12 +181,12 @@ export function VideoLibraryDashboard({
         <AlertTitle>
           {data.budgetWarningLevel
             ? `Runway credits are below the ${data.budgetWarningLevel}% threshold.`
-            : "Budget visibility is part of the dashboard state."}
+            : "Runway balances stay synced with Billing + this workspace."}
         </AlertTitle>
         <AlertDescription>
-          The seeded dashboard shows {formatCredits(data.creditsUsed)} credits
-          used and {formatCredits(data.estimatedCreditsRemaining)} estimated
-          credits remaining. Costly generation actions stay outside this issue.
+          {data.usesMockDashboardDemos
+            ? `Mock mode is on: this grid mixes seeded demo projects/queue with your library. Switch the header toggle to Live for production data only. Credits logged in this app: ${formatCredits(data.creditsUsed)}.`
+            : `Live data: only Supabase projects appear here. Runway credits logged in cost_logs: ${formatCredits(data.creditsUsed)}. ${data.runwayBalanceKnown ? `Runway reports ${formatCredits(data.estimatedCreditsRemaining)} credits remaining.` : "Configure RUNWAYML_API_SECRET to read your Runway balance."}`}
         </AlertDescription>
       </Alert>
 
@@ -202,7 +202,7 @@ export function VideoLibraryDashboard({
                 <CardDescription>
                   {libraryMode === "archived"
                     ? "Projects you archived stay here until you restore them to the active library."
-                    : "Active videos and seeded demos share this grid; archive anything you do not need on the default view."}
+                    : "Turn on Mock in the header to append demo fixtures when you need a populated grid for reviews."}
                 </CardDescription>
               </div>
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">

@@ -133,9 +133,19 @@ export function CostDashboard({ data }: { data: CostDashboardData }) {
             Runway credits are below the {data.budget.warningLevel}% threshold.
           </AlertTitle>
           <AlertDescription>
-            {formatCredits(data.budget.creditsRemaining)} remain from the{" "}
-            {formatCredits(data.budget.budgetCredits)} hackathon budget. Pause
-            new generations if this is unexpected.
+            {data.budget.runwayBalanceKnown ? (
+              <>
+                {formatCredits(data.budget.creditsRemaining)} remain according to
+                Runway. Monthly reference cap:{" "}
+                {formatCredits(data.budget.budgetCredits)}. Pause new generations
+                if this is unexpected.
+              </>
+            ) : (
+              <>
+                Runway balance is unavailable — configure RUNWAYML_API_SECRET
+                to compare live credits against your workspace usage.
+              </>
+            )}
           </AlertDescription>
         </Alert>
       ) : (
@@ -143,8 +153,9 @@ export function CostDashboard({ data }: { data: CostDashboardData }) {
           <CircleDollarSign className="h-4 w-4" />
           <AlertTitle>Budget is visible before costly work.</AlertTitle>
           <AlertDescription>
-            {data.budget.percentRemaining}% of Runway credits remain. Warnings
-            will appear at 20% and 10% remaining.
+            {data.budget.runwayBalanceKnown
+              ? `${data.budget.percentRemaining}% of the reference budget remains (Runway tier cap or balance + logged usage). Warnings trigger at 20% and 10%.`
+              : "Set RUNWAYML_API_SECRET to pull your live Runway credit balance."}
           </AlertDescription>
         </Alert>
       )}

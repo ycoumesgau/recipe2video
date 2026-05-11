@@ -15,7 +15,9 @@ import { ThemeModeDropdown } from "@/components/layout/theme-mode-dropdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { DashboardDataModeSwitch } from "@/components/layout/dashboard-data-mode-switch";
 import { signOutAction } from "@/modules/auth/auth.actions";
+import type { DashboardDataMode } from "@/modules/dashboard/dashboard-data-mode.shared";
 
 const navigationItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -33,12 +35,14 @@ export function AppShell({
   children,
   creditsRemaining,
   creditsUsed,
+  dashboardDataMode,
   userEmail,
 }: {
   activeTaskCount: number;
   children: React.ReactNode;
-  creditsRemaining: number;
+  creditsRemaining: number | null;
   creditsUsed: number;
+  dashboardDataMode: DashboardDataMode;
   userEmail: string;
 }) {
   return (
@@ -93,11 +97,14 @@ export function AppShell({
               </p>
             </div>
             <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2 sm:w-auto sm:max-w-none sm:justify-end">
+              <DashboardDataModeSwitch mode={dashboardDataMode} />
               <Badge
                 variant="secondary"
-                title={`${formatCredits(creditsUsed)} used`}
+                title={`${formatCredits(creditsUsed)} logged in this app`}
               >
-                Credits left: {formatCredits(creditsRemaining)}
+                {creditsRemaining === null
+                  ? "Runway balance: n/a"
+                  : `Credits left: ${formatCredits(creditsRemaining)}`}
               </Badge>
               <Badge variant={activeTaskCount > 0 ? "default" : "outline"}>
                 {activeTaskCount} active task{activeTaskCount === 1 ? "" : "s"}

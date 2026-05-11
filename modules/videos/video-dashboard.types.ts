@@ -61,4 +61,8 @@ export interface VideoDashboardData {
   estimatedCreditsRemaining: number;
   budgetWarningLevel: 20 | 10 | null;
   budgetPercentRemaining: number;
+  /** True when seeded demo cards/queue are mixed into this dashboard view. */
+  usesMockDashboardDemos: boolean;
+  /** Mirrors Runway GET /v1/organization creditBalance availability. */
+  runwayBalanceKnown: boolean;
 }
