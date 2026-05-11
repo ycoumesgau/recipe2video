@@ -5,7 +5,7 @@ Recipe2Video synchronizes planning artifacts from the `recipe2video-agent-worksp
 ## Prerequisites
 
 - `CURSOR_AGENT_REPO_URL` points at the GitHub repo the cloud agent edits (e.g. `https://github.com/ycoumesgau/recipe2video-agent-workspace`).
-- `RECIPE_AGENT_GITHUB_TOKEN` (or `GITHUB_TOKEN`) is a PAT with `Contents: Read` for that repository.
+- `RECIPE_AGENT_GITHUB_TOKEN` (or `GITHUB_TOKEN`) is a PAT with `Contents: Read` for that repository. Grant `Contents: Write` as well if you want the `/library` admin page to auto-commit regenerated `SKILL.md` files (otherwise the library mutation succeeds but the skill push is reported as `skipped`).
 - The agent must push checkpoints to a deterministic branch per video (see `recipe-agent.instructions.ts`) and record the commit in `checkpoint-manifest.json`.
 
 ## Verification

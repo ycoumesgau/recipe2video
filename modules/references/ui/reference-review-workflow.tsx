@@ -178,6 +178,12 @@ function ReferenceCard({
   videoId: string;
 }) {
   const { mediaAsset, reference } = item;
+  // Library globals are owned by the dedicated /library admin page. On this
+  // per-video page we render them as a read-only card so users can confirm
+  // what the storyboard pulls in, but we suppress every mutation: approving
+  // or rejecting from here would silently change the library for every
+  // future recipe.
+  const isReadOnly = item.isLibraryGlobal === true;
 
   return (
     <Card size="sm">
@@ -194,7 +200,10 @@ function ReferenceCard({
         </div>
       )}
       <CardHeader>
-        <CardAction>
+        <CardAction className="flex items-center gap-2">
+          {isReadOnly ? (
+            <Badge variant="outline">Library · read-only</Badge>
+          ) : null}
           <Badge variant={statusBadgeVariant[reference.status]}>
             {reference.status}
           </Badge>
@@ -212,7 +221,13 @@ function ReferenceCard({
           />
           <Metric
             label="Runway"
-            value={reference.runwayUri ? "runway URI stored" : "not uploaded"}
+            value={
+              isReadOnly
+                ? "signed URL just-in-time"
+                : reference.runwayUri
+                  ? "runway URI stored"
+                  : "not uploaded"
+            }
           />
         </div>
 
@@ -225,63 +240,74 @@ function ReferenceCard({
           </div>
         ) : null}
 
-        <details className="rounded-lg border bg-background/60 p-3 text-xs">
-          <summary className="cursor-pointer font-medium">
-            Prompt {reference.prompt ? "(edit)" : "(missing — set to enable agent regeneration)"}
-          </summary>
-          <p className="mt-2 text-muted-foreground">
-            {reference.prompt ?? "No prompt set yet."}
-          </p>
-          <form
-            action={updateReferencePromptAction}
-            className="mt-3 space-y-2"
-          >
-            <input name="videoId" type="hidden" value={videoId} />
-            <input name="referenceId" type="hidden" value={reference.id} />
-            <Textarea
-              defaultValue={reference.prompt ?? ""}
-              name="prompt"
-              placeholder="Describe what this reference must preserve in the Seedance prompt."
-              rows={3}
-            />
-            <Button size="sm" type="submit" variant="outline">
-              Save prompt
-            </Button>
-          </form>
-        </details>
+        {isReadOnly ? (
+          <div className="rounded-lg border border-dashed bg-background/60 p-3 text-xs text-muted-foreground">
+            Managed by the global asset library. Use the{" "}
+            <span className="font-medium text-foreground">/library</span>{" "}
+            admin page to update this reference, or change the storyboard if
+            you want this video to pick a different one.
+          </div>
+        ) : (
+          <details className="rounded-lg border bg-background/60 p-3 text-xs">
+            <summary className="cursor-pointer font-medium">
+              Prompt {reference.prompt ? "(edit)" : "(missing — set to enable agent regeneration)"}
+            </summary>
+            <p className="mt-2 text-muted-foreground">
+              {reference.prompt ?? "No prompt set yet."}
+            </p>
+            <form
+              action={updateReferencePromptAction}
+              className="mt-3 space-y-2"
+            >
+              <input name="videoId" type="hidden" value={videoId} />
+              <input name="referenceId" type="hidden" value={reference.id} />
+              <Textarea
+                defaultValue={reference.prompt ?? ""}
+                name="prompt"
+                placeholder="Describe what this reference must preserve in the Seedance prompt."
+                rows={3}
+              />
+              <Button size="sm" type="submit" variant="outline">
+                Save prompt
+              </Button>
+            </form>
+          </details>
+        )}
 
-        <div className="flex flex-wrap gap-2">
-          <ReferenceActionButton
-            action={approveReferenceAction}
-            label="Approve"
-            referenceId={reference.id}
-            videoId={videoId}
-          />
-          <ReferenceActionButton
-            action={rejectReferenceAction}
-            label="Reject"
-            referenceId={reference.id}
-            variant="outline"
-            videoId={videoId}
-          />
-          <ReferenceActionButton
-            action={requestReferenceRegenerationAction}
-            icon={<RefreshCcw className="h-4 w-4" />}
-            label="Regenerate"
-            referenceId={reference.id}
-            variant="outline"
-            videoId={videoId}
-          />
-          <ReferenceActionButton
-            action={uploadReferenceToRunwayAction}
-            disabled={!mediaAsset?.storagePath}
-            icon={<Upload className="h-4 w-4" />}
-            label="Upload to Runway"
-            referenceId={reference.id}
-            variant="outline"
-            videoId={videoId}
-          />
-        </div>
+        {isReadOnly ? null : (
+          <div className="flex flex-wrap gap-2">
+            <ReferenceActionButton
+              action={approveReferenceAction}
+              label="Approve"
+              referenceId={reference.id}
+              videoId={videoId}
+            />
+            <ReferenceActionButton
+              action={rejectReferenceAction}
+              label="Reject"
+              referenceId={reference.id}
+              variant="outline"
+              videoId={videoId}
+            />
+            <ReferenceActionButton
+              action={requestReferenceRegenerationAction}
+              icon={<RefreshCcw className="h-4 w-4" />}
+              label="Regenerate"
+              referenceId={reference.id}
+              variant="outline"
+              videoId={videoId}
+            />
+            <ReferenceActionButton
+              action={uploadReferenceToRunwayAction}
+              disabled={!mediaAsset?.storagePath}
+              icon={<Upload className="h-4 w-4" />}
+              label="Upload to Runway"
+              referenceId={reference.id}
+              variant="outline"
+              videoId={videoId}
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );

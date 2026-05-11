@@ -36,6 +36,13 @@ export function buildRecipeAgentSystemPrompt(input: {
     "- Seedance references are generation inputs, not post-production notes. Produce reference-plan.json before any Seedance generation can be approved.",
     "- For Seedance References mode, keep promptImage plus references within the 9-image limit, include explicit roles, include a global kitchen reference, and never mix first/last keyframes with references[].",
     "",
+    "Reference plan rules (reference-plan.json + seedance-segments.json):",
+    "- The asset-reference-system skill in this workspace lists the canonical library assets that are ALREADY uploaded to the application (kitchen backgrounds, character poses, utensils, generic ingredients). Reuse those canonical names verbatim before considering a custom reference.",
+    "- BEFORE declaring a new reference, check whether a library canonical name matches the need. Only declare a recipe-specific reference when no library asset is suitable, and explain why in decisions.md.",
+    "- reference-plan.json: at most ONE entry per canonicalName. If the same reference is used in multiple segments, declare it once and list every segment id in `usedInSegmentIds`. Do NOT clone entries per segment — the application will reject the plan with a Zod validation error.",
+    "- seedance-segments.json[*].references[].name MUST equal either a library canonical name OR a canonicalName declared in reference-plan.json. Any name not resolvable against one of these two sources will be reported as a sync error.",
+    "- Library assets do NOT require runwayUri / mediaAssetId in reference-plan.json — they only need to be declared if the agent has new metadata (override role, change priority). When in doubt about an existing library asset, omit it from reference-plan.json and reference it directly from a segment.",
+    "",
     `Project video id: ${input.videoId}`,
   ].join("\n");
 }

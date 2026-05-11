@@ -21,7 +21,7 @@ import {
   type SegmentMuxUploadRequestedData,
   type SegmentOutputPersistRequestedData,
 } from "@/modules/generation/use-cases/orchestrate-segment-generation";
-import { listReferenceAssetsForVideo } from "@/modules/references/repositories/reference.repository";
+import { resolveSegmentSeedanceReferences } from "@/modules/references/use-cases/resolve-segment-seedance-references";
 import { persistRunwayOutput } from "@/modules/media-assets/use-cases/persist-media-asset";
 import { uploadMediaAssetToMux } from "@/modules/media-assets/use-cases/upload-media-asset-to-mux";
 import {
@@ -67,8 +67,8 @@ export const requestSegmentGeneration = inngest.createFunction(
       isGenerationQueuePaused: () => queuePaused,
       getSegmentById: (segmentId) => getSegmentById(supabase, segmentId),
       getVideoProjectById: (videoId) => getVideoProjectById(supabase, videoId),
-      listReferenceAssetsForVideo: (videoId) =>
-        listReferenceAssetsForVideo(supabase, videoId),
+      resolveSegmentSeedanceReferences: (segmentId) =>
+        resolveSegmentSeedanceReferences(supabase, segmentId),
       updateSegmentStatus: (segmentId, status) =>
         updateSegmentStatus(supabase, segmentId, status),
       createGeneration: (input) => createGeneration(supabase, input),
@@ -112,8 +112,8 @@ export const applySegmentFeedbackRegeneration = inngest.createFunction(
         isGenerationQueuePaused: () => queuePaused,
         getSegmentById: (segmentId) => getSegmentById(supabase, segmentId),
         getVideoProjectById: (videoId) => getVideoProjectById(supabase, videoId),
-        listReferenceAssetsForVideo: (videoId) =>
-          listReferenceAssetsForVideo(supabase, videoId),
+        resolveSegmentSeedanceReferences: (segmentId) =>
+          resolveSegmentSeedanceReferences(supabase, segmentId),
         updateSegmentStatus: (segmentId, status) =>
           updateSegmentStatus(supabase, segmentId, status),
         createGeneration: (input) => createGeneration(supabase, input),

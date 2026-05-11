@@ -30,6 +30,11 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: supabaseImageRemotePatterns(),
   },
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
+  },
 };
 
 export default nextConfig;

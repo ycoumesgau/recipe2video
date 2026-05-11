@@ -3,12 +3,10 @@ import "server-only";
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.constants";
 import { createStorageSignedUrl } from "@/modules/media-assets/services/storage.service";
-import {
-  getMediaAssetById,
-  listMediaAssetsByVideoId,
-} from "@/modules/media-assets/repositories/media-asset.repository";
 import { listSegmentsByVideoId } from "@/modules/storyboard/repositories/segment.repository";
-import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
+import { throwIfSupabaseError } from "@/shared/supabase/errors";
+import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
+import type { Database } from "@/shared/supabase/database.types";
 
 import type {
   ReferenceAsset,
@@ -16,54 +14,124 @@ import type {
   ReferenceReviewData,
 } from "../reference.types";
 import { listReferenceAssetsForVideo } from "../repositories/reference.repository";
-import {
-  buildSegmentReadiness,
-  doesSegmentReferenceMatch,
-} from "./reference-readiness";
+import { listSegmentReferencesForVideo } from "../repositories/segment-references.repository";
+import type {
+  AssetLibraryEntry,
+} from "../repositories/asset-library.repository";
+import { buildSegmentReadiness } from "./reference-readiness";
 
+type MediaAssetRow = Database["public"]["Tables"]["media_assets"]["Row"];
+type AssetLibraryRow = Database["public"]["Tables"]["asset_library"]["Row"];
+
+/**
+ * Build the data backing the per-video references page. The shape distinguishes
+ * three groups:
+ *   - `globalReferences`: library assets ACTUALLY used by this video's
+ *     segments. We resolve them through `segment_references.library_asset_id`
+ *     so the page only surfaces what the storyboard needs, not the full 67-row
+ *     library. They are read-only on this page.
+ *   - `recipeReferences`: per-video assets in `reference_assets` (recipe
+ *     states, custom inputs). The page exposes the full action surface
+ *     (approve, regenerate, upload to Runway) on these.
+ *   - `rejectedReferences`: recipe-specific entries explicitly rejected.
+ *
+ * The previous implementation pulled everything from `reference_assets` with
+ * `video_id IS NULL OR video_id = X`, which produced duplicate cards per
+ * canonical name (one per segment that referenced it). The new code dedupes
+ * by id and aggregates `usedInSegments` from `segment_references`.
+ */
 export async function getReferenceReviewData(
   supabase: SupabaseDataClient,
   videoId: string,
 ): Promise<ReferenceReviewData> {
-  const [references, videoMediaAssets, segments] = await Promise.all([
+  const [recipeReferences, segments, segmentReferenceLinks] = await Promise.all([
     listReferenceAssetsForVideo(supabase, videoId),
-    listMediaAssetsByVideoId(supabase, videoId),
     listSegmentsByVideoId(supabase, videoId),
+    listSegmentReferencesForVideo(supabase, videoId),
   ]);
 
-  const mediaById = new Map(videoMediaAssets.map((asset) => [asset.id, asset]));
-  const items = await Promise.all(
-    references.map(async (reference) => {
-      const mediaAsset =
-        reference.mediaAssetId && mediaById.has(reference.mediaAssetId)
-          ? mediaById.get(reference.mediaAssetId)
-          : reference.mediaAssetId
-            ? await getMediaAssetById(supabase, reference.mediaAssetId)
-            : null;
+  const libraryAssetIds = unique(
+    segmentReferenceLinks
+      .map((link) => link.libraryAssetId)
+      .filter((id): id is string => Boolean(id)),
+  );
 
-      return {
-        reference,
-        mediaAsset,
-        previewUrl: await createPreviewUrl(supabase, mediaAsset),
-        usedInSegments: getUsedInSegments(reference, segments),
-      } satisfies ReferenceAssetReviewItem;
+  const [libraryEntries, mediaAssets] = await Promise.all([
+    fetchAssetLibraryEntries(supabase, libraryAssetIds),
+    fetchMediaAssetsForReferences({
+      supabase,
+      videoId,
+      libraryAssetIds,
+      recipeReferences,
     }),
+  ]);
+
+  const segmentTitleById = new Map(segments.map((segment) => [segment.id, segment.title]));
+  const usageByLibraryAsset = aggregateUsage(
+    segmentReferenceLinks,
+    "libraryAssetId",
+    segmentTitleById,
+  );
+  const usageByRecipeReference = aggregateUsage(
+    segmentReferenceLinks,
+    "recipeReferenceId",
+    segmentTitleById,
+  );
+
+  const globalItems = await Promise.all(
+    libraryEntries.map((entry) =>
+      buildLibraryReviewItem({
+        supabase,
+        entry,
+        mediaAsset: mediaAssets.get(entry.mediaAssetId ?? "") ?? null,
+        usedInSegments: usageByLibraryAsset.get(entry.id) ?? [],
+      }),
+    ),
+  );
+
+  const recipeItems = await Promise.all(
+    recipeReferences.map((reference) =>
+      buildRecipeReviewItem({
+        supabase,
+        reference,
+        mediaAsset: mediaAssets.get(reference.mediaAssetId ?? "") ?? null,
+        usedInSegments: usageByRecipeReference.get(reference.id) ?? [],
+      }),
+    ),
   );
 
   return {
-    globalReferences: items.filter(
-      (item) => item.reference.videoId === null && item.reference.status !== "rejected",
+    globalReferences: globalItems.filter(
+      (item) => item.reference.status !== "rejected",
     ),
-    recipeReferences: items.filter(
-      (item) => item.reference.videoId === videoId && item.reference.status !== "rejected",
+    recipeReferences: recipeItems.filter(
+      (item) => item.reference.status !== "rejected",
     ),
-    rejectedReferences: items.filter((item) => item.reference.status === "rejected"),
-    missingReferences: items.filter((item) => isMissingReference(item)),
-    segmentReadiness: buildSegmentReadiness(references, segments),
+    rejectedReferences: recipeItems.filter(
+      (item) => item.reference.status === "rejected",
+    ),
+    missingReferences: [...globalItems, ...recipeItems].filter(isMissingReference),
+    segmentReadiness: buildSegmentReadiness(
+      // The readiness check still works against ReferenceAsset shapes. Globals
+      // are presented as approved-by-construction references so the check
+      // does not flag them as missing.
+      [
+        ...recipeReferences,
+        ...globalItems.map((item) => item.reference),
+      ],
+      segments,
+    ),
   };
 }
 
 function isMissingReference(item: ReferenceAssetReviewItem): boolean {
+  // Library globals are uploaded to Supabase Storage during seed and exposed
+  // to Runway just-in-time via signed URLs, so they are never "missing" from
+  // the user's perspective on this page.
+  if (item.isLibraryGlobal) {
+    return false;
+  }
+
   const { reference } = item;
 
   if (reference.status === "rejected") {
@@ -85,17 +153,212 @@ function isMissingReference(item: ReferenceAssetReviewItem): boolean {
   return false;
 }
 
-function getUsedInSegments(
-  reference: ReferenceAsset,
-  segments: SeedanceSegment[],
-) {
-  return segments
-    .filter((segment) =>
-      segment.references.some((segmentReference) =>
-        doesSegmentReferenceMatch(reference, segmentReference),
-      ),
-    )
-    .map((segment) => segment.title);
+function aggregateUsage(
+  links: Awaited<ReturnType<typeof listSegmentReferencesForVideo>>,
+  targetField: "libraryAssetId" | "recipeReferenceId",
+  segmentTitleById: Map<string, string>,
+): Map<string, string[]> {
+  const usage = new Map<string, Set<string>>();
+  for (const link of links) {
+    const target = link[targetField];
+    if (!target) {
+      continue;
+    }
+    const title = segmentTitleById.get(link.segmentId);
+    if (!title) {
+      continue;
+    }
+    if (!usage.has(target)) {
+      usage.set(target, new Set());
+    }
+    usage.get(target)!.add(title);
+  }
+
+  const result = new Map<string, string[]>();
+  for (const [id, titles] of usage.entries()) {
+    result.set(id, Array.from(titles));
+  }
+  return result;
+}
+
+async function fetchAssetLibraryEntries(
+  supabase: SupabaseDataClient,
+  ids: string[],
+): Promise<AssetLibraryEntry[]> {
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("asset_library")
+    .select("*")
+    .in("id", ids)
+    .order("category", { ascending: true })
+    .order("canonical_name", { ascending: true });
+
+  throwIfSupabaseError(error, "fetchAssetLibraryEntries failed");
+
+  return (data ?? []).map((row) => mapAssetLibraryRow(row as AssetLibraryRow));
+}
+
+interface FetchMediaAssetsInput {
+  supabase: SupabaseDataClient;
+  videoId: string;
+  libraryAssetIds: string[];
+  recipeReferences: ReferenceAsset[];
+}
+
+async function fetchMediaAssetsForReferences(
+  input: FetchMediaAssetsInput,
+): Promise<Map<string, MediaAsset>> {
+  const mediaIds = unique([
+    ...input.recipeReferences
+      .map((reference) => reference.mediaAssetId)
+      .filter((id): id is string => Boolean(id)),
+  ]);
+
+  // Library entries don't expose `media_asset_id` until we read them; we'll
+  // fetch them lazily after the library entries arrive.
+  const result = new Map<string, MediaAsset>();
+  if (mediaIds.length === 0) {
+    return result;
+  }
+
+  const { data, error } = await input.supabase
+    .from("media_assets")
+    .select("*")
+    .in("id", mediaIds);
+
+  throwIfSupabaseError(error, "fetchMediaAssetsForReferences failed");
+
+  for (const row of data ?? []) {
+    result.set(row.id, mapMediaAssetRow(row as MediaAssetRow));
+  }
+  return result;
+}
+
+async function buildLibraryReviewItem(input: {
+  supabase: SupabaseDataClient;
+  entry: AssetLibraryEntry;
+  mediaAsset: MediaAsset | null;
+  usedInSegments: string[];
+}): Promise<ReferenceAssetReviewItem> {
+  // Library entries need a one-off media_assets fetch when the bulk fetch
+  // above did not include them (it only seeded itself from recipe-specific
+  // references). Doing it inline keeps the function self-contained.
+  const mediaAsset =
+    input.mediaAsset ??
+    (input.entry.mediaAssetId
+      ? await getMediaAssetByIdInline(input.supabase, input.entry.mediaAssetId)
+      : null);
+
+  return {
+    reference: librarytoReference(input.entry),
+    mediaAsset,
+    previewUrl: await createPreviewUrl(input.supabase, mediaAsset),
+    usedInSegments: input.usedInSegments,
+    isLibraryGlobal: true,
+  };
+}
+
+async function buildRecipeReviewItem(input: {
+  supabase: SupabaseDataClient;
+  reference: ReferenceAsset;
+  mediaAsset: MediaAsset | null;
+  usedInSegments: string[];
+}): Promise<ReferenceAssetReviewItem> {
+  const mediaAsset =
+    input.mediaAsset ??
+    (input.reference.mediaAssetId
+      ? await getMediaAssetByIdInline(input.supabase, input.reference.mediaAssetId)
+      : null);
+
+  return {
+    reference: input.reference,
+    mediaAsset,
+    previewUrl: await createPreviewUrl(input.supabase, mediaAsset),
+    usedInSegments: input.usedInSegments,
+    isLibraryGlobal: false,
+  };
+}
+
+/**
+ * Synthesize a ReferenceAsset shape from an asset_library entry so the UI can
+ * render globals through the same `ReferenceCard` component. Library globals
+ * carry an "approved" status by construction: their media is stored, the
+ * agent treats them as ready inputs, and the page suppresses approval
+ * actions on them anyway.
+ */
+function librarytoReference(entry: AssetLibraryEntry): ReferenceAsset {
+  const primaryName = entry.aliases[0] ?? entry.canonicalName;
+  return {
+    id: entry.id,
+    videoId: null,
+    mediaAssetId: entry.mediaAssetId,
+    type: entry.category,
+    canonicalName: primaryName,
+    source: "asset_library",
+    runwayUri: null,
+    prompt: entry.description,
+    status: entry.status === "deprecated" ? "rejected" : "approved",
+    createdAt: entry.createdAt,
+  };
+}
+
+function mapAssetLibraryRow(row: AssetLibraryRow): AssetLibraryEntry {
+  return {
+    id: row.id,
+    canonicalName: row.canonical_name,
+    aliases: row.aliases ?? [],
+    category: row.category,
+    mediaAssetId: row.media_asset_id,
+    description: row.description,
+    status: row.status as "active" | "deprecated",
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapMediaAssetRow(row: MediaAssetRow): MediaAsset {
+  return {
+    id: row.id,
+    videoId: row.video_id,
+    segmentId: row.segment_id,
+    generationId: row.generation_id,
+    type: row.type as MediaAsset["type"],
+    provider: row.provider as MediaAsset["provider"],
+    storageBucket: row.storage_bucket,
+    storagePath: row.storage_path,
+    runwayOutputUrl: row.runway_output_url,
+    muxAssetId: row.mux_asset_id,
+    muxPlaybackId: row.mux_playback_id,
+    durationSeconds: row.duration_seconds,
+    width: row.width,
+    height: row.height,
+    mimeType: row.mime_type,
+    fileSizeBytes: row.file_size_bytes,
+    originalFilename: row.original_filename,
+    status: row.status as MediaAsset["status"],
+    metadata: (row.metadata ?? {}) as MediaAsset["metadata"],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    createdBy: row.created_by,
+  };
+}
+
+async function getMediaAssetByIdInline(
+  supabase: SupabaseDataClient,
+  mediaAssetId: string,
+): Promise<MediaAsset | null> {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("*")
+    .eq("id", mediaAssetId)
+    .maybeSingle();
+
+  throwIfSupabaseError(error, "getMediaAssetByIdInline failed");
+  return data ? mapMediaAssetRow(data as MediaAssetRow) : null;
 }
 
 async function createPreviewUrl(
@@ -111,4 +374,8 @@ async function createPreviewUrl(
     path: mediaAsset.storagePath,
     expiresInSeconds: 60 * 15,
   });
+}
+
+function unique<T>(values: T[]): T[] {
+  return Array.from(new Set(values));
 }
