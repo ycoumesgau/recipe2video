@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
@@ -658,9 +657,6 @@ function StatusPanel({
           playback IDs stay on `media_assets`; original files remain in Supabase
           Storage.
         </div>
-        <Button asChild variant="outline">
-          <Link href={`/videos/${project?.id ?? videoId}`}>Back to project</Link>
-        </Button>
       </CardContent>
     </Card>
   );
