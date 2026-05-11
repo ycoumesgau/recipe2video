@@ -12,8 +12,26 @@ export interface AssetLibraryEntry {
   mediaAssetId: string | null;
   description: string | null;
   status: "active" | "deprecated";
+  createdBy: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreateAssetLibraryInput {
+  id?: string;
+  canonicalName: string;
+  category: string;
+  aliases?: string[];
+  description?: string | null;
+  mediaAssetId?: string | null;
+  status?: "active" | "deprecated";
+  createdBy?: string | null;
+}
+
+export interface UpdateAssetLibraryMetadataInput {
+  aliases?: string[];
+  description?: string | null;
+  category?: string;
 }
 
 function mapAssetLibrary(row: AssetLibraryRow): AssetLibraryEntry {
@@ -25,6 +43,7 @@ function mapAssetLibrary(row: AssetLibraryRow): AssetLibraryEntry {
     mediaAssetId: row.media_asset_id,
     description: row.description,
     status: row.status as "active" | "deprecated",
+    createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -112,4 +131,102 @@ export async function getAssetLibraryById(
 
   throwIfSupabaseError(error, "getAssetLibraryById failed");
   return data ? mapAssetLibrary(data) : null;
+}
+
+export async function getAssetLibraryByCanonicalName(
+  supabase: SupabaseDataClient,
+  canonicalName: string,
+): Promise<AssetLibraryEntry | null> {
+  const { data, error } = await supabase
+    .from("asset_library")
+    .select("*")
+    .eq("canonical_name", canonicalName)
+    .maybeSingle();
+
+  throwIfSupabaseError(error, "getAssetLibraryByCanonicalName failed");
+  return data ? mapAssetLibrary(data) : null;
+}
+
+export async function createAssetLibraryEntry(
+  supabase: SupabaseDataClient,
+  input: CreateAssetLibraryInput,
+): Promise<AssetLibraryEntry> {
+  const { data, error } = await supabase
+    .from("asset_library")
+    .insert({
+      id: input.id,
+      canonical_name: input.canonicalName,
+      category: input.category,
+      aliases: input.aliases ?? [],
+      description: input.description ?? null,
+      media_asset_id: input.mediaAssetId ?? null,
+      status: input.status ?? "active",
+      created_by: input.createdBy ?? null,
+    })
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "createAssetLibraryEntry failed");
+  return mapAssetLibrary(data!);
+}
+
+export async function updateAssetLibraryMetadata(
+  supabase: SupabaseDataClient,
+  id: string,
+  patch: UpdateAssetLibraryMetadataInput,
+): Promise<AssetLibraryEntry> {
+  const update: Database["public"]["Tables"]["asset_library"]["Update"] = {};
+  if (patch.aliases !== undefined) update.aliases = patch.aliases;
+  if (patch.description !== undefined) update.description = patch.description;
+  if (patch.category !== undefined) update.category = patch.category;
+
+  if (Object.keys(update).length === 0) {
+    const current = await getAssetLibraryById(supabase, id);
+    if (!current) {
+      throw new Error(`asset_library row '${id}' not found`);
+    }
+    return current;
+  }
+
+  const { data, error } = await supabase
+    .from("asset_library")
+    .update(update)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateAssetLibraryMetadata failed");
+  return mapAssetLibrary(data!);
+}
+
+export async function setAssetLibraryMediaAsset(
+  supabase: SupabaseDataClient,
+  id: string,
+  mediaAssetId: string,
+): Promise<AssetLibraryEntry> {
+  const { data, error } = await supabase
+    .from("asset_library")
+    .update({ media_asset_id: mediaAssetId })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "setAssetLibraryMediaAsset failed");
+  return mapAssetLibrary(data!);
+}
+
+export async function setAssetLibraryStatus(
+  supabase: SupabaseDataClient,
+  id: string,
+  status: "active" | "deprecated",
+): Promise<AssetLibraryEntry> {
+  const { data, error } = await supabase
+    .from("asset_library")
+    .update({ status })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "setAssetLibraryStatus failed");
+  return mapAssetLibrary(data!);
 }

@@ -314,6 +314,7 @@ function mapAssetLibraryRow(row: AssetLibraryRow): AssetLibraryEntry {
     mediaAssetId: row.media_asset_id,
     description: row.description,
     status: row.status as "active" | "deprecated",
+    createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

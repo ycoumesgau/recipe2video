@@ -39,6 +39,24 @@ function mapSegmentReferenceRow(row: SegmentReferenceRow): SegmentReferenceLink 
 }
 
 /**
+ * Count how many segments currently link to a given library asset. Used by
+ * the /library admin page to surface "this asset is reused N times" so an
+ * operator weighing a deprecation knows the blast radius.
+ */
+export async function countSegmentReferencesForLibraryAsset(
+  supabase: SupabaseDataClient,
+  libraryAssetId: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("segment_references")
+    .select("id", { count: "exact", head: true })
+    .eq("library_asset_id", libraryAssetId);
+
+  throwIfSupabaseError(error, "countSegmentReferencesForLibraryAsset failed");
+  return count ?? 0;
+}
+
+/**
  * Replace every segment_reference row that targets the supplied segments with
  * the provided mappings. Used at agent sync time after the segments table has
  * been re-populated. The CASCADE on segment_references.segment_id already
