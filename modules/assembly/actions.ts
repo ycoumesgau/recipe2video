@@ -15,11 +15,15 @@ import { buildMediaStoragePath } from "@/modules/media-assets/storage-paths";
 import { uploadMediaAssetToMux } from "@/modules/media-assets/use-cases/upload-media-asset-to-mux";
 import { updateVideoProjectStatus } from "@/modules/videos/repositories/video.repository";
 
-import type { AssemblyTimelineState } from "./assembly.types";
+import type {
+  AssemblyTimelineState,
+  SegmentPlacement,
+} from "./assembly.types";
 import {
-  applySegmentTrims,
+  buildClipsFromPlacements,
   getEmptyTimelineState,
   projectLegacyAudioSync,
+  readPlacementsState,
   readTimelineState,
 } from "./timeline-state";
 import {
@@ -77,17 +81,34 @@ export async function saveAssemblySettingsAction(
   try {
     const { profile } = await assertCostlyActionAllowed();
     const videoId = requireString(formData, "videoId");
-    const segmentOrder = parseSegmentOrder(formData.get("segmentOrder"));
+    const assemblyData = await getAssemblyPageData(videoId);
+    const placements = parsePlacementsPayload(
+      formData.get("placements"),
+      assemblyData.availableSegments,
+    );
     const timelineState = parseTimelineState(formData.get("timelineState"));
     const audioMediaAssetId = optionalString(formData, "audioMediaAssetId");
-    const assemblyData = await getAssemblyPageData(videoId);
-    const trimmedSegments = applySegmentTrims(
-      assemblyData.availableSegments,
-      timelineState.segmentTrims,
-    );
-    const orderedSegments = orderClips(trimmedSegments, segmentOrder);
 
-    if (orderedSegments.length === 0) {
+    const orderedClips = buildClipsFromPlacements(
+      placements,
+      new Map(
+        assemblyData.availableSegments.map((segment) => [
+          segment.segmentId,
+          {
+            segmentId: segment.segmentId,
+            mediaAssetId: segment.mediaAssetId,
+            generationId: segment.generationId,
+            title: segment.title,
+            durationSeconds: segment.durationSeconds,
+            sourceUrl: segment.sourceUrl,
+            storageBucket: segment.storageBucket,
+            storagePath: segment.storagePath,
+          },
+        ]),
+      ),
+    );
+
+    if (orderedClips.length === 0) {
       return {
         status: "error",
         message: "No accepted Supabase-stored segment clips are available yet.",
@@ -100,12 +121,12 @@ export async function saveAssemblySettingsAction(
       createSupabaseAdminClient(),
       {
         videoId,
-        segmentOrder,
+        placements,
         audioMediaAssetId,
         audioSync: projectLegacyAudioSync(timelineState.audioClips),
         timelineState,
         remotionProps: buildRemotionProps({
-          segments: orderedSegments,
+          segments: orderedClips,
           audioTrack: assemblyData.audioTrack,
           audioClips: timelineState.audioClips,
         }),
@@ -168,22 +189,38 @@ export async function uploadFinalExportAction(
       };
     }
 
-    const segmentOrder = parseSegmentOrder(formData.get("segmentOrder"));
+    const assemblyData = await getAssemblyPageData(videoId);
+    const placements = parsePlacementsPayload(
+      formData.get("placements"),
+      assemblyData.availableSegments,
+    );
     const timelineState = parseTimelineState(formData.get("timelineState"));
     const audioMediaAssetId = optionalString(formData, "audioMediaAssetId");
-    const assemblyData = await getAssemblyPageData(videoId);
-    const trimmedSegments = applySegmentTrims(
-      assemblyData.availableSegments,
-      timelineState.segmentTrims,
+    const orderedClips = buildClipsFromPlacements(
+      placements,
+      new Map(
+        assemblyData.availableSegments.map((segment) => [
+          segment.segmentId,
+          {
+            segmentId: segment.segmentId,
+            mediaAssetId: segment.mediaAssetId,
+            generationId: segment.generationId,
+            title: segment.title,
+            durationSeconds: segment.durationSeconds,
+            sourceUrl: segment.sourceUrl,
+            storageBucket: segment.storageBucket,
+            storagePath: segment.storagePath,
+          },
+        ]),
+      ),
     );
-    const orderedSegments = orderClips(trimmedSegments, segmentOrder);
     const remotionProps = buildRemotionProps({
-      segments: orderedSegments,
+      segments: orderedClips,
       audioTrack: assemblyData.audioTrack,
       audioClips: timelineState.audioClips,
     });
 
-    if (orderedSegments.length === 0) {
+    if (orderedClips.length === 0) {
       return {
         status: "error",
         message: "No accepted Supabase-stored segment clips are available yet.",
@@ -194,7 +231,7 @@ export async function uploadFinalExportAction(
     const composition = await createComposition(supabase, {
       id: compositionId,
       videoId,
-      segmentOrder,
+      placements,
       audioMediaAssetId,
       audioSync: projectLegacyAudioSync(timelineState.audioClips),
       timelineState,
@@ -229,7 +266,7 @@ export async function uploadFinalExportAction(
       status: "stored",
       metadata: {
         compositionId: composition.id,
-        segmentOrder,
+        placements,
         timelineState,
         source: "assembly_final_export_upload",
       },
@@ -295,31 +332,28 @@ function getSunoActionErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Suno audio upload failed.";
 }
 
-function orderClips<T extends { segmentId: string; position: number }>(
-  clips: T[],
-  segmentOrder: string[],
-) {
-  const clipBySegmentId = new Map(clips.map((clip) => [clip.segmentId, clip]));
-  const ordered = segmentOrder
-    .map((segmentId) => clipBySegmentId.get(segmentId))
-    .filter((clip): clip is T => Boolean(clip));
-  const remaining = clips.filter(
-    (clip) => !segmentOrder.includes(clip.segmentId),
+/**
+ * Decode the placements payload from the form. Validates against the
+ * available segment catalogue (drops placements pointing to a missing
+ * segmentId) using the same tolerant reader as the page-level loader, so
+ * the action can ingest both the new shape and the legacy ones.
+ */
+function parsePlacementsPayload(
+  value: FormDataEntryValue | null,
+  availableSegments: Array<{ segmentId: string; durationSeconds: number }>,
+): SegmentPlacement[] {
+  const durations = new Map(
+    availableSegments.map((segment) => [
+      segment.segmentId,
+      segment.durationSeconds,
+    ]),
   );
-
-  return [...ordered, ...remaining.sort((a, b) => a.position - b.position)];
-}
-
-function parseSegmentOrder(value: FormDataEntryValue | null): string[] {
   if (typeof value !== "string") {
     return [];
   }
-
   try {
     const parsed = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
+    return readPlacementsState(parsed, null, durations);
   } catch {
     return [];
   }
