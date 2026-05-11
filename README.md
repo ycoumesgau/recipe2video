@@ -1,3 +1,9 @@
+Copyright (c) 2026 Yoann Coumes-Gauchet
+
+This repository is publicly visible for evaluation purposes only.
+No permission is granted to use, copy, modify, distribute, or commercialize this code.
+All rights reserved.
+
 # Recipe2Video
 
 Recipe2Video is an internal Licorn production tool built for the Runway API Hackathon. It turns a food recipe into an agent-driven workflow for producing short vertical cooking videos featuring the Licorn mascot. The creative planning engine is a persistent per-recipe Cursor SDK agent (`@cursor/sdk`), while the Runway API handles all video generation.
