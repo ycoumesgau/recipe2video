@@ -86,6 +86,83 @@ export async function replaceSegmentsForVideo(
   return data.map(mapSeedanceSegment);
 }
 
+/**
+ * Non-destructive sync keyed by `(video_id, position)`.
+ *
+ * Existing rows are updated in place and preserve `id`, `status`,
+ * `selected_generation_id`, and audit timestamps. Missing positions are
+ * inserted as new rows. Positions absent from the incoming batch are preserved
+ * intentionally to keep historical generations/media links intact.
+ */
+export async function upsertSegmentsForVideoByPosition(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  segments: CreateSeedanceSegmentInput[],
+): Promise<SeedanceSegment[]> {
+  const existing = await listSegmentsByVideoId(supabase, videoId);
+  const existingByPosition = new Map(
+    existing.map((segment) => [segment.position, segment]),
+  );
+  const persisted: SeedanceSegment[] = [];
+
+  for (const segment of segments) {
+    const current = existingByPosition.get(segment.position);
+
+    if (current) {
+      const { data, error } = await supabase
+        .from("segments")
+        .update({
+          title: segment.title,
+          arc: segment.arc,
+          logical_scene_ids: toJson(segment.logicalSceneIds),
+          description: segment.description,
+          prompt: segment.prompt,
+          prompt_initial: segment.promptInitial,
+          references: toJson(segment.references ?? []),
+          duration_target: segment.durationTarget,
+          created_by: segment.createdBy ?? current.createdBy ?? null,
+        })
+        .eq("id", current.id)
+        .select("*")
+        .single();
+
+      throwIfSupabaseError(
+        error,
+        "upsertSegmentsForVideoByPosition update failed",
+      );
+      persisted.push(mapSeedanceSegment(data));
+      continue;
+    }
+
+    const { data, error } = await supabase
+      .from("segments")
+      .insert({
+        video_id: segment.videoId,
+        position: segment.position,
+        title: segment.title,
+        arc: segment.arc,
+        logical_scene_ids: toJson(segment.logicalSceneIds),
+        description: segment.description,
+        prompt: segment.prompt,
+        prompt_initial: segment.promptInitial,
+        references: toJson(segment.references ?? []),
+        duration_target: segment.durationTarget,
+        status: segment.status ?? "pending",
+        created_by: segment.createdBy ?? null,
+      })
+      .select("*")
+      .single();
+
+    throwIfSupabaseError(
+      error,
+      "upsertSegmentsForVideoByPosition insert failed",
+    );
+    persisted.push(mapSeedanceSegment(data));
+  }
+
+  return persisted.sort((a, b) => a.position - b.position);
+}
+
 export async function listSegmentsByVideoId(
   supabase: SupabaseDataClient,
   videoId: string,

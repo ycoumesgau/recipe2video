@@ -9,10 +9,13 @@ import {
 } from "@/modules/videos/repositories/video.repository";
 import {
   replaceLogicalScenesForVideo,
+  upsertLogicalScenesForVideoByPosition,
   type CreateLogicalSceneInput,
 } from "@/modules/storyboard/repositories/logical-scene.repository";
 import {
+  listSegmentsByVideoId,
   replaceSegmentsForVideo,
+  upsertSegmentsForVideoByPosition,
 } from "@/modules/storyboard/repositories/segment.repository";
 import {
   replaceAgentReferenceAssetsForVideo,
@@ -224,25 +227,50 @@ export async function syncRecipeAgentArtifacts(
     await mergeVideoProjectRecipeData(supabase, input.videoId, plan.recipePatch);
   }
 
+  const existingSegments = await listSegmentsByVideoId(supabase, input.videoId);
+  const useNonDestructiveStoryboardSync = existingSegments.length > 0;
+
   if (plan.logicalScenes.length > 0) {
-    await replaceLogicalScenesForVideo(supabase, input.videoId, plan.logicalScenes);
+    if (useNonDestructiveStoryboardSync) {
+      await upsertLogicalScenesForVideoByPosition(
+        supabase,
+        input.videoId,
+        plan.logicalScenes,
+      );
+    } else {
+      await replaceLogicalScenesForVideo(
+        supabase,
+        input.videoId,
+        plan.logicalScenes,
+      );
+    }
   }
 
-  let persistedSegments: Awaited<
-    ReturnType<typeof replaceSegmentsForVideo>
-  > = [];
+  let persistedSegments: SeedanceSegment[] = [];
 
   if (plan.segments.length > 0) {
-    persistedSegments = await replaceSegmentsForVideo(
-      supabase,
-      input.videoId,
-      plan.segments,
-    );
+    if (useNonDestructiveStoryboardSync) {
+      persistedSegments = await upsertSegmentsForVideoByPosition(
+        supabase,
+        input.videoId,
+        plan.segments,
+      );
+    } else {
+      persistedSegments = await replaceSegmentsForVideo(
+        supabase,
+        input.videoId,
+        plan.segments,
+      );
+    }
+
+    const segmentCountForSummary = useNonDestructiveStoryboardSync
+      ? (await listSegmentsByVideoId(supabase, input.videoId)).length
+      : persistedSegments.length;
 
     await updateVideoProjectStoryboardSummary(supabase, input.videoId, {
       source: "cursor_recipe_agent",
       logicalSceneCount: plan.logicalScenes.length,
-      segmentCount: persistedSegments.length,
+      segmentCount: segmentCountForSummary,
       generatedAt: new Date().toISOString(),
     });
   }
