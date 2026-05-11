@@ -8,11 +8,15 @@ All rights reserved.
 
 Recipe2Video is an internal Licorn production tool built for the Runway API Hackathon. It turns a food recipe into an agent-driven workflow for producing short vertical cooking videos featuring the Licorn mascot. The creative planning engine is a persistent per-recipe Cursor SDK agent (`@cursor/sdk`), while the Runway API handles all video generation.
 
-The product is designed for a real operational use case at Licorn: generating high-quality cooking videos for TikTok, YouTube Shorts, and Instagram while controlling creative quality, generation cost, iteration loops, media storage, and final assembly.
+Licorn is a food app — a "Spotify-like for food" that connects food influencers and home cooks around recipes. The app is in pre-launch. To build an audience ahead of the waitlist and cooking forum launch, Licorn needs a reliable stream of short cooking videos for TikTok, YouTube Shorts, and Instagram, plus one original Suno music single per week published on streaming platforms.
+
+The product is designed for a real operational use case at Licorn: a solo founder producing two short marketing videos per week from the end of May, while controlling creative quality, generation cost, iteration loops, media storage, and final assembly.
 
 ## Why it matters
 
-Producing AI-generated cooking videos is expensive and operationally fragile. A single recipe video can require:
+Producing AI-generated cooking videos is expensive and operationally fragile. Before Recipe2Video, making one video meant juggling Cursor for prompt engineering, Runway's web interface, Recraft for reference images, Suno for music, and local editing tools. Every generation required manually selecting assets, copying prompts, and piecing together a story by hand. Scaling to two videos a week as a solo founder was basically impossible.
+
+A single recipe video requires:
 
 * recipe analysis and creative direction
 * storyboard planning
@@ -50,11 +54,11 @@ Recipe2Video supports the following workflow:
 
 ## Hackathon scope
 
-Recipe2Video is not a generic demo wrapper around a video model. It is a production workflow tool built for a real internal use case at Licorn: generating short, high-quality cooking videos for social channels from recipes, while controlling creative quality, generation cost, and iteration loops.
+Recipe2Video is not a generic demo wrapper around a video model. It is a production workflow tool built for a real internal use case at Licorn: a solo founder generating two short cooking videos per week for TikTok, Instagram, and YouTube Shorts, plus one original Suno music single per week for streaming platforms, to support the launch of Licorn’s waitlist and cooking forum.
 
 The hackathon milestone focuses on the highest-value end-to-end workflow: recipe input, agent storyboard, Seedance 2.0 segment planning, Runway generation, durable media persistence, Mux playback, feedback-driven prompt iteration, cost tracking, and final assembly preview.
 
-The first milestone is an end-to-end usable product for Licorn’s own marketing workflow, with a clear path to post-hackathon production use.
+The first milestone is an end-to-end usable product for Licorn’s own marketing workflow, with a clear path to post-hackathon production use starting end of May 2026.
 
 ## Core product principles
 

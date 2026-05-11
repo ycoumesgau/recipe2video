@@ -3,7 +3,7 @@
 
 ### TL;DR
 
-Recipe2Video is an internal Licorn production tool that turns a food recipe into a repeatable, agent-assisted workflow for producing short vertical cooking videos featuring the Licorn mascot. It uses the Runway API with Seedance 2 as the default video generation model, GPT-Image 2 for recipe-specific reference images, Cursor SDK with persistent per-recipe agents for creative planning, GPT-5.5 High for prompt diffs and narrow utilities, Inngest for durable workflows, Supabase Auth/Postgres/Storage for access control, state and original media masters, Mux Pay-as-you-go Basic for playback and review, Remotion for assembly preview/export, and shadcn/ui for fast interface delivery.
+Recipe2Video is an internal Licorn production tool that turns a food recipe into a repeatable, agent-assisted workflow for producing short vertical cooking videos featuring the Licorn mascot. Licorn is a food app — a "Spotify-like for food" that connects food influencers and home cooks around recipes — currently in pre-launch. The app is built by a solo founder who needs to produce two short marketing videos per week from end of May 2026, plus one Suno music single per week on streaming platforms, to support the launch of Licorn's waitlist and cooking forum. It uses the Runway API with Seedance 2 as the default video generation model, GPT-Image 2 for recipe-specific reference images, Cursor SDK with persistent per-recipe agents for creative planning, GPT-5.5 High for prompt diffs and narrow utilities, Inngest for durable workflows, Supabase Auth/Postgres/Storage for access control, state and original media masters, Mux Pay-as-you-go Basic for playback and review, Remotion for assembly preview/export, and shadcn/ui for fast interface delivery.
 
 The hackathon goal is to ship a real internal production workflow for Licorn, not a generic model wrapper or throwaway proof of concept. The first milestone focuses on the highest-value end-to-end path: recipe input, storyboard, Seedance segment planning, reference validation, Runway generation, durable storage, Mux playback, feedback-driven prompt diffs, cost tracking, and final assembly preview.
 
@@ -15,9 +15,10 @@ The hackathon goal is to ship a real internal production workflow for Licorn, no
 
 * Submit a working, publicly viewable Runway API Hackathon project before Monday, May 11, 2026 at 9:00 AM ET, which is 3:00 PM Paris time.
 * Use the 50,000 Runway API credits productively during the hackathon weekend, with a stretch target of preparing or generating around 20 recipe video projects if the credits appear time-limited.
-* Establish a repeatable internal Licorn workflow capable of producing at least 2 short marketing videos per week after the hackathon.
-* Enable batch production so one Licorn team member can launch, monitor, and iterate on multiple recipe videos in parallel instead of completing each video sequentially.
-* Reduce the manual production burden of a short recipe video from several fragmented hours across Runway, Recraft, Suno, and local editing tools to a checkpointed, agent-assisted workflow.
+* Establish a repeatable internal Licorn workflow capable of producing at least 2 short marketing videos per week from end of May 2026, to support the launch of Licorn’s waitlist and cooking forum.
+* Produce one original Suno music single per week for streaming platforms, generated as part of the same recipe video workflow.
+* Enable a solo founder to launch, monitor, and iterate on multiple recipe videos in parallel instead of completing each video sequentially.
+* Reduce the manual production burden of a short recipe video from several fragmented hours across Cursor, Runway’s web interface, Recraft, Suno, and local editing tools to a single checkpointed, agent-assisted workflow.
 * Demonstrate deep use of Runway’s API by orchestrating recipe understanding, reference planning, Seedance generation, polling, persistence, cost tracking, review, prompt iteration, and assembly.
 
 ### User Goals
@@ -353,11 +354,11 @@ Persona: Runway Hackathon Judge
 
 ## Narrative
 
-Yoann is building Licorn, a culinary product that treats cooking as a shared lived experience rather than passive content consumption. To grow the brand, Licorn needs short, visually compelling social videos where its mascot cooks real recipes in a recognizable kitchen environment. The challenge is not ideation; recipes, assets, and AI models already exist. The bottleneck is orchestration: each video requires recipe understanding, creative sequencing, reference planning, Seedance prompts, expensive generations, feedback, variant selection, music, and final assembly.
+Yoann is the solo founder of Licorn, a food app — a “Spotify-like for food” that connects food influencers and home cooks around recipes. The app is in pre-launch, building an audience ahead of the waitlist and cooking forum launch. To do that, Licorn needs two short cooking videos per week on TikTok, Instagram, and YouTube Shorts, plus one original Suno music single per week on streaming platforms. Recipes, assets, and AI models already exist. The bottleneck is orchestration: each video requires recipe understanding, creative sequencing, reference planning, Seedance prompts, expensive generations, feedback, variant selection, music, and final assembly.
 
 Recipe2Video turns this fragmented process into an internal production cockpit. Yoann can upload a recipe from his phone, validate the agent’s storyboard, approve reference images, and launch multiple Seedance segments in parallel. While generations run, he can switch to another recipe project instead of waiting passively. When a segment fails, he does not rewrite prompts manually. He tells the agent what is wrong, reviews a diff, approves the fix, and regenerates only that segment. These corrections become memory for future projects.
 
-By the end of the workflow, Recipe2Video has preserved the recipe, storyboard, references, generated variants, feedback history, media masters, costs, Suno prompt, and final Remotion assembly. The hackathon demo shows a real product, not a toy: an agentic media production system that helps Licorn produce two videos per week reliably and potentially batch-produce around 20 videos during the hackathon weekend.
+By the end of the workflow, Recipe2Video has preserved the recipe, storyboard, references, generated variants, feedback history, media masters, costs, Suno prompt, and final Remotion assembly. The hackathon demo shows a real product, not a toy: an agentic media production system that helps a solo founder produce two videos per week reliably from end of May 2026, while also generating a weekly Suno music single for Licorn’s streaming presence.
 
 ---
 
@@ -376,7 +377,7 @@ By the end of the workflow, Recipe2Video has preserved the recipe, storyboard, r
 
 * Hackathon submission: Working demo submitted before 9:00 AM ET on Monday, May 11, 2026.
 * Hackathon production target: Around 20 recipe video projects generated or partially generated during the weekend if Runway credits appear time-limited.
-* Post-hackathon production target: At least 2 publishable Licorn marketing videos per week.
+* Post-hackathon production target: At least 2 publishable Licorn marketing videos per week from end of May 2026, plus one Suno music single per week on streaming platforms.
 * Cost visibility: 100% of Runway and OpenAI calls logged with estimated or actual cost.
 * Useful output: At least 3 final or near-final videos strong enough for hackathon demo material or post-hackathon refinement.
 

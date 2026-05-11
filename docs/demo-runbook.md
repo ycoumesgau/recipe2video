@@ -410,7 +410,7 @@ Show:
 Voiceover:
 
 ```txt
-The output can be downloaded and reused for Licorn’s social channels. The workflow is designed to support at least two videos per week, and batch generation during the hackathon weekend.
+The output can be downloaded and reused for Licorn’s social channels. The workflow is designed to support two videos per week from end of May 2026, plus one Suno music single per week for streaming platforms, all in support of the Licorn waitlist and cooking forum launch. Batch generation during the hackathon weekend serves as the stress test.
 ```
 
 ---
