@@ -42,7 +42,9 @@ import type {
   AgentArtifact,
   AgentRun,
   AgentRunTimelineEvent,
+  RecipeAgentArtifactValidationStatus,
   RecipeAgentChatMessage,
+  RecipeAgentRunStatus,
   RecipeAgentStage,
   RecipeAgentStatus,
   RecipeAgentStep,
@@ -64,14 +66,40 @@ const stageLabels: Record<RecipeAgentStage, string> = {
 
 const statusVariant: Record<
   RecipeAgentStatus,
-  "default" | "secondary" | "destructive" | "outline"
+  | "default"
+  | "secondary"
+  | "destructive"
+  | "outline"
+  | "success"
+  | "warning"
+  | "info"
 > = {
   idle: "secondary",
-  running: "default",
-  needs_sync: "outline",
+  running: "info",
+  needs_sync: "warning",
   validation_failed: "destructive",
   failed: "destructive",
   needs_input: "outline",
+};
+
+const artifactValidationVariant: Record<
+  RecipeAgentArtifactValidationStatus,
+  "destructive" | "outline" | "success" | "warning"
+> = {
+  pending: "warning",
+  valid: "success",
+  invalid: "destructive",
+};
+
+const runStatusBadgeVariant: Record<
+  RecipeAgentRunStatus,
+  "destructive" | "info" | "outline" | "secondary" | "success"
+> = {
+  queued: "outline",
+  running: "info",
+  finished: "success",
+  error: "destructive",
+  cancelled: "secondary",
 };
 
 export function RecipeAgentPanel({
@@ -256,7 +284,7 @@ function RunHistoryCard({
             <div className="rounded-md border bg-muted/20 p-3 text-sm" key={run.id}>
               <div className="mb-1 flex flex-wrap items-start justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={run.status === "error" ? "destructive" : "outline"}>
+                  <Badge variant={runStatusBadgeVariant[run.status]}>
                     {run.status}
                   </Badge>
                   {run.needsUserInput ? (
@@ -304,15 +332,7 @@ function ArtifactSummaryCard({ artifacts }: { artifacts: AgentArtifact[] }) {
               key={artifact.id}
             >
               <span className="min-w-0 truncate">{artifact.artifactName}</span>
-              <Badge
-                variant={
-                  artifact.validationStatus === "invalid"
-                    ? "destructive"
-                    : artifact.validationStatus === "valid"
-                      ? "default"
-                      : "outline"
-                }
-              >
+              <Badge variant={artifactValidationVariant[artifact.validationStatus]}>
                 {artifact.validationStatus}
               </Badge>
             </div>

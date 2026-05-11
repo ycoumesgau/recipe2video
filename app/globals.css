@@ -34,6 +34,10 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  /* Feedback chips — Pantry DS (Figma 354:7744 · Information / Success / Warning / Error). */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -83,6 +87,10 @@
   --accent: oklch(0.965 0.032 330);
   --accent-foreground: oklch(0.26 0.04 285);
   --destructive: oklch(0.577 0.245 27.325);
+  /* Couleurs sémantiques « feedback » — calées sur le grid Figma 354:7744. */
+  --success: oklch(0.48 0.13 150);
+  --warning: oklch(0.58 0.14 72);
+  --info: oklch(0.52 0.11 255);
   --border: oklch(0.9 0.022 305);
   --input: oklch(0.9 0.022 305);
   --ring: oklch(0.62 0.18 350);
@@ -129,6 +137,9 @@
   --accent: oklch(0.29 0.055 340);
   --accent-foreground: oklch(0.985 0.008 85);
   --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.72 0.13 150);
+  --warning: oklch(0.78 0.12 72);
+  --info: oklch(0.74 0.1 255);
   --border: oklch(1 0 0 / 20%);
   --input: oklch(1 0 0 / 24%);
   --ring: oklch(0.64 0.2 345);
