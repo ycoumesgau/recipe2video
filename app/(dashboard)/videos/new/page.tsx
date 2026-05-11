@@ -1,4 +1,14 @@
+import Link from "next/link";
+
 import { Badge } from "@/components/ui/badge";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import {
   Card,
   CardContent,
@@ -11,6 +21,19 @@ import { NewVideoWizardForm } from "@/modules/videos/ui/new-video-wizard-form";
 export default function NewVideoPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
+      <Breadcrumb className="mb-2">
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/">Dashboard</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>Create video</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
       <div>
         <Badge className="mb-3" variant="outline">
           Issue #11
