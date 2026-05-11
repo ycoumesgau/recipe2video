@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 
 import {
@@ -15,7 +15,9 @@ import type {
   AssemblyAudioTrack,
   AssemblySegmentClip,
 } from "@/modules/assembly/assembly.types";
+import { generatePlacementId } from "@/modules/assembly/timeline-state";
 import { generateSyntheticPeaks } from "@/modules/assembly/ui/audio-clip-waveform";
+import { SegmentBin } from "@/modules/assembly/ui/segment-bin";
 import { TimelineEditor } from "@/modules/assembly/ui/timeline-editor";
 
 import {
@@ -93,6 +95,15 @@ const INITIAL_AUDIO_CLIPS: AssemblyAudioClip[] = [
 
 const DEMO_PEAKS = generateSyntheticPeaks(1024);
 
+/**
+ * The catalogue of "available segments" the bin renders. In the production
+ * page this comes from `getAssemblyPageData`, here we expose the same three
+ * demo clips so a card from the bin can be dropped onto the video lane.
+ */
+const DEMO_AVAILABLE_SEGMENTS: AssemblySegmentClip[] = INITIAL_SEGMENTS.map(
+  (segment) => ({ ...segment }),
+);
+
 export function TimelineEditorDemo() {
   const [segments, setSegments] =
     useState<AssemblySegmentClip[]>(INITIAL_SEGMENTS);
@@ -102,6 +113,42 @@ export function TimelineEditorDemo() {
   const peaksByMediaAsset = useMemo(
     () => ({ [INITIAL_AUDIO_TRACK.mediaAssetId]: DEMO_PEAKS }),
     [],
+  );
+  const handleAddSegmentFromBin = useCallback(
+    (segmentId: string, insertIndex: number) => {
+      const catalogueEntry = DEMO_AVAILABLE_SEGMENTS.find(
+        (segment) => segment.segmentId === segmentId,
+      );
+      if (!catalogueEntry) {
+        return;
+      }
+      setSegments((current) => {
+        const safeIndex = Math.max(0, Math.min(insertIndex, current.length));
+        const newClip: AssemblySegmentClip = {
+          ...catalogueEntry,
+          placementId: generatePlacementId(),
+          position: safeIndex,
+          inSeconds: 0,
+          outSeconds: catalogueEntry.durationSeconds,
+        };
+        return [
+          ...current.slice(0, safeIndex),
+          newClip,
+          ...current.slice(safeIndex),
+        ];
+      });
+    },
+    [],
+  );
+  const handleSegmentDroppedFromBin = useCallback(
+    ({ segmentId, insertIndex }: { segmentId: string; insertIndex: number }) =>
+      handleAddSegmentFromBin(segmentId, insertIndex),
+    [handleAddSegmentFromBin],
+  );
+  const handleAppendSegmentFromBin = useCallback(
+    (segmentId: string) =>
+      handleAddSegmentFromBin(segmentId, Number.MAX_SAFE_INTEGER),
+    [handleAddSegmentFromBin],
   );
 
   const remotionProps = useMemo(
@@ -185,16 +232,23 @@ export function TimelineEditorDemo() {
           <CardDescription>
             Drag bodies to move/reorder, drag clip edges to trim, drag the
             audio corners to fade. The trim/move/fade preview ghost commits
-            on release. Press <kbd>Space</kbd> to play/pause, <kbd>S</kbd> to
-            split, <kbd>Del</kbd> to remove.
+            on release. Drag a card from the bin onto the video lane to add
+            a placement; press <kbd>Space</kbd> to play/pause, <kbd>S</kbd>
+            to split a selected clip at the playhead, <kbd>Del</kbd> to
+            remove it.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          <SegmentBin
+            availableSegments={DEMO_AVAILABLE_SEGMENTS}
+            onAppend={handleAppendSegmentFromBin}
+          />
           <TimelineEditor
             audioClips={audioClips}
             audioTrack={INITIAL_AUDIO_TRACK}
             fps={remotionProps.fps}
             onAudioClipsChange={setAudioClips}
+            onSegmentDroppedFromBin={handleSegmentDroppedFromBin}
             onSegmentsChange={setSegments}
             peaksByMediaAsset={peaksByMediaAsset}
             playerRef={playerRef}

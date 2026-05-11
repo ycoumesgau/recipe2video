@@ -83,6 +83,7 @@ export default async function AssemblyPage({
       />
 
       <AssemblyWorkspace
+        availableSegments={data.assemblyData.availableSegments}
         compositionId={data.assemblyData.composition?.id}
         finalExports={data.assemblyData.finalExports}
         initialRemotionProps={data.assemblyData.remotionProps}
