@@ -58,6 +58,7 @@ export default async function ProjectReferencesPage({
       <ReferenceReviewWorkflow
         data={referenceData}
         notice={getNotice(query)}
+        projectStatus={project?.status ?? null}
         videoId={videoId}
       />
     </div>

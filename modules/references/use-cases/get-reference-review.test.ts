@@ -45,6 +45,44 @@ test("buildSegmentReadiness reports approved references missing Runway upload", 
   assert.deepEqual(readiness[0]?.missingRunwayUploads, ["KitchenIslandDefault"]);
 });
 
+test("buildSegmentReadiness treats library globals as ready even without runwayUri", () => {
+  // Library globals are uploaded to Runway just-in-time via signed URLs
+  // (resolveSegmentSeedanceReferences). They must NEVER appear in
+  // missingRunwayUploads — that would force users to hunt for a manual
+  // upload button that does not (and should not) exist for globals.
+  const readiness = buildSegmentReadiness(
+    [
+      {
+        ...referenceAsset("KitchenIslandDefault", null, "approved"),
+        source: "asset_library",
+      },
+    ],
+    [segment({ runwayUri: null })],
+  );
+
+  assert.deepEqual(readiness[0]?.missingApprovedReferences, []);
+  assert.deepEqual(readiness[0]?.missingRunwayUploads, []);
+});
+
+test("buildSegmentReadiness matches a segment reference declared by alias against the canonical asset", () => {
+  // The agent typically writes `KitchenIslandDefault` in
+  // `seedance-segments.json` even though the asset_library canonical is
+  // `island_default`. The matcher must follow aliases on either side.
+  const readiness = buildSegmentReadiness(
+    [
+      {
+        ...referenceAsset("island_default", null, "approved"),
+        aliases: ["KitchenIslandDefault"],
+        source: "asset_library",
+      },
+    ],
+    [segment({ runwayUri: null })],
+  );
+
+  assert.deepEqual(readiness[0]?.missingApprovedReferences, []);
+  assert.deepEqual(readiness[0]?.missingRunwayUploads, []);
+});
+
 function segment(input: { runwayUri: string | null }): SeedanceSegment {
   return {
     id: "segment-1",

@@ -290,13 +290,25 @@ async function buildRecipeReviewItem(input: {
  * actions on them anyway.
  */
 function librarytoReference(entry: AssetLibraryEntry): ReferenceAsset {
+  // We display the friendlier alias (typically PascalCase, e.g.
+  // `KitchenIslandDefault`) when available because that's how the agent
+  // names the reference in storyboards and prompts. The canonical name
+  // (snake_case storage key) is preserved in `aliases` so the matcher can
+  // still recognize segments that point at it directly.
   const primaryName = entry.aliases[0] ?? entry.canonicalName;
+  const otherAliases = entry.aliases.filter((alias) => alias !== primaryName);
+  const aliases = [
+    ...(primaryName === entry.canonicalName ? [] : [entry.canonicalName]),
+    ...otherAliases,
+  ];
+
   return {
     id: entry.id,
     videoId: null,
     mediaAssetId: entry.mediaAssetId,
     type: entry.category,
     canonicalName: primaryName,
+    aliases,
     source: "asset_library",
     runwayUri: null,
     prompt: entry.description,

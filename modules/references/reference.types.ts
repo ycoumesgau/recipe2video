@@ -7,6 +7,14 @@ export interface ReferenceAsset {
   mediaAssetId?: string | null;
   type: string;
   canonicalName: string;
+  /**
+   * Alternative names. Library globals expose every `asset_library.aliases`
+   * entry here so the matcher can recognize a segment that declared the
+   * reference via its alias (`KitchenIslandDefault`) even though the
+   * canonical is the snake_case storage name (`island_default`). Recipe-
+   * specific entries leave this empty.
+   */
+  aliases?: string[];
   source: string;
   runwayUri?: string | null;
   prompt?: string | null;

@@ -29,6 +29,9 @@ function seedanceRef(
     role?: string;
     required?: boolean;
     source?: "asset_library" | "reference_assets";
+    aliases?: string[];
+    fileSizeBytes?: number;
+    mimeType?: string | null;
   } = {},
 ): SegmentSeedanceReferenceInput {
   return {
@@ -36,23 +39,30 @@ function seedanceRef(
     role: options.role ?? "global Licorn kitchen environment",
     required: options.required ?? true,
     canonicalName,
+    aliases: options.aliases ?? [],
     uri,
     source: options.source ?? "asset_library",
+    fileSizeBytes: options.fileSizeBytes,
+    mimeType: options.mimeType,
   };
 }
 
-test("buildSeedanceGenerationInput maps resolved JIT URLs to Runway's promptImage + references[]", () => {
-  // Pure mapping test for the JIT-resolver -> Runway boundary: the lowest
-  // position becomes `promptImage`, the rest become `references[]` in order.
-  // Ordering matters because Seedance's `references[].role` is positional in
-  // our prompt template.
+test("buildSeedanceGenerationInput maps every resolved JIT URL into Runway's references[] in position order", () => {
+  // Pure mapping test for the JIT-resolver -> Runway boundary. Seedance 2
+  // exposes image references EXCLUSIVELY through `text_to_video` with a
+  // top-level `references[]` array (image_to_video rejects that field with
+  // `unrecognized_keys: ["references"]`). Every resolved reference therefore
+  // flows into `references[]` in `position` order; we never write to
+  // `promptImage`. Ordering matters because Seedance's prompt template
+  // addresses references positionally (`@KitchenIslandDefault`, then state
+  // and pose references).
   const input = buildSeedanceGenerationInput(
     {
       id: "segment-x",
       videoId: "video-x",
       title: "Hook",
-      prompt: "Generate a 4s hard cut",
-      durationTarget: 4,
+      prompt: "Generate a 5s hard cut",
+      durationTarget: 5,
     } as unknown as SeedanceSegment,
     [
       seedanceRef("Whisk", "https://signed/whisk.png", { position: 2 }),
@@ -66,27 +76,30 @@ test("buildSeedanceGenerationInput maps resolved JIT URLs to Runway's promptImag
     ],
   );
 
-  assert.equal(input.promptImage, "https://signed/kitchen.png");
+  assert.equal(input.promptImage, undefined);
   assert.deepEqual(input.references, [
+    { type: "image", uri: "https://signed/kitchen.png" },
     { type: "image", uri: "https://signed/baked.png" },
     { type: "image", uri: "https://signed/whisk.png" },
   ]);
 });
 
-test("buildSeedanceGenerationInput returns undefined references[] when only the prompt image is present", () => {
+test("buildSeedanceGenerationInput puts a single reference into references[] (not promptImage)", () => {
   const input = buildSeedanceGenerationInput(
     {
       id: "segment-x",
       videoId: "video-x",
       title: "Hook",
-      prompt: "Generate a 4s hard cut",
-      durationTarget: 4,
+      prompt: "Generate a 5s hard cut",
+      durationTarget: 5,
     } as unknown as SeedanceSegment,
     [seedanceRef("KitchenIslandDefault", "https://signed/kitchen.png")],
   );
 
-  assert.equal(input.promptImage, "https://signed/kitchen.png");
-  assert.equal(input.references, undefined);
+  assert.equal(input.promptImage, undefined);
+  assert.deepEqual(input.references, [
+    { type: "image", uri: "https://signed/kitchen.png" },
+  ]);
 });
 
 const baseSegment: SeedanceSegment = {
@@ -99,9 +112,9 @@ const baseSegment: SeedanceSegment = {
   logicalSceneIds: ["scene-1"],
   description: "Glossy cream detail.",
   prompt:
-    "Use @KitchenIslandDefault only as global kitchen. Generate exactly 2 shots with hard cuts, total duration 4 seconds, no speech, no voiceover, no music.",
+    "Use @KitchenIslandDefault only as global kitchen. Generate exactly 2 shots with hard cuts, total duration 5 seconds, no speech, no voiceover, no music.",
   promptInitial:
-    "Use @KitchenIslandDefault only as global kitchen. Generate exactly 2 shots with hard cuts, total duration 4 seconds, no speech, no voiceover, no music.",
+    "Use @KitchenIslandDefault only as global kitchen. Generate exactly 2 shots with hard cuts, total duration 5 seconds, no speech, no voiceover, no music.",
   references: [
     {
       id: "ref-kitchen",
@@ -130,7 +143,7 @@ const baseSegment: SeedanceSegment = {
     nonStandardGeometryHandled: true,
     sourcePoliciesApplied: [],
   },
-  durationTarget: 4,
+  durationTarget: 5,
   status: "ready",
   selectedGenerationId: null,
   createdBy: "user-1",
@@ -192,7 +205,7 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
         generationInputs.push(input);
         return {
           id: "task-1",
-          endpoint: "image_to_video",
+          endpoint: "text_to_video",
           generationStatus: "queued",
         };
       },
@@ -210,7 +223,10 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
   assert.deepEqual(segmentStatuses, ["queued", "generating"]);
   assert.deepEqual(sentEvents, ["segment.generation.poll.requested"]);
   assert.deepEqual(costOperations, ["seedance_segment_generation_started"]);
-  assert.equal(generationInputs[0]?.promptImage, "https://signed.test/kitchen.png");
+  assert.equal(generationInputs[0]?.promptImage, undefined);
+  assert.deepEqual(generationInputs[0]?.references, [
+    { type: "image", uri: "https://signed.test/kitchen.png" },
+  ]);
   assert.equal(generationInputs[0]?.ratio, RUNWAY_DEFAULT_VIDEO_RATIO);
 });
 
@@ -308,7 +324,7 @@ test("requestSegmentGenerationWorkflow uses JIT signed URLs from the resolver", 
         generationInputs.push(input);
         return {
           id: "task-1",
-          endpoint: "image_to_video",
+          endpoint: "text_to_video",
           generationStatus: "queued",
         };
       },
@@ -317,10 +333,147 @@ test("requestSegmentGenerationWorkflow uses JIT signed URLs from the resolver", 
     },
   );
 
-  assert.equal(generationInputs[0]?.promptImage, "https://signed.test/kitchen.png");
+  assert.equal(generationInputs[0]?.promptImage, undefined);
   assert.deepEqual(generationInputs[0]?.references, [
+    { type: "image", uri: "https://signed.test/kitchen.png" },
     { type: "image", uri: "https://signed.test/raw-choux.png" },
   ]);
+});
+
+test("requestSegmentGenerationWorkflow accepts the agent's PascalCase alias when the resolver returns the snake_case canonical", async () => {
+  // Regression for the "Chicken Enchiladas" project: every reference was
+  // wired correctly through `segment_references`, but the validator
+  // compared `segment.references[].name = "KitchenIslandDefault"` against
+  // `resolver.canonicalName = "island_default"` with a plain toLowerCase
+  // and threw `... could not be resolved ...`, blocking generation. Once
+  // the resolver surfaces aliases and the validator normalizes both sides,
+  // the same data must flow through.
+  const segmentStatuses: string[] = [];
+
+  await requestSegmentGenerationWorkflow(
+    {
+      segmentId: "segment-1",
+      requestedByUserId: "user-1",
+      isAllowlisted: true,
+    },
+    {
+      isGenerationQueuePaused: () => false,
+      getSegmentById: async () => ({
+        ...baseSegment,
+        references: [
+          {
+            id: "ref-kitchen",
+            role: "global Licorn kitchen environment",
+            name: "KitchenIslandDefault",
+            label: "KitchenIslandDefault",
+            runwayUri: null,
+            required: true,
+          },
+          {
+            id: "ref-pose",
+            role: "top-down hands pose",
+            name: "PoseTopDown",
+            label: "PoseTopDown",
+            runwayUri: null,
+            required: true,
+          },
+        ],
+      }),
+      getVideoProjectById: async () => baseVideo,
+      resolveSegmentSeedanceReferences: async () => [
+        seedanceRef("island_default", "https://signed.test/island.png", {
+          position: 0,
+          aliases: ["KitchenIslandDefault"],
+        }),
+        seedanceRef("Luma-topDown-pose", "https://signed.test/pose.png", {
+          position: 1,
+          role: "top-down hands pose",
+          aliases: ["PoseTopDown"],
+        }),
+      ],
+      updateSegmentStatus: async (_segmentId, status) => {
+        segmentStatuses.push(status);
+        return { ...baseSegment, status };
+      },
+      createGeneration: async () => ({
+        ...baseGeneration,
+        id: "generation-1",
+        runwayTaskId: "task-1",
+        status: "queued",
+      }),
+      startSeedanceGeneration: async () => ({
+        id: "task-1",
+        endpoint: "text_to_video",
+        generationStatus: "queued",
+      }),
+      logCost: async (input) => baseCostLog(input.operation),
+      sendEvent: async () => {},
+    },
+  );
+
+  assert.deepEqual(segmentStatuses, ["queued", "generating"]);
+});
+
+test("requestSegmentGenerationWorkflow detects the global kitchen reference via its alias", async () => {
+  // The previous implementation derived "kitchen presence" from the
+  // canonicalName + role haystack only. `island_default` happens to contain
+  // "island", but a future rename to `bg_main` would silently break the
+  // check; the alias `KitchenIslandDefault` should keep it working.
+  let createdGeneration = false;
+
+  await requestSegmentGenerationWorkflow(
+    {
+      segmentId: "segment-1",
+      requestedByUserId: "user-1",
+      isAllowlisted: true,
+    },
+    {
+      isGenerationQueuePaused: () => false,
+      getSegmentById: async () => ({
+        ...baseSegment,
+        references: [
+          {
+            id: "ref-kitchen",
+            role: "primary backdrop",
+            name: "KitchenIslandDefault",
+            label: "KitchenIslandDefault",
+            runwayUri: null,
+            required: true,
+          },
+        ],
+      }),
+      getVideoProjectById: async () => baseVideo,
+      resolveSegmentSeedanceReferences: async () => [
+        seedanceRef("bg_main", "https://signed.test/bg.png", {
+          position: 0,
+          role: "primary backdrop",
+          aliases: ["KitchenIslandDefault"],
+        }),
+      ],
+      updateSegmentStatus: async (_segmentId, status) => ({
+        ...baseSegment,
+        status,
+      }),
+      createGeneration: async () => {
+        createdGeneration = true;
+        return {
+          ...baseGeneration,
+          id: "generation-1",
+          runwayTaskId: "task-1",
+          status: "queued",
+        };
+      },
+      startSeedanceGeneration: async () => ({
+        id: "task-1",
+        endpoint: "text_to_video",
+        generationStatus: "queued",
+      }),
+      logCost: async (input) => baseCostLog(input.operation),
+      sendEvent: async () => {},
+    },
+  );
+
+  assert.equal(createdGeneration, true);
 });
 
 test("requestSegmentGenerationWorkflow blocks when required reference asset is not uploaded", async () => {
@@ -430,6 +583,140 @@ test("requestSegmentGenerationWorkflow blocks when Seedance reference limit is e
   );
 
   assert.deepEqual(segmentStatuses, ["blocked"]);
+});
+
+test("requestSegmentGenerationWorkflow blocks when a reference exceeds Runway's 16MB per-asset cap", async () => {
+  // Regression for the Recipe2Video kitchen library: high-detail PNGs in
+  // `library/kitchen/*` ship at ~17 MB and Runway rejects them with a
+  // generic "Asset size exceeds 16.0MB" 400 after queueing the task. We
+  // now pre-flight against `media_assets.file_size_bytes` and refuse the
+  // segment with a precise, operator-actionable message.
+  const segmentStatuses: string[] = [];
+
+  await assert.rejects(
+    () =>
+      requestSegmentGenerationWorkflow(
+        {
+          segmentId: "segment-1",
+          requestedByUserId: "user-1",
+          isAllowlisted: true,
+        },
+        {
+          isGenerationQueuePaused: () => false,
+          getSegmentById: async () => baseSegment,
+          getVideoProjectById: async () => baseVideo,
+          resolveSegmentSeedanceReferences: async () => [
+            seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png", {
+              position: 0,
+              fileSizeBytes: 9 * 1024 * 1024,
+              mimeType: "image/png",
+            }),
+            seedanceRef("InductionLeftCloseup", "https://signed.test/induction.png", {
+              position: 1,
+              fileSizeBytes: 17_153_462,
+              mimeType: "image/png",
+            }),
+          ],
+          updateSegmentStatus: async (_segmentId, status) => {
+            segmentStatuses.push(status);
+            return { ...baseSegment, status };
+          },
+          createGeneration: async () => {
+            throw new Error("generation should not be created");
+          },
+          startSeedanceGeneration: async () => {
+            throw new Error("Runway should not be called");
+          },
+          logCost: async (input) => baseCostLog(input.operation),
+          sendEvent: async () => {},
+        },
+      ),
+    /16\.0MB-per-asset limit[\s\S]*InductionLeftCloseup \(16\.36MB image\/png\)/,
+  );
+
+  assert.deepEqual(segmentStatuses, ["blocked"]);
+});
+
+test("requestSegmentGenerationWorkflow blocks when segment duration is below Seedance 2's 5s minimum", async () => {
+  // Regression for the Recipe2Video pipeline producing 4s outro segments:
+  // Runway rejected those generations as a generic "Validation of body
+  // failed" 400, which was hard to diagnose. The orchestrator now refuses
+  // upfront with the exact constraint so the operator can fix the storyboard.
+  const segmentStatuses: string[] = [];
+
+  await assert.rejects(
+    () =>
+      requestSegmentGenerationWorkflow(
+        {
+          segmentId: "segment-1",
+          requestedByUserId: "user-1",
+          isAllowlisted: true,
+        },
+        {
+          isGenerationQueuePaused: () => false,
+          getSegmentById: async () => ({
+            ...baseSegment,
+            durationTarget: 4,
+          }),
+          getVideoProjectById: async () => baseVideo,
+          resolveSegmentSeedanceReferences: async () => [
+            seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png"),
+          ],
+          updateSegmentStatus: async (_segmentId, status) => {
+            segmentStatuses.push(status);
+            return { ...baseSegment, status };
+          },
+          createGeneration: async () => {
+            throw new Error("generation should not be created");
+          },
+          startSeedanceGeneration: async () => {
+            throw new Error("Runway should not be called");
+          },
+          logCost: async (input) => baseCostLog(input.operation),
+          sendEvent: async () => {},
+        },
+      ),
+    /Seedance 2 only accepts integer durations between 5s and 15s/,
+  );
+
+  assert.deepEqual(segmentStatuses, ["blocked"]);
+});
+
+test("requestSegmentGenerationWorkflow blocks when segment duration exceeds Seedance 2's 15s ceiling", async () => {
+  await assert.rejects(
+    () =>
+      requestSegmentGenerationWorkflow(
+        {
+          segmentId: "segment-1",
+          requestedByUserId: "user-1",
+          isAllowlisted: true,
+        },
+        {
+          isGenerationQueuePaused: () => false,
+          getSegmentById: async () => ({
+            ...baseSegment,
+            durationTarget: 16,
+          }),
+          getVideoProjectById: async () => baseVideo,
+          resolveSegmentSeedanceReferences: async () => [
+            seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png"),
+          ],
+          updateSegmentStatus: async (_segmentId, status) => ({
+            ...baseSegment,
+            status,
+          }),
+          createGeneration: async () => {
+            throw new Error("generation should not be created");
+          },
+          startSeedanceGeneration: async () => {
+            throw new Error("Runway should not be called");
+          },
+          logCost: async (input) => baseCostLog(input.operation),
+          sendEvent: async () => {},
+        },
+      ),
+    /between 5s and 15s/,
+  );
 });
 
 test("pollSegmentGenerationWorkflow persists a succeeded task and requests output persistence", async () => {

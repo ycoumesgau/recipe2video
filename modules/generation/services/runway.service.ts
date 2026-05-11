@@ -216,6 +216,18 @@ export function mapRunwayStatusToGenerationStatus(
   }
 }
 
+/**
+ * Resolves the correct Seedance endpoint based on the input shape.
+ *
+ * Seedance 2 exposes the top-level `references[]` array EXCLUSIVELY on
+ * `text_to_video` (up to 9 image references). The `image_to_video` endpoint
+ * uses `promptImage` for first/last keyframes and rejects any extra
+ * `references` field with `unrecognized_keys: ["references"]`. We therefore
+ * route a `references[]`-only payload (Recipe2Video's standard mode) to
+ * `text_to_video` regardless of how many references it carries.
+ *
+ * Source: https://docs.dev.runwayml.com/guides/seedance/
+ */
 function getSeedanceEndpoint(
   input: SeedanceGenerationInput,
   references: RunwaySeedanceReference[],
@@ -228,11 +240,11 @@ function getSeedanceEndpoint(
     });
   }
 
-  if (references.length > 0 && !input.promptImage && !input.promptVideo) {
+  if (input.promptImage && references.length > 0) {
     throw new RunwayServiceError({
       code: "invalid_input",
       message:
-        "Seedance references mode requires promptImage or promptVideo alongside references.",
+        "Seedance image_to_video does not support a top-level references[] array; pass keyframes via promptImage only.",
       retryable: false,
     });
   }
@@ -268,21 +280,25 @@ function buildSeedanceRequestBody(
   }
 
   if (endpoint === "image_to_video") {
-    assertReferencesAreNotMixedWithKeyframes(input.promptImage, references);
-
+    // image_to_video is Seedance 2's keyframe mode: `promptImage` may be a
+    // single uri (start frame) or a `[first, last]` keyframe pair. The
+    // top-level `references` array is NOT accepted here and must be empty.
     return stripUndefined({
       ...base,
       promptImage: normalizePromptImage(input.promptImage),
-      references: references.length > 0 ? references : undefined,
       duration: input.durationSeconds,
       ratio: input.ratio ?? RUNWAY_DEFAULT_VIDEO_RATIO,
     });
   }
 
+  // text_to_video is Seedance 2's "References Pack" mode: up to 9 image
+  // references in `references[]`, no source frame. This is the path used by
+  // Recipe2Video's segment generator.
   return stripUndefined({
     ...base,
     duration: input.durationSeconds,
     ratio: input.ratio ?? RUNWAY_DEFAULT_VIDEO_RATIO,
+    references: references.length > 0 ? references : undefined,
   });
 }
 
@@ -360,20 +376,6 @@ function normalizePromptImage(promptImage: RunwayPromptImage | undefined) {
     uri: normalizeRunwayUriOrHttpsUrl(image.uri, "promptImage.uri"),
     position: image.position,
   }));
-}
-
-function assertReferencesAreNotMixedWithKeyframes(
-  promptImage: RunwayPromptImage | undefined,
-  references: RunwaySeedanceReference[],
-) {
-  if (Array.isArray(promptImage) && references.length > 0) {
-    throw new RunwayServiceError({
-      code: "invalid_input",
-      message:
-        "Seedance image-to-video references mode cannot be mixed with first/last frame promptImage arrays.",
-      retryable: false,
-    });
-  }
 }
 
 function mapRunwayTask(task: TaskRetrieveResponse): RunwayTaskStatus {

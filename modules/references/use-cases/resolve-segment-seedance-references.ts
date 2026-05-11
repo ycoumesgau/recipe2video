@@ -28,8 +28,32 @@ export interface SeedanceReferenceInput {
    */
   uri: string;
   canonicalName: string;
+  /**
+   * Every other name this reference is known by. Library entries surface
+   * their `aliases[]` here (e.g. `["KitchenIslandDefault"]` for
+   * `island_default`); recipe-specific entries return an empty array. The
+   * downstream validator uses this list to match against the alias the agent
+   * wrote in `segments.references[].name`, which is rarely the canonical
+   * name. Without this, the validator rejects perfectly-wired data.
+   */
+  aliases: string[];
   /** Source we resolved from, useful for logging and debugging. */
   source: "asset_library" | "reference_assets";
+  /**
+   * Stored size of the reference media in bytes. Surfaced so the orchestrator
+   * can enforce Runway's 16 MB-per-reference cap before issuing a request:
+   * we'd otherwise wait for Runway to download the asset and respond with a
+   * generic 400 ("Asset size exceeds 16.0MB"), wasting both queue time and
+   * Inngest retries. May be 0 if the underlying media_assets row has no size
+   * recorded yet (the validator treats that as "unknown" and lets it pass).
+   */
+  fileSizeBytes: number;
+  /**
+   * Stored MIME type of the reference media. Useful for the operator-facing
+   * error message when the size cap is breached so they know whether to
+   * convert (PNG -> JPEG) or just resize.
+   */
+  mimeType: string | null;
 }
 
 type SegmentReferenceJoinRow = {
@@ -44,6 +68,7 @@ type SegmentReferenceJoinRow = {
     | {
         id: string;
         canonical_name: string;
+        aliases: string[] | null;
         media_asset_id: string | null;
       }
     | null;
@@ -58,7 +83,7 @@ type SegmentReferenceJoinRow = {
 
 type MediaAssetStoragePick = Pick<
   Database["public"]["Tables"]["media_assets"]["Row"],
-  "id" | "storage_bucket" | "storage_path"
+  "id" | "storage_bucket" | "storage_path" | "file_size_bytes" | "mime_type"
 >;
 
 /**
@@ -84,7 +109,7 @@ export async function resolveSegmentSeedanceReferences(
   const { data: links, error } = await supabase
     .from("segment_references")
     .select(
-      "id, segment_id, position, role, required, library_asset_id, recipe_reference_id, asset_library:asset_library!segment_references_library_asset_id_fkey(id, canonical_name, media_asset_id), reference_assets:reference_assets!segment_references_recipe_reference_id_fkey(id, canonical_name, media_asset_id)",
+      "id, segment_id, position, role, required, library_asset_id, recipe_reference_id, asset_library:asset_library!segment_references_library_asset_id_fkey(id, canonical_name, aliases, media_asset_id), reference_assets:reference_assets!segment_references_recipe_reference_id_fkey(id, canonical_name, media_asset_id)",
     )
     .eq("segment_id", segmentId)
     .order("position", { ascending: true });
@@ -136,13 +161,22 @@ export async function resolveSegmentSeedanceReferences(
       expiresInSeconds: RUNWAY_SIGNED_URL_TTL_SECONDS,
     });
 
+    const aliases = isLibrary
+      ? Array.isArray(row.asset_library?.aliases)
+        ? row.asset_library!.aliases
+        : []
+      : [];
+
     results.push({
       position: row.position,
       role: row.role,
       required: row.required,
       canonicalName: joined.canonical_name,
+      aliases,
       uri,
       source: isLibrary ? "asset_library" : "reference_assets",
+      fileSizeBytes: storage.file_size_bytes ?? 0,
+      mimeType: storage.mime_type ?? null,
     });
   }
 
@@ -160,7 +194,7 @@ async function fetchMediaAssetStorageLocations(
 
   const { data, error } = await supabase
     .from("media_assets")
-    .select("id, storage_bucket, storage_path")
+    .select("id, storage_bucket, storage_path, file_size_bytes, mime_type")
     .in("id", mediaAssetIds);
 
   throwIfSupabaseError(error, "fetchMediaAssetStorageLocations failed");
