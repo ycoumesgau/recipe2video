@@ -30,6 +30,14 @@ import type {
 
 import { AudioClipWaveform } from "./audio-clip-waveform";
 
+/**
+ * Optional pre-computed waveform peaks keyed by audio mediaAssetId. Used by
+ * the demo route to render a non-flat waveform without depending on
+ * cross-origin audio. The production page does not pass this map, so
+ * wavesurfer fetches and decodes audio from the Supabase signed URL.
+ */
+type PeaksByMediaAsset = Record<string, number[] | Float32Array>;
+
 const TRACK_RULER_HEIGHT = 28;
 const VIDEO_TRACK_HEIGHT = 84;
 const AUDIO_TRACK_HEIGHT = 84;
@@ -93,6 +101,11 @@ export interface TimelineEditorProps {
   fps: number;
   onAudioClipsChange: (clips: AssemblyAudioClip[]) => void;
   onSegmentsChange: (segments: AssemblySegmentClip[]) => void;
+  /**
+   * Optional pre-computed peaks for audio waveform rendering. Indexed by
+   * `AssemblyAudioTrack.mediaAssetId`. Mostly used by the demo route.
+   */
+  peaksByMediaAsset?: PeaksByMediaAsset;
   playerRef: React.RefObject<PlayerRef | null>;
   segments: AssemblySegmentClip[];
 }
@@ -103,6 +116,7 @@ export function TimelineEditor({
   fps,
   onAudioClipsChange,
   onSegmentsChange,
+  peaksByMediaAsset,
   playerRef,
   segments,
 }: TimelineEditorProps) {
@@ -774,6 +788,7 @@ export function TimelineEditor({
                         onPointerDown={(event, mode) =>
                           handleAudioPointerDown(event, clip.id, mode)
                         }
+                        peaks={peaksByMediaAsset?.[audioTrack.mediaAssetId]}
                         pxPerSecond={pxPerSecond}
                         widthPx={widthPx}
                       />
@@ -915,8 +930,9 @@ function SegmentClipBox({
   return (
     <div
       className={cn(
-        "absolute top-1 flex h-[calc(100%-8px)] cursor-grab items-stretch rounded-md border bg-blue-500/15 text-blue-100 transition-shadow",
-        isSelected && "border-blue-300 shadow-[0_0_0_2px_rgba(96,165,250,0.45)]",
+        "absolute top-1 flex h-[calc(100%-8px)] cursor-grab items-stretch rounded-md border border-blue-500/40 bg-blue-500/30 transition-shadow",
+        isSelected &&
+          "border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.55)]",
       )}
       onPointerDown={(event) => onPointerDown(event, "move")}
       style={{ left: leftPx, width: widthPx } satisfies CSSProperties}
@@ -925,9 +941,9 @@ function SegmentClipBox({
         onPointerDown={(event) => onPointerDown(event, "trim-left")}
         side="left"
       />
-      <div className="flex min-w-0 flex-1 flex-col justify-between px-2 py-1 text-[11px]">
-        <div className="truncate font-medium text-blue-50">{segment.title}</div>
-        <div className="truncate text-blue-200/70 tabular-nums">
+      <div className="flex min-w-0 flex-1 flex-col justify-between px-2 py-1 text-[11px] text-foreground">
+        <div className="truncate font-medium">{segment.title}</div>
+        <div className="truncate tabular-nums text-foreground/70">
           {trimmedDuration.toFixed(1)}s · in {segment.inSeconds.toFixed(1)}s ·
           out {segment.outSeconds.toFixed(1)}s
         </div>
@@ -946,6 +962,7 @@ function AudioClipBox({
   isSelected,
   leftPx,
   onPointerDown,
+  peaks,
   pxPerSecond,
   widthPx,
 }: {
@@ -957,6 +974,7 @@ function AudioClipBox({
     event: ReactPointerEvent<HTMLDivElement>,
     mode: "move" | "trim-left" | "trim-right" | "fade-in" | "fade-out",
   ) => void;
+  peaks?: number[] | Float32Array;
   pxPerSecond: number;
   widthPx: number;
 }) {
@@ -972,8 +990,9 @@ function AudioClipBox({
   return (
     <div
       className={cn(
-        "absolute top-1 flex h-[calc(100%-8px)] cursor-grab items-stretch overflow-hidden rounded-md border bg-rose-500/15 text-rose-100",
-        isSelected && "border-rose-300 shadow-[0_0_0_2px_rgba(251,113,133,0.45)]",
+        "absolute top-1 flex h-[calc(100%-8px)] cursor-grab items-stretch overflow-hidden rounded-md border border-rose-500/40 bg-rose-500/25",
+        isSelected &&
+          "border-rose-500 shadow-[0_0_0_2px_rgba(244,63,94,0.55)]",
       )}
       onPointerDown={(event) => onPointerDown(event, "move")}
       style={{ left: leftPx, width: widthPx } satisfies CSSProperties}
@@ -982,6 +1001,7 @@ function AudioClipBox({
         durationSeconds={audioTrack.durationSeconds ?? clip.outSeconds}
         inSeconds={clip.inSeconds}
         outSeconds={clip.outSeconds}
+        peaks={peaks}
         pxPerSecond={pxPerSecond}
         sourceUrl={audioTrack.sourceUrl}
       />
@@ -989,11 +1009,9 @@ function AudioClipBox({
         onPointerDown={(event) => onPointerDown(event, "trim-left")}
         side="left"
       />
-      <div className="relative flex min-w-0 flex-1 flex-col justify-between px-2 py-1 text-[11px]">
-        <div className="truncate font-medium text-rose-50">
-          {audioTrack.title}
-        </div>
-        <div className="truncate text-rose-200/80 tabular-nums">
+      <div className="relative flex min-w-0 flex-1 flex-col justify-between px-2 py-1 text-[11px] text-foreground">
+        <div className="truncate font-medium">{audioTrack.title}</div>
+        <div className="truncate tabular-nums text-foreground/70">
           {trimmedDuration.toFixed(1)}s · vol {Math.round(clip.volume * 100)}%
         </div>
       </div>
@@ -1045,25 +1063,40 @@ function FadeHandle({
   side: "left" | "right";
   widthPx: number;
 }) {
-  if (widthPx <= 1) {
-    return null;
-  }
+  // Always render a small grabber so the user can initiate a fade by
+  // dragging from the corner, even when no fade is set yet. When the fade is
+  // already non-zero, render a wider gradient strip so the visual extent of
+  // the fade is obvious.
+  const gripHandleWidth = 16;
   return (
-    <div
-      aria-label={side === "left" ? "Fade in" : "Fade out"}
-      className={cn(
-        "pointer-events-auto absolute top-0 h-full cursor-pointer",
-        side === "left" ? "left-0" : "right-0",
-      )}
-      onPointerDown={onPointerDown}
-      style={{
-        background:
-          side === "left"
-            ? "linear-gradient(to right, rgba(0,0,0,0.55), rgba(0,0,0,0))"
-            : "linear-gradient(to left, rgba(0,0,0,0.55), rgba(0,0,0,0))",
-        width: widthPx,
-      }}
-    />
+    <>
+      {widthPx > 1 ? (
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute top-0 h-full",
+            side === "left" ? "left-0" : "right-0",
+          )}
+          style={{
+            background:
+              side === "left"
+                ? "linear-gradient(to right, rgba(0,0,0,0.55), rgba(0,0,0,0))"
+                : "linear-gradient(to left, rgba(0,0,0,0.55), rgba(0,0,0,0))",
+            width: widthPx,
+          }}
+        />
+      ) : null}
+      <div
+        aria-label={side === "left" ? "Fade in" : "Fade out"}
+        className={cn(
+          "pointer-events-auto absolute top-0 z-10 h-3 cursor-pointer rounded-sm bg-foreground/70 transition-colors hover:bg-foreground",
+          side === "left" ? "left-1" : "right-1",
+        )}
+        onPointerDown={onPointerDown}
+        style={{ width: gripHandleWidth, height: 10 }}
+        title={side === "left" ? "Drag to fade in" : "Drag to fade out"}
+      />
+    </>
   );
 }
 
