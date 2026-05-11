@@ -13,7 +13,35 @@ export interface AssemblyAudioSync {
   fadeOutSeconds: number;
 }
 
+/**
+ * A persisted reference to a Seedance segment placed on the timeline.
+ *
+ * The same `segmentId` may appear in multiple placements with different
+ * `[inSeconds, outSeconds]` windows — that's the whole point of the
+ * placements model and what makes split / middle-cut workflows possible.
+ *
+ * See `docs/assembly-segment-placements-plan.md` for the rationale.
+ */
+export interface SegmentPlacement {
+  /** Stable id for this placement on the timeline. UUID generated client-side. */
+  placementId: string;
+  /** Foreign key to `seedance_segments.id`. May appear in several placements. */
+  segmentId: string;
+  /** Trim window inside the source media, in seconds. */
+  inSeconds: number;
+  outSeconds: number;
+}
+
+/**
+ * Runtime shape the editor reads. Joins a {@link SegmentPlacement} with the
+ * metadata from its source `seedance_segments` row and `media_assets` row.
+ *
+ * Each timeline appearance gets its own `placementId`, so two pieces of the
+ * same source media coexist with the same `segmentId` but distinct trims.
+ */
 export interface AssemblySegmentClip {
+  /** Stable per-placement id. Used as React key + drag discriminator. */
+  placementId: string;
   segmentId: string;
   mediaAssetId: string;
   generationId?: string | null;
@@ -72,18 +100,23 @@ export interface AssemblyRemotionProps {
   audio?: AssemblyAudioTrack | null;
   /** Legacy single-track audio sync, kept for backward compat in the player. */
   audioSync: AssemblyAudioSync;
-  /** Per-segment trim values. Falls back to `[0, durationSeconds]` if missing. */
+  /** Free-positioned audio clips on the timeline. */
   audioClips: AssemblyAudioClip[];
 }
 
 /**
- * Persisted shape of the timeline state inside `compositions.audio_sync`.
- * The column name stays the same to avoid a schema migration; the JSON is
- * a discriminated union: legacy `AssemblyAudioSync` or the new shape.
+ * Persisted shape of the audio side of the timeline state inside
+ * `compositions.audio_sync`. With the placements rollout, per-segment trims
+ * live inline on each {@link SegmentPlacement} instead of in a separate map,
+ * so this shape no longer carries `segmentTrims`.
+ *
+ * Older rows that still have a `segmentTrims` field get read tolerantly by
+ * {@link readPlacementsState} — the field is just consumed once and not
+ * persisted again. Older rows in the bare {@link AssemblyAudioSync} shape
+ * are also still readable (one-off migration to a single audio clip on read).
  */
 export interface AssemblyTimelineState {
   schema: "timeline_v2";
-  segmentTrims: Record<string, { inSeconds: number; outSeconds: number }>;
   audioClips: AssemblyAudioClip[];
 }
 

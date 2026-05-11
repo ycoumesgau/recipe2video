@@ -3,40 +3,46 @@ import test from "node:test";
 
 import type { AssemblySegmentClip } from "./assembly.types";
 import {
-  applySegmentTrims,
+  buildClipsFromPlacements,
   createDefaultAudioClip,
+  defaultPlacementsForSegments,
   getEmptyTimelineState,
   projectLegacyAudioSync,
+  readPlacementsState,
   readTimelineState,
+  serializePlacements,
 } from "./timeline-state";
 
-const buildSegment = (
+const buildSegmentMeta = (
   overrides: Partial<AssemblySegmentClip> = {},
-): AssemblySegmentClip => ({
+): Omit<
+  AssemblySegmentClip,
+  "placementId" | "position" | "inSeconds" | "outSeconds"
+> => ({
   segmentId: overrides.segmentId ?? "seg_1",
   mediaAssetId: overrides.mediaAssetId ?? "asset_1",
   generationId: null,
   title: overrides.title ?? "Segment",
-  position: overrides.position ?? 0,
   durationSeconds: overrides.durationSeconds ?? 5,
-  inSeconds: overrides.inSeconds ?? 0,
-  outSeconds: overrides.outSeconds ?? overrides.durationSeconds ?? 5,
   sourceUrl: "https://example.com/clip.mp4",
   storageBucket: "accepted_clips",
   storagePath: "clip.mp4",
 });
 
+// ---------------------------------------------------------------------------
+// readTimelineState — audio side
+// ---------------------------------------------------------------------------
+
 test("readTimelineState returns empty state on null", () => {
-  assert.deepEqual(
-    readTimelineState(null, {}),
-    getEmptyTimelineState(),
-  );
+  assert.deepEqual(readTimelineState(null, {}), getEmptyTimelineState());
 });
 
-test("readTimelineState parses new schema with segment trims and audio clips", () => {
+test("readTimelineState parses new schema audio clips and ignores any segmentTrims it carries", () => {
   const result = readTimelineState(
     {
       schema: "timeline_v2",
+      // segmentTrims is the legacy post-#77 carrier — ignored by the audio
+      // reader; consumed exclusively by readPlacementsState.
       segmentTrims: { seg_1: { inSeconds: 1, outSeconds: 4 } },
       audioClips: [
         {
@@ -55,12 +61,10 @@ test("readTimelineState parses new schema with segment trims and audio clips", (
   );
 
   assert.equal(result.schema, "timeline_v2");
-  assert.deepEqual(result.segmentTrims, {
-    seg_1: { inSeconds: 1, outSeconds: 4 },
-  });
   assert.equal(result.audioClips.length, 1);
   assert.equal(result.audioClips[0]?.startOnTimelineSeconds, 2);
   assert.equal(result.audioClips[0]?.volume, 0.75);
+  assert.ok(!("segmentTrims" in result));
 });
 
 test("readTimelineState migrates legacy AssemblyAudioSync into one audio clip", () => {
@@ -94,7 +98,6 @@ test("readTimelineState legacy with negative offset clamps to 0", () => {
     },
     { audioMediaAssetId: "asset_legacy", audioDurationSeconds: 30 },
   );
-
   assert.equal(result.audioClips[0]?.startOnTimelineSeconds, 0);
 });
 
@@ -103,7 +106,6 @@ test("readTimelineState legacy without audio asset returns empty audio clips", (
     { offsetSeconds: 0, cutFromSeconds: 0, fadeInSeconds: 0, fadeOutSeconds: 0 },
     {},
   );
-
   assert.deepEqual(result.audioClips, []);
 });
 
@@ -111,44 +113,296 @@ test("readTimelineState drops audio clips without mediaAssetId", () => {
   const result = readTimelineState(
     {
       schema: "timeline_v2",
-      segmentTrims: {},
       audioClips: [{ id: "ghost", inSeconds: 0, outSeconds: 1 }],
     },
     {},
   );
-
   assert.equal(result.audioClips.length, 0);
 });
 
-test("applySegmentTrims clamps negative inSeconds and over-long outSeconds", () => {
-  const result = applySegmentTrims(
-    [buildSegment({ durationSeconds: 5 })],
-    { seg_1: { inSeconds: -1, outSeconds: 50 } },
-  );
+// ---------------------------------------------------------------------------
+// readPlacementsState — three legacy shapes + clamping + orphan drop
+// ---------------------------------------------------------------------------
 
-  assert.equal(result[0]?.inSeconds, 0);
-  assert.equal(result[0]?.outSeconds, 5);
+test("readPlacementsState parses placements_v1 (current shape)", () => {
+  const durations = new Map([
+    ["seg_a", 8],
+    ["seg_b", 5],
+  ]);
+  const result = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_1",
+          segmentId: "seg_a",
+          inSeconds: 0,
+          outSeconds: 4,
+        },
+        {
+          placementId: "p_2",
+          segmentId: "seg_a",
+          inSeconds: 4,
+          outSeconds: 8,
+        },
+        {
+          placementId: "p_3",
+          segmentId: "seg_b",
+          inSeconds: 1,
+          outSeconds: 5,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.equal(result.length, 3);
+  assert.equal(result[0]?.placementId, "p_1");
+  assert.equal(result[1]?.segmentId, "seg_a");
+  assert.equal(result[2]?.outSeconds, 5);
 });
 
-test("applySegmentTrims defaults to full clip when no trim is stored", () => {
-  const result = applySegmentTrims(
-    [buildSegment({ durationSeconds: 7 })],
-    {},
+test("readPlacementsState upgrades the post-#77 'string[] + segmentTrims' shape", () => {
+  const durations = new Map([
+    ["seg_a", 8],
+    ["seg_b", 5],
+  ]);
+  const placements = readPlacementsState(
+    ["seg_a", "seg_b"],
+    {
+      schema: "timeline_v2",
+      segmentTrims: { seg_a: { inSeconds: 0, outSeconds: 4 } },
+      audioClips: [],
+    },
+    durations,
   );
-
-  assert.equal(result[0]?.inSeconds, 0);
-  assert.equal(result[0]?.outSeconds, 7);
+  assert.equal(placements.length, 2);
+  assert.equal(placements[0]?.segmentId, "seg_a");
+  assert.equal(placements[0]?.inSeconds, 0);
+  assert.equal(placements[0]?.outSeconds, 4);
+  // No trim stored for seg_b → defaults to [0, durationSeconds].
+  assert.equal(placements[1]?.segmentId, "seg_b");
+  assert.equal(placements[1]?.inSeconds, 0);
+  assert.equal(placements[1]?.outSeconds, 5);
 });
 
-test("applySegmentTrims keeps a 0.1s minimum window when in >= out", () => {
-  const result = applySegmentTrims(
-    [buildSegment({ durationSeconds: 5 })],
-    { seg_1: { inSeconds: 4, outSeconds: 4 } },
-  );
-
-  const clip = result[0]!;
-  assert.ok(clip.outSeconds - clip.inSeconds >= 0.099);
+test("readPlacementsState upgrades the pre-#77 bare 'string[]' shape", () => {
+  const durations = new Map([
+    ["seg_a", 6],
+    ["seg_b", 3],
+  ]);
+  const placements = readPlacementsState(["seg_a", "seg_b"], null, durations);
+  assert.equal(placements.length, 2);
+  assert.equal(placements[0]?.outSeconds, 6);
+  assert.equal(placements[1]?.outSeconds, 3);
 });
+
+test("readPlacementsState drops placements pointing to a missing segmentId", () => {
+  const durations = new Map([["seg_a", 8]]);
+  const placements = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_1",
+          segmentId: "seg_a",
+          inSeconds: 0,
+          outSeconds: 8,
+        },
+        {
+          placementId: "p_2",
+          segmentId: "seg_ghost",
+          inSeconds: 0,
+          outSeconds: 4,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.equal(placements.length, 1);
+  assert.equal(placements[0]?.segmentId, "seg_a");
+});
+
+test("readPlacementsState clamps stored [in, out] to the source duration", () => {
+  const durations = new Map([["seg_a", 5]]);
+  const [placement] = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_overflow",
+          segmentId: "seg_a",
+          inSeconds: -1,
+          outSeconds: 50,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.ok(placement);
+  assert.equal(placement.inSeconds, 0);
+  assert.equal(placement.outSeconds, 5);
+});
+
+test("readPlacementsState keeps a 0.1s window when stored in >= out", () => {
+  const durations = new Map([["seg_a", 5]]);
+  const [placement] = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_collapsed",
+          segmentId: "seg_a",
+          inSeconds: 4,
+          outSeconds: 4,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.ok(placement);
+  assert.ok(placement.outSeconds - placement.inSeconds >= 0.099);
+});
+
+test("readPlacementsState supports the same segmentId appearing multiple times", () => {
+  const durations = new Map([["seg_a", 8]]);
+  const placements = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_1",
+          segmentId: "seg_a",
+          inSeconds: 0,
+          outSeconds: 3,
+        },
+        {
+          placementId: "p_2",
+          segmentId: "seg_a",
+          inSeconds: 5,
+          outSeconds: 8,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.equal(placements.length, 2);
+  assert.notEqual(placements[0]?.placementId, placements[1]?.placementId);
+  assert.equal(placements[0]?.segmentId, placements[1]?.segmentId);
+});
+
+test("readPlacementsState fills missing placementIds when the persisted JSON omits them", () => {
+  const durations = new Map([["seg_a", 8]]);
+  const placements = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        { segmentId: "seg_a", inSeconds: 0, outSeconds: 3 },
+        { segmentId: "seg_a", inSeconds: 5, outSeconds: 8 },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.equal(placements.length, 2);
+  assert.ok(placements[0]?.placementId);
+  assert.ok(placements[1]?.placementId);
+  assert.notEqual(placements[0]?.placementId, placements[1]?.placementId);
+});
+
+test("readPlacementsState returns an empty list on null input", () => {
+  assert.deepEqual(readPlacementsState(null, null, new Map()), []);
+});
+
+// ---------------------------------------------------------------------------
+// buildClipsFromPlacements
+// ---------------------------------------------------------------------------
+
+test("buildClipsFromPlacements joins placements with segment metadata", () => {
+  const meta = new Map([
+    ["seg_a", buildSegmentMeta({ segmentId: "seg_a", durationSeconds: 8 })],
+  ]);
+  const clips = buildClipsFromPlacements(
+    [
+      { placementId: "p_1", segmentId: "seg_a", inSeconds: 0, outSeconds: 4 },
+      { placementId: "p_2", segmentId: "seg_a", inSeconds: 4, outSeconds: 8 },
+    ],
+    meta,
+  );
+  assert.equal(clips.length, 2);
+  assert.equal(clips[0]?.placementId, "p_1");
+  assert.equal(clips[0]?.position, 0);
+  assert.equal(clips[1]?.position, 1);
+  assert.equal(clips[0]?.segmentId, clips[1]?.segmentId);
+});
+
+test("buildClipsFromPlacements drops placements whose segment metadata is missing", () => {
+  const meta = new Map([
+    ["seg_a", buildSegmentMeta({ segmentId: "seg_a", durationSeconds: 5 })],
+  ]);
+  const clips = buildClipsFromPlacements(
+    [
+      { placementId: "p_1", segmentId: "seg_a", inSeconds: 0, outSeconds: 5 },
+      { placementId: "p_orphan", segmentId: "seg_x", inSeconds: 0, outSeconds: 5 },
+    ],
+    meta,
+  );
+  assert.equal(clips.length, 1);
+  assert.equal(clips[0]?.placementId, "p_1");
+});
+
+test("buildClipsFromPlacements clamps trims that overflow the source", () => {
+  const meta = new Map([
+    ["seg_a", buildSegmentMeta({ segmentId: "seg_a", durationSeconds: 4 })],
+  ]);
+  const [clip] = buildClipsFromPlacements(
+    [
+      {
+        placementId: "p_overflow",
+        segmentId: "seg_a",
+        inSeconds: -1,
+        outSeconds: 99,
+      },
+    ],
+    meta,
+  );
+  assert.ok(clip);
+  assert.equal(clip.inSeconds, 0);
+  assert.equal(clip.outSeconds, 4);
+});
+
+// ---------------------------------------------------------------------------
+// defaultPlacementsForSegments + serializePlacements
+// ---------------------------------------------------------------------------
+
+test("defaultPlacementsForSegments creates 1:1 placements covering full duration", () => {
+  const placements = defaultPlacementsForSegments([
+    { segmentId: "seg_a", durationSeconds: 6 },
+    { segmentId: "seg_b", durationSeconds: 4 },
+  ]);
+  assert.equal(placements.length, 2);
+  assert.equal(placements[0]?.inSeconds, 0);
+  assert.equal(placements[0]?.outSeconds, 6);
+  assert.equal(placements[1]?.outSeconds, 4);
+  assert.notEqual(placements[0]?.placementId, placements[1]?.placementId);
+});
+
+test("serializePlacements emits the placements_v1 wrapper", () => {
+  const json = serializePlacements([
+    { placementId: "p_1", segmentId: "seg_a", inSeconds: 0, outSeconds: 4 },
+  ]);
+  assert.equal(json.schema, "placements_v1");
+  assert.equal(json.placements.length, 1);
+  assert.equal(json.placements[0]?.placementId, "p_1");
+});
+
+// ---------------------------------------------------------------------------
+// projectLegacyAudioSync + createDefaultAudioClip (unchanged behaviour)
+// ---------------------------------------------------------------------------
 
 test("projectLegacyAudioSync returns zero defaults when no clip", () => {
   const sync = projectLegacyAudioSync([]);
@@ -171,7 +425,6 @@ test("projectLegacyAudioSync mirrors the first clip", () => {
       fadeOutSeconds: 1.5,
     },
   ]);
-
   assert.equal(sync.offsetSeconds, 1.25);
   assert.equal(sync.cutFromSeconds, 0.5);
   assert.equal(sync.fadeInSeconds, 0.5);

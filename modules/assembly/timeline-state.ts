@@ -1,14 +1,27 @@
 /**
- * Helpers that read and write the timeline state stored in
- * `compositions.audio_sync`. The JSON column accepts either:
+ * Helpers that read and write the timeline state stored across two columns of
+ * `compositions`:
  *
- *   - The legacy {@link AssemblyAudioSync} shape: a single audio offset / cut /
- *     fade record, no per-segment trims.
- *   - The new {@link AssemblyTimelineState} shape (`schema: 'timeline_v2'`): a
- *     map of per-segment trims and an array of free-positioned audio clips.
+ *   - `compositions.segment_order` — the ordered list of placements on the
+ *     video track. Three persisted shapes are accepted on read (write always
+ *     emits `placements_v1`):
+ *       1. `{ schema: "placements_v1", placements: SegmentPlacement[] }` — new.
+ *       2. `string[]` of segmentIds + an optional `segmentTrims` map carried
+ *          on `audio_sync` (the post-#77 shape).
+ *       3. Bare `string[]` of segmentIds (the pre-#77 shape).
  *
- * Reading must accept both shapes so existing rows keep working without a
- * data migration. Writing always emits the new shape.
+ *   - `compositions.audio_sync` — audio side of the timeline state. Three
+ *     shapes accepted on read:
+ *       1. `{ schema: "timeline_v2", audioClips: AssemblyAudioClip[] }` —
+ *          current new shape (no more `segmentTrims`).
+ *       2. `{ schema: "timeline_v2", segmentTrims: {...}, audioClips: [...] }`
+ *          — the previous post-#77 shape; `segmentTrims` is consumed once by
+ *          {@link readPlacementsState} and not persisted again.
+ *       3. The very old {@link AssemblyAudioSync} shape (a single audio
+ *          offset / cut / fade record) — projected to one audio clip on read.
+ *
+ * Reading must accept all of these so existing rows keep working without a
+ * SQL migration. Writing always emits the new shape.
  */
 
 import type { Json } from "@/shared/supabase/database.types";
@@ -18,9 +31,12 @@ import type {
   AssemblyAudioSync,
   AssemblySegmentClip,
   AssemblyTimelineState,
+  SegmentPlacement,
 } from "./assembly.types";
 
 const TIMELINE_SCHEMA = "timeline_v2" as const;
+const PLACEMENTS_SCHEMA = "placements_v1" as const;
+const MIN_TRIM_WINDOW = 0.1;
 
 export function getDefaultAudioSync(): AssemblyAudioSync {
   return {
@@ -34,15 +50,17 @@ export function getDefaultAudioSync(): AssemblyAudioSync {
 export function getEmptyTimelineState(): AssemblyTimelineState {
   return {
     schema: TIMELINE_SCHEMA,
-    segmentTrims: {},
     audioClips: [],
   };
 }
 
 /**
- * Decode whatever sits inside `compositions.audio_sync` into the new
- * timeline shape, deriving a single audio clip from the legacy fields
- * when applicable.
+ * Decode whatever sits inside `compositions.audio_sync` into the new audio
+ * timeline shape, deriving a single audio clip from the legacy fields when
+ * applicable. Note: this function does NOT carry `segmentTrims` anymore;
+ * those live inside the placements column. Use
+ * {@link readPlacementsState} to materialise placements and apply legacy
+ * trims to them.
  */
 export function readTimelineState(
   value: Json | null | undefined,
@@ -58,12 +76,11 @@ export function readTimelineState(
   if (value.schema === TIMELINE_SCHEMA) {
     return {
       schema: TIMELINE_SCHEMA,
-      segmentTrims: readSegmentTrims(value.segmentTrims),
       audioClips: readAudioClips(value.audioClips),
     };
   }
 
-  // Legacy shape: { offsetSeconds, cutFromSeconds, fadeInSeconds, fadeOutSeconds }.
+  // Legacy `AssemblyAudioSync` shape: a single record of offset / cut / fades.
   // Convert it to a single audio clip whenever the composition has a linked
   // audio asset, so the UI can render it on the timeline without losing data.
   const legacy: AssemblyAudioSync = {
@@ -84,7 +101,6 @@ export function readTimelineState(
 
   return {
     schema: TIMELINE_SCHEMA,
-    segmentTrims: {},
     audioClips: [
       {
         id: createAudioClipId(context.audioMediaAssetId, 0),
@@ -101,25 +117,127 @@ export function readTimelineState(
 }
 
 /**
- * Apply the persisted segmentTrims onto the available segments, clamped to
- * the source duration so a stale row cannot overflow the playable range.
+ * Decode the placements list from `compositions.segment_order`, falling back
+ * to the legacy shapes (pure `string[]` and `string[] + segmentTrims`).
+ * Placements that point to a `segmentId` not present in
+ * {@link availableSegmentDurations} are silently dropped — the same defensive
+ * behaviour the legacy reader already had.
+ *
+ * @param segmentOrderJson    raw value of `compositions.segment_order`
+ * @param audioSyncJson       raw value of `compositions.audio_sync` (used to
+ *                            recover a stored `segmentTrims` map when the
+ *                            persisted shape was the post-#77 one)
+ * @param availableSegmentDurations  map from segmentId to source duration in
+ *                                   seconds; used to default `outSeconds`
+ *                                   when no trim is stored, and to clamp
+ *                                   stored trims to the playable range.
  */
-export function applySegmentTrims(
-  segments: AssemblySegmentClip[],
-  trims: AssemblyTimelineState["segmentTrims"],
+export function readPlacementsState(
+  segmentOrderJson: Json | null | undefined,
+  audioSyncJson: Json | null | undefined,
+  availableSegmentDurations: Map<string, number>,
+): SegmentPlacement[] {
+  // Path 1 — current shape: { schema: "placements_v1", placements: [...] }.
+  if (
+    isRecord(segmentOrderJson) &&
+    segmentOrderJson.schema === PLACEMENTS_SCHEMA &&
+    Array.isArray(segmentOrderJson.placements)
+  ) {
+    return segmentOrderJson.placements.flatMap((raw, index): SegmentPlacement[] =>
+      buildPlacementFromRecord(raw, availableSegmentDurations, index),
+    );
+  }
+
+  // Paths 2 & 3 — legacy: segment_order is a string[] of segmentIds. The
+  // corresponding [in, out] window may live in audio_sync.segmentTrims (post
+  // #77) or default to [0, durationSeconds] (pre #77).
+  if (Array.isArray(segmentOrderJson)) {
+    const trims = isRecord(audioSyncJson)
+      ? readSegmentTrims(audioSyncJson.segmentTrims)
+      : {};
+    return segmentOrderJson.flatMap((raw, index): SegmentPlacement[] => {
+      if (typeof raw !== "string") {
+        return [];
+      }
+      const duration = availableSegmentDurations.get(raw);
+      if (duration === undefined) {
+        // Segment no longer available — drop on read, same as before.
+        return [];
+      }
+      const trim = trims[raw];
+      const max = Math.max(duration, MIN_TRIM_WINDOW);
+      const inSeconds = clamp(
+        readNumber(trim?.inSeconds, 0),
+        0,
+        max - MIN_TRIM_WINDOW,
+      );
+      const outSeconds = clamp(
+        readNumber(trim?.outSeconds, max),
+        inSeconds + MIN_TRIM_WINDOW,
+        max,
+      );
+      return [
+        {
+          placementId: createPlacementId(raw, index),
+          segmentId: raw,
+          inSeconds,
+          outSeconds,
+        },
+      ];
+    });
+  }
+
+  return [];
+}
+
+/**
+ * Build a runtime {@link AssemblySegmentClip} for each placement by joining
+ * with the catalogue of available segments (segmentId → segment metadata).
+ * Placements whose segmentId is missing from the catalogue are dropped — this
+ * is also where signed-URL expiry / missing media_asset shows up at runtime.
+ */
+export function buildClipsFromPlacements(
+  placements: SegmentPlacement[],
+  availableBySegmentId: Map<string, Omit<AssemblySegmentClip, "placementId" | "position" | "inSeconds" | "outSeconds">>,
 ): AssemblySegmentClip[] {
-  return segments.map((segment) => {
-    const trim = trims[segment.segmentId];
-    const max = Math.max(segment.durationSeconds, 0.1);
-    const inSeconds = clamp(readNumber(trim?.inSeconds, 0), 0, max - 0.1);
+  const clips: AssemblySegmentClip[] = [];
+  placements.forEach((placement, index) => {
+    const meta = availableBySegmentId.get(placement.segmentId);
+    if (!meta) {
+      return;
+    }
+    const max = Math.max(meta.durationSeconds, MIN_TRIM_WINDOW);
+    const inSeconds = clamp(placement.inSeconds, 0, max - MIN_TRIM_WINDOW);
     const outSeconds = clamp(
-      readNumber(trim?.outSeconds, max),
-      inSeconds + 0.1,
+      placement.outSeconds,
+      inSeconds + MIN_TRIM_WINDOW,
       max,
     );
-
-    return { ...segment, inSeconds, outSeconds };
+    clips.push({
+      ...meta,
+      placementId: placement.placementId,
+      position: index,
+      inSeconds,
+      outSeconds,
+    });
   });
+  return clips;
+}
+
+/**
+ * Build the default placements list when a project is opened for the first
+ * time with no composition row yet: one placement per accepted segment, in
+ * declared order, covering the full source duration.
+ */
+export function defaultPlacementsForSegments(
+  acceptedSegments: Array<{ segmentId: string; durationSeconds: number }>,
+): SegmentPlacement[] {
+  return acceptedSegments.map((segment, index) => ({
+    placementId: createPlacementId(segment.segmentId, index),
+    segmentId: segment.segmentId,
+    inSeconds: 0,
+    outSeconds: Math.max(segment.durationSeconds, MIN_TRIM_WINDOW),
+  }));
 }
 
 /**
@@ -153,7 +271,7 @@ export function createDefaultAudioClip(input: {
   mediaAssetId: string;
   durationSeconds?: number | null;
 }): AssemblyAudioClip {
-  const duration = Math.max(readNumber(input.durationSeconds, 30), 0.1);
+  const duration = Math.max(readNumber(input.durationSeconds, 30), MIN_TRIM_WINDOW);
 
   return {
     id: createAudioClipId(input.mediaAssetId, 0),
@@ -167,26 +285,84 @@ export function createDefaultAudioClip(input: {
   };
 }
 
-function readSegmentTrims(value: unknown) {
+/**
+ * Serialise the placements list into the persisted JSON shape stored on
+ * `compositions.segment_order`.
+ */
+export function serializePlacements(placements: SegmentPlacement[]) {
+  return {
+    schema: PLACEMENTS_SCHEMA,
+    placements: placements.map((placement) => ({
+      placementId: placement.placementId,
+      segmentId: placement.segmentId,
+      inSeconds: placement.inSeconds,
+      outSeconds: placement.outSeconds,
+    })),
+  };
+}
+
+function buildPlacementFromRecord(
+  raw: unknown,
+  availableSegmentDurations: Map<string, number>,
+  index: number,
+): SegmentPlacement[] {
+  if (!isRecord(raw)) {
+    return [];
+  }
+  const segmentId =
+    typeof raw.segmentId === "string" && raw.segmentId.length > 0
+      ? raw.segmentId
+      : null;
+  if (!segmentId) {
+    return [];
+  }
+  const duration = availableSegmentDurations.get(segmentId);
+  if (duration === undefined) {
+    return [];
+  }
+  const max = Math.max(duration, MIN_TRIM_WINDOW);
+  const inSeconds = clamp(
+    readNumber(raw.inSeconds, 0),
+    0,
+    max - MIN_TRIM_WINDOW,
+  );
+  const outSeconds = clamp(
+    readNumber(raw.outSeconds, max),
+    inSeconds + MIN_TRIM_WINDOW,
+    max,
+  );
+  return [
+    {
+      placementId:
+        typeof raw.placementId === "string" && raw.placementId.length > 0
+          ? raw.placementId
+          : createPlacementId(segmentId, index),
+      segmentId,
+      inSeconds,
+      outSeconds,
+    },
+  ];
+}
+
+function readSegmentTrims(value: unknown): Record<
+  string,
+  { inSeconds: number; outSeconds: number }
+> {
   if (!isRecord(value)) {
     return {};
   }
-
-  const trims: AssemblyTimelineState["segmentTrims"] = {};
-
+  const trims: Record<string, { inSeconds: number; outSeconds: number }> = {};
   for (const [segmentId, raw] of Object.entries(value)) {
     if (!isRecord(raw)) {
       continue;
     }
-
     const inSeconds = Math.max(readNumber(raw.inSeconds, 0), 0);
     const outSeconds = Math.max(
-      readNumber(raw.outSeconds, inSeconds + 0.1),
-      inSeconds + 0.1,
+      readNumber(raw.outSeconds, inSeconds + MIN_TRIM_WINDOW),
+      inSeconds + MIN_TRIM_WINDOW,
     );
     trims[segmentId] = { inSeconds, outSeconds };
   }
-
   return trims;
 }
 
@@ -194,27 +370,22 @@ function readAudioClips(value: unknown): AssemblyAudioClip[] {
   if (!Array.isArray(value)) {
     return [];
   }
-
   return value.flatMap((raw, index): AssemblyAudioClip[] => {
     if (!isRecord(raw)) {
       return [];
     }
-
     const mediaAssetId =
       typeof raw.mediaAssetId === "string" && raw.mediaAssetId.length > 0
         ? raw.mediaAssetId
         : null;
-
     if (!mediaAssetId) {
       return [];
     }
-
     const inSeconds = Math.max(readNumber(raw.inSeconds, 0), 0);
     const outSeconds = Math.max(
-      readNumber(raw.outSeconds, inSeconds + 0.1),
-      inSeconds + 0.1,
+      readNumber(raw.outSeconds, inSeconds + MIN_TRIM_WINDOW),
+      inSeconds + MIN_TRIM_WINDOW,
     );
-
     return [
       {
         id:
@@ -238,6 +409,10 @@ function readAudioClips(value: unknown): AssemblyAudioClip[] {
 
 function createAudioClipId(mediaAssetId: string, index: number) {
   return `audio_${mediaAssetId.slice(0, 8)}_${index}`;
+}
+
+function createPlacementId(segmentId: string, index: number) {
+  return `placement_${segmentId.slice(0, 8)}_${index}`;
 }
 
 function readNumber(value: unknown, fallback: number) {
