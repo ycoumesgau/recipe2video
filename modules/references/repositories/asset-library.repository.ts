@@ -7,6 +7,7 @@ type AssetLibraryRow = Database["public"]["Tables"]["asset_library"]["Row"];
 export interface AssetLibraryEntry {
   id: string;
   canonicalName: string;
+  aliases: string[];
   category: string;
   mediaAssetId: string | null;
   description: string | null;
@@ -19,6 +20,7 @@ function mapAssetLibrary(row: AssetLibraryRow): AssetLibraryEntry {
   return {
     id: row.id,
     canonicalName: row.canonical_name,
+    aliases: row.aliases ?? [],
     category: row.category,
     mediaAssetId: row.media_asset_id,
     description: row.description,
@@ -48,10 +50,14 @@ export async function listAssetLibrary(
 }
 
 /**
- * Look up asset library entries by canonical_name. Returns a Map keyed by
- * canonical_name so callers can resolve recipe-plan entries to library_asset_id
- * without falling into N+1 queries. Deprecated entries are excluded by default
- * because they should not be selected for new generations.
+ * Look up asset library entries by canonical_name OR alias. Returns a Map
+ * keyed by EVERY name (canonical_name + every alias) that resolved, so the
+ * agent can pass either form (`island_default` from the file basename or the
+ * friendlier `KitchenIslandDefault` it documents in the skill) and the
+ * resolver finds the same entry.
+ *
+ * Deprecated entries are excluded by default because they should not be
+ * selected for new generations.
  */
 export async function findAssetLibraryByCanonicalNames(
   supabase: SupabaseDataClient,
@@ -63,10 +69,14 @@ export async function findAssetLibraryByCanonicalNames(
   }
 
   const deduped = Array.from(new Set(canonicalNames));
+  const aliasOrClause = `aliases.ov.{${deduped
+    .map((name) => `"${name.replace(/"/g, '\\"')}"`)
+    .join(",")}}`;
+
   let query = supabase
     .from("asset_library")
     .select("*")
-    .in("canonical_name", deduped);
+    .or(`canonical_name.in.(${deduped.map((name) => `"${name.replace(/"/g, '\\"')}"`).join(",")}),${aliasOrClause}`);
 
   if (!options.includeDeprecated) {
     query = query.eq("status", "active");
@@ -77,7 +87,15 @@ export async function findAssetLibraryByCanonicalNames(
 
   const result = new Map<string, AssetLibraryEntry>();
   for (const row of data ?? []) {
-    result.set(row.canonical_name, mapAssetLibrary(row));
+    const entry = mapAssetLibrary(row);
+    // Index by canonical_name AND every alias so callers can lookup either
+    // form. We DO NOT restrict to names the caller asked for: this lets us
+    // index secondary aliases too, which keeps the API contract honest
+    // ("call .get(name) for any known name and you get a hit").
+    result.set(entry.canonicalName, entry);
+    for (const alias of entry.aliases) {
+      result.set(alias, entry);
+    }
   }
   return result;
 }

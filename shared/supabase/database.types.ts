@@ -358,6 +358,7 @@ export type Database = {
         Row: {
           id: string;
           canonical_name: string;
+          aliases: string[];
           category: string;
           media_asset_id: string | null;
           description: string | null;
@@ -369,6 +370,7 @@ export type Database = {
         Insert: {
           id?: string;
           canonical_name: string;
+          aliases?: string[];
           category: string;
           media_asset_id?: string | null;
           description?: string | null;
@@ -380,6 +382,7 @@ export type Database = {
         Update: {
           id?: string;
           canonical_name?: string;
+          aliases?: string[];
           category?: string;
           media_asset_id?: string | null;
           description?: string | null;
