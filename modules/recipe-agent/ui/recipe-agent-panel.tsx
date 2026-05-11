@@ -1,8 +1,15 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useActionState } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useFormStatus } from "react-dom";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   Bot,
@@ -51,6 +58,11 @@ import type {
 } from "../recipe-agent.types";
 
 import { RecipeAgentChat } from "./recipe-agent-chat";
+
+/** Client refresh + short polling: Inngest updates DB after `revalidatePath`, and RSC needs `router.refresh()`. */
+const AGENT_CREATE_SYNC_MS = 60_000;
+const AGENT_MESSAGE_SYNC_MS = 45_000;
+const AGENT_SYNC_POLL_MS = 2_500;
 
 const initialState: RecipeAgentActionState = {};
 
@@ -117,6 +129,11 @@ export function RecipeAgentPanel({
   chatMessages: RecipeAgentChatMessage[];
   latestRunSteps: RecipeAgentStep[];
 }) {
+  const router = useRouter();
+  const [queuedSyncKind, setQueuedSyncKind] = useState<
+    "create" | "message" | null
+  >(null);
+
   const [messageState, messageAction] = useActionState(
     submitRecipeAgentMessageAction,
     initialState,
@@ -125,6 +142,86 @@ export function RecipeAgentPanel({
     createRecipeAgentAction,
     initialState,
   );
+
+  const createSuccessHandled = useRef(false);
+  const messageSuccessHandled = useRef(false);
+
+  useEffect(() => {
+    if (createState.kind !== "success") {
+      createSuccessHandled.current = false;
+      return;
+    }
+    if (createSuccessHandled.current) {
+      return;
+    }
+    createSuccessHandled.current = true;
+    setQueuedSyncKind((previous) => previous ?? "create");
+    startTransition(() => {
+      router.refresh();
+    });
+  }, [createState.kind, createState.message, router]);
+
+  useEffect(() => {
+    if (messageState.kind !== "success") {
+      messageSuccessHandled.current = false;
+      return;
+    }
+    if (messageSuccessHandled.current) {
+      return;
+    }
+    messageSuccessHandled.current = true;
+    setQueuedSyncKind((previous) => previous ?? "message");
+    startTransition(() => {
+      router.refresh();
+    });
+  }, [messageState.kind, messageState.message, router]);
+
+  useEffect(() => {
+    if (queuedSyncKind === null) {
+      return;
+    }
+
+    const satisfied =
+      (queuedSyncKind === "create" && Boolean(project.cursorAgentId)) ||
+      (queuedSyncKind === "message" && project.agentStatus === "running");
+
+    if (satisfied) {
+      queueMicrotask(() => {
+        setQueuedSyncKind(null);
+      });
+      return;
+    }
+
+    const maxMs =
+      queuedSyncKind === "create"
+        ? AGENT_CREATE_SYNC_MS
+        : AGENT_MESSAGE_SYNC_MS;
+    const startedAt = Date.now();
+    const idRef: { current: ReturnType<typeof setInterval> | null } = {
+      current: null,
+    };
+    idRef.current = setInterval(() => {
+      startTransition(() => {
+        router.refresh();
+      });
+      if (Date.now() - startedAt >= maxMs) {
+        if (idRef.current !== null) {
+          clearInterval(idRef.current);
+          idRef.current = null;
+        }
+        queueMicrotask(() => {
+          setQueuedSyncKind(null);
+        });
+      }
+    }, AGENT_SYNC_POLL_MS);
+
+    return () => {
+      if (idRef.current !== null) {
+        clearInterval(idRef.current);
+      }
+    };
+  }, [queuedSyncKind, project.agentStatus, project.cursorAgentId, router]);
+
   const invalidArtifacts = artifacts.filter(
     (artifact) => artifact.validationStatus === "invalid",
   );

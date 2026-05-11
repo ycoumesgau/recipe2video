@@ -38,6 +38,7 @@ import { EditableProjectTitle } from "@/modules/videos/ui/editable-project-title
 import { ProjectPipelineProgress } from "@/modules/videos/ui/project-pipeline-progress";
 import { ProjectDetailArchiveControls } from "@/modules/videos/ui/project-detail-archive-controls";
 import { RecipeSourcePhotoThumbnails } from "@/modules/videos/ui/recipe-source-photo-thumbnails";
+import { VideoProjectRscSync } from "@/modules/videos/ui/video-project-rsc-sync";
 
 export default async function VideoDetailPage({
   params,
@@ -123,6 +124,13 @@ export default async function VideoDetailPage({
           {project && nextAction ? (
             <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
               <div className="space-y-4">
+                <VideoProjectRscSync
+                  agentPlanningRequested={readAgentPlanningRequested(project)}
+                  agentRunCount={agentRuns.length}
+                  agentStatus={project.agentStatus}
+                  cursorAgentId={project.cursorAgentId ?? null}
+                  projectStatus={project.status}
+                />
                 <Card>
                   <CardHeader>
                     <CardTitle>Next required action</CardTitle>
@@ -458,6 +466,14 @@ function ProjectCostSummary({ data }: { data: CostDashboardData }) {
       ))}
     </div>
   );
+}
+
+function readAgentPlanningRequested(project: VideoProject) {
+  const data = project.recipeData;
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+  return (data as { agentPlanningRequested?: unknown }).agentPlanningRequested === true;
 }
 
 function readRecipeSourceSummary(project: VideoProject | null) {
