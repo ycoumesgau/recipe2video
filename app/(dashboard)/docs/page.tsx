@@ -22,7 +22,7 @@ export default function DocsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h2 className="text-3xl font-semibold tracking-tight">Docs</h2>
+        <h2 className="licorn-page-title">Docs</h2>
         <p className="text-muted-foreground">
           Contract documents that every agent should read before changing the
           product.

@@ -36,7 +36,7 @@ export function LoginForm({
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle className="text-2xl">Recipe2Video</CardTitle>
+        <CardTitle className="licorn-card-hero-title">Recipe2Video</CardTitle>
         <CardDescription>Internal Licorn access only.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

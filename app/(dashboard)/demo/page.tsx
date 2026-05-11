@@ -21,6 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { LicornKpiCard } from "@/components/ui/licorn-kpi-card";
 import { Progress } from "@/components/ui/progress";
 import {
   Table,
@@ -62,7 +63,7 @@ export default function DemoModePage() {
             <Badge variant="secondary">Fixture-backed</Badge>
             <Badge variant="outline">No live generation required</Badge>
           </div>
-          <h2 className="text-3xl font-semibold tracking-tight">Demo Mode</h2>
+          <h2 className="licorn-page-title">Demo Mode</h2>
           <p className="max-w-3xl text-muted-foreground">
             Walk through the Paris-Brest project with storyboard, references,
             segment review, prompt diff, costs, and assembly preview without
@@ -582,16 +583,7 @@ function AssemblySection({
 }
 
 function MetricCard({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="mt-1 text-2xl font-semibold">{value}</p>
-      </CardContent>
-    </Card>
-  );
+  return <LicornKpiCard label={label} value={value} />;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

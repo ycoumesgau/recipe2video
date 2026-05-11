@@ -162,7 +162,6 @@ export function SegmentReview({
           <StatusPanel
             project={data.project}
             segmentStatus={data.segment.status}
-            videoId={videoId}
             variantCount={data.variants.length}
           />
           <AgentChatPanel
@@ -630,12 +629,10 @@ function ReferencesPanel({ references }: { references: SegmentReference[] }) {
 function StatusPanel({
   project,
   segmentStatus,
-  videoId,
   variantCount,
 }: {
   project: VideoProject | null;
   segmentStatus: SegmentStatus;
-  videoId: string;
   variantCount: number;
 }) {
   return (

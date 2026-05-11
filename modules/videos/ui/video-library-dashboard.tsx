@@ -29,6 +29,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { LicornKpiCard } from "@/components/ui/licorn-kpi-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -136,7 +137,7 @@ export function VideoLibraryDashboard({
           <Badge className="mb-3" variant="outline">
             Issue #10
           </Badge>
-          <h2 className="text-3xl font-semibold tracking-tight">
+          <h2 className="licorn-page-title">
             Video project library
           </h2>
           <p className="max-w-3xl text-muted-foreground">
@@ -162,15 +163,12 @@ export function VideoLibraryDashboard({
 
       <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {data.kpis.map((kpi) => (
-          <Card key={kpi.label} size="sm">
-            <CardHeader>
-              <CardDescription>{kpi.label}</CardDescription>
-              <CardTitle className="text-2xl">{kpi.value}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">
-              {kpi.helper}
-            </CardContent>
-          </Card>
+          <LicornKpiCard
+            key={kpi.label}
+            helper={kpi.helper}
+            label={kpi.label}
+            value={kpi.value}
+          />
         ))}
       </section>
 
@@ -376,7 +374,7 @@ function ProjectCard({
           <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/70 to-transparent p-3">
             <div>
               <Badge variant="secondary">{project.recipeSourceLabel}</Badge>
-              <p className="mt-2 text-lg font-semibold text-white drop-shadow">
+              <p className="mt-2 text-lg font-heading font-bold text-white drop-shadow">
                 {project.thumbnailLabel}
               </p>
             </div>
@@ -388,15 +386,20 @@ function ProjectCard({
         >
           <div>
             <Badge variant="secondary">{project.recipeSourceLabel}</Badge>
-            <p className="mt-2 text-lg font-semibold">{project.thumbnailLabel}</p>
+            <p className="mt-2 text-lg font-heading font-bold">{project.thumbnailLabel}</p>
           </div>
         </div>
       )}
-      <CardHeader>
+      <CardHeader className="min-w-0">
         <CardAction>
-          <div className="flex items-center gap-1">
-            <Badge variant={statusBadgeVariant[project.status]}>
-              {VIDEO_STATUS_LABELS[project.status]}
+          <div className="flex min-w-0 max-w-full items-center justify-end gap-1">
+            <Badge
+              className="max-w-full min-w-0 shrink justify-start"
+              variant={statusBadgeVariant[project.status]}
+            >
+              <span className="min-w-0 truncate">
+                {VIDEO_STATUS_LABELS[project.status]}
+              </span>
             </Badge>
             {project.canArchive ? (
               <ProjectCardArchiveMenu
@@ -406,7 +409,7 @@ function ProjectCard({
             ) : null}
           </div>
         </CardAction>
-        <CardTitle className="pr-24">{project.title}</CardTitle>
+        <CardTitle className="min-w-0 pr-2">{project.title}</CardTitle>
         <CardDescription>
           Last updated {formatDateTime(project.updatedAt)} by {project.ownerName}
         </CardDescription>
@@ -428,10 +431,15 @@ function ProjectCard({
         </div>
 
         <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-muted-foreground">Next action</p>
-            <Badge variant={agentStatus === "failed" || agentStatus === "validation_failed" ? "destructive" : "outline"}>
-              Agent {agentStatus.replace(/_/g, " ")}
+          <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <p className="shrink-0 text-muted-foreground">Next action</p>
+            <Badge
+              className="max-w-full min-w-0 shrink justify-start"
+              variant={agentStatus === "failed" || agentStatus === "validation_failed" ? "destructive" : "outline"}
+            >
+              <span className="min-w-0 truncate">
+                Agent {agentStatus.replace(/_/g, " ")}
+              </span>
             </Badge>
           </div>
           <p className="font-medium">{project.nextAction}</p>

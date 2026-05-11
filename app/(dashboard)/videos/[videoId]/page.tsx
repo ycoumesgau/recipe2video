@@ -85,7 +85,7 @@ export default async function VideoDetailPage({
             videoId={project.id}
           />
         ) : (
-          <h2 className="text-3xl font-semibold tracking-tight">
+          <h2 className="licorn-page-title">
             Project overview
           </h2>
         )}
@@ -452,7 +452,7 @@ function ProjectCostSummary({ data }: { data: CostDashboardData }) {
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
             {metric.label}
           </p>
-          <p className="mt-1 font-semibold">{metric.value}</p>
+          <p className="mt-1 font-heading font-bold">{metric.value}</p>
           <p className="text-xs text-muted-foreground">{metric.helper}</p>
         </div>
       ))}

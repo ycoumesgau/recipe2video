@@ -18,7 +18,7 @@ export default async function MuxTestPage() {
         <Badge className="mb-3" variant="outline">
           Issue #5
         </Badge>
-        <h2 className="text-3xl font-semibold tracking-tight">
+        <h2 className="licorn-page-title">
           Mux playback test
         </h2>
         <p className="max-w-3xl text-muted-foreground">

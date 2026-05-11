@@ -32,13 +32,15 @@ export function EditableProjectTitle({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [prevInitialTitle, setPrevInitialTitle] = useState(initialTitle);
 
-  useEffect(() => {
+  if (initialTitle !== prevInitialTitle) {
+    setPrevInitialTitle(initialTitle);
     setTitle(initialTitle);
     if (!editing) {
       setDraft(initialTitle);
     }
-  }, [initialTitle, editing]);
+  }
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -108,7 +110,7 @@ export function EditableProjectTitle({
           <Input
             ref={inputRef}
             aria-invalid={error ? true : undefined}
-            className="h-auto border-transparent bg-transparent px-0 py-0 text-3xl font-semibold tracking-tight shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 md:text-3xl"
+            className="h-auto border-transparent bg-transparent px-0 py-0 licorn-page-title shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
             disabled={isPending}
             value={draft}
             onBlur={() => {
@@ -135,7 +137,7 @@ export function EditableProjectTitle({
         ) : (
           <>
             <h2
-              className="cursor-text text-3xl font-semibold tracking-tight"
+              className="cursor-text licorn-page-title"
               onDoubleClick={startEditing}
             >
               {title}

@@ -38,7 +38,7 @@ export default async function AssemblyPage({
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-3xl font-semibold tracking-tight">
+        <h2 className="licorn-page-title">
           Assembly and Suno music
         </h2>
         <p className="max-w-3xl text-muted-foreground">

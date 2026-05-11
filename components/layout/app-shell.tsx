@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import {
   Activity,
@@ -10,6 +11,7 @@ import {
   Settings,
 } from "lucide-react";
 
+import { ThemeModeDropdown } from "@/components/layout/theme-mode-dropdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -42,28 +44,37 @@ export function AppShell({
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="grid min-h-screen lg:grid-cols-[280px_1fr]">
-        <aside className="hidden border-r bg-card/50 lg:block">
-          <div className="flex h-16 items-center px-6">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Licorn internal
+        <aside className="hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground lg:block">
+          <div className="flex h-16 items-center gap-3 px-5">
+            <Image
+              alt="Licorn"
+              className="size-10 shrink-0 object-contain"
+              height={40}
+              src="/branding/favicon-licorn.png"
+              width={40}
+              unoptimized
+              priority
+            />
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium uppercase tracking-wide text-sidebar-foreground/65">
+                Licorn · cockpit interne
               </p>
-              <h1 className="text-xl font-semibold tracking-tight">
+              <h1 className="truncate font-heading text-lg font-bold tracking-tight">
                 Recipe2Video
               </h1>
             </div>
           </div>
-          <Separator />
+          <Separator className="bg-sidebar-border" />
           <nav className="space-y-1 p-4">
             {navigationItems.map((item) => (
               <Button
                 key={`${item.href}-${item.label}`}
                 asChild
-                className="w-full justify-start gap-3"
+                className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 variant="ghost"
               >
                 <Link href={item.href}>
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className="h-4 w-4 shrink-0" />
                   {item.label}
                 </Link>
               </Button>
@@ -77,7 +88,7 @@ export function AppShell({
               <p className="text-sm font-medium text-muted-foreground">
                 Production cockpit
               </p>
-              <p className="text-lg font-semibold leading-snug break-words sm:max-md:text-base">
+              <p className="font-heading text-lg font-bold leading-snug break-words sm:max-md:text-base">
                 Runway API Hackathon
               </p>
             </div>
@@ -97,6 +108,7 @@ export function AppShell({
               >
                 {userEmail}
               </Badge>
+              <ThemeModeDropdown />
               <form action={signOutAction} className="shrink-0">
                 <Button size="sm" type="submit" variant="ghost">
                   Sign out
