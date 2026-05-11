@@ -1,27 +1,17 @@
 "use client";
 
-import { useMemo, useState, useActionState } from "react";
+import {
+  useActionState,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useFormStatus } from "react-dom";
-import {
-  closestCenter,
-  DndContext,
-  type DragEndEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { Player } from "@remotion/player";
+import { Player, type PlayerRef } from "@remotion/player";
 import {
   AlertCircle,
   CheckCircle2,
-  GripVertical,
   Loader2,
   Music2,
   Save,
@@ -41,15 +31,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type {
-  AssemblyAudioSync,
+  AssemblyAudioClip,
   AssemblyRemotionProps,
   AssemblySegmentClip,
+  AssemblyTimelineState,
 } from "@/modules/assembly/assembly.types";
 import {
   saveAssemblySettingsAction,
   uploadFinalExportAction,
   type AssemblyActionState,
 } from "@/modules/assembly/actions";
+import {
+  AddAudioClipButton,
+  TimelineEditor,
+} from "@/modules/assembly/ui/timeline-editor";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import { RecipeMuxPlayer } from "@/modules/media-assets/ui/mux-player";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
@@ -64,6 +59,7 @@ export function AssemblyWorkspace({
   compositionId,
   finalExports,
   initialRemotionProps,
+  initialTimelineState,
   missingAcceptedSegments,
   projectStatus,
   projectTitle,
@@ -72,14 +68,17 @@ export function AssemblyWorkspace({
   compositionId?: string | null;
   finalExports: MediaAsset[];
   initialRemotionProps: AssemblyRemotionProps;
+  initialTimelineState: AssemblyTimelineState;
   missingAcceptedSegments: SeedanceSegment[];
   projectStatus: string;
   projectTitle: string;
   videoId: string;
 }) {
-  const [segments, setSegments] = useState(initialRemotionProps.segments);
-  const [audioSync, setAudioSync] = useState<AssemblyAudioSync>(
-    initialRemotionProps.audioSync,
+  const [segments, setSegments] = useState<AssemblySegmentClip[]>(
+    initialRemotionProps.segments,
+  );
+  const [audioClips, setAudioClips] = useState<AssemblyAudioClip[]>(
+    initialTimelineState.audioClips,
   );
   const [saveState, saveAction] = useActionState(
     saveAssemblySettingsAction,
@@ -89,39 +88,48 @@ export function AssemblyWorkspace({
     uploadFinalExportAction,
     initialActionState,
   );
-  const sensors = useSensors(useSensor(PointerSensor));
+  const playerRef = useRef<PlayerRef | null>(null);
+
   const remotionProps = useMemo(
     () => ({
       ...initialRemotionProps,
       segments,
-      audioSync,
+      audioClips,
     }),
-    [audioSync, initialRemotionProps, segments],
+    [audioClips, initialRemotionProps, segments],
   );
   const durationInFrames = getAssemblyDurationInFrames(remotionProps);
-  const segmentOrder = JSON.stringify(
-    segments.map((segment) => segment.segmentId),
+
+  const segmentOrder = useMemo(
+    () => JSON.stringify(segments.map((segment) => segment.segmentId)),
+    [segments],
   );
-  const audioSyncValue = JSON.stringify(audioSync);
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-
-    if (!over || active.id === over.id) {
-      return;
+  const timelineStateValue = useMemo<AssemblyTimelineState>(() => {
+    const segmentTrims: AssemblyTimelineState["segmentTrims"] = {};
+    for (const segment of segments) {
+      segmentTrims[segment.segmentId] = {
+        inSeconds: segment.inSeconds,
+        outSeconds: segment.outSeconds,
+      };
     }
+    return {
+      schema: "timeline_v2",
+      segmentTrims,
+      audioClips,
+    };
+  }, [audioClips, segments]);
+  const timelineStateJson = useMemo(
+    () => JSON.stringify(timelineStateValue),
+    [timelineStateValue],
+  );
 
-    setSegments((currentSegments) => {
-      const oldIndex = currentSegments.findIndex(
-        (segment) => segment.segmentId === active.id,
-      );
-      const newIndex = currentSegments.findIndex(
-        (segment) => segment.segmentId === over.id,
-      );
-
-      return arrayMove(currentSegments, oldIndex, newIndex);
-    });
-  }
+  const handleSegmentsChange = useCallback((next: AssemblySegmentClip[]) => {
+    setSegments(next);
+  }, []);
+  const handleAudioClipsChange = useCallback((next: AssemblyAudioClip[]) => {
+    setAudioClips(next);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -130,18 +138,18 @@ export function AssemblyWorkspace({
           <Badge className="mb-3" variant="outline">
             Issue #18
           </Badge>
-          <h2 className="licorn-page-title">
-            Remotion assembly
-          </h2>
+          <h2 className="licorn-page-title">Remotion assembly</h2>
           <p className="max-w-3xl text-muted-foreground">
-            Preview accepted Supabase originals in order, align optional Suno
-            audio, and preserve the final MP4 through Supabase Storage before
-            Mux playback.
+            Trim accepted Supabase originals on a real timeline, position the
+            optional Suno audio with waveform and fades, and preserve the final
+            MP4 through Supabase Storage before Mux playback.
           </p>
         </div>
         <div className="rounded-lg border bg-muted/30 p-3 text-sm">
           <p className="font-medium">{projectTitle}</p>
-          <p className="text-muted-foreground">Project status: {projectStatus}</p>
+          <p className="text-muted-foreground">
+            Project status: {projectStatus}
+          </p>
         </div>
       </div>
 
@@ -167,7 +175,7 @@ export function AssemblyWorkspace({
               <CardTitle>Remotion preview</CardTitle>
               <CardDescription>
                 Player source files are signed Supabase Storage originals, not
-                Mux HLS streams.
+                Mux HLS streams. The timeline below drives the player.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -181,6 +189,7 @@ export function AssemblyWorkspace({
                     durationInFrames={durationInFrames}
                     fps={initialRemotionProps.fps}
                     inputProps={remotionProps}
+                    ref={playerRef}
                     style={{
                       aspectRatio: `${initialRemotionProps.width} / ${initialRemotionProps.height}`,
                       maxHeight: 720,
@@ -196,39 +205,34 @@ export function AssemblyWorkspace({
 
           <Card>
             <CardHeader>
-              <CardTitle>Selected segments timeline</CardTitle>
+              <CardTitle>Timeline editor</CardTitle>
               <CardDescription>
-                Drag accepted clips to reorder the assembly. Only stored
-                originals can be used.
+                Drag clips to reorder, drag clip edges to trim, drag audio
+                anywhere on the timeline, and pull the corner to fade. Snaps
+                to the playhead and to neighbouring clip edges.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               {segments.length > 0 ? (
-                <DndContext
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                  sensors={sensors}
-                >
-                  <SortableContext
-                    items={segments.map((segment) => segment.segmentId)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="space-y-3">
-                      {segments.map((segment, index) => (
-                        <SortableSegmentCard
-                          index={index}
-                          key={segment.segmentId}
-                          segment={segment}
-                        />
-                      ))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
+                <TimelineEditor
+                  audioClips={audioClips}
+                  audioTrack={initialRemotionProps.audio ?? null}
+                  fps={initialRemotionProps.fps}
+                  onAudioClipsChange={handleAudioClipsChange}
+                  onSegmentsChange={handleSegmentsChange}
+                  playerRef={playerRef}
+                  segments={segments}
+                />
               ) : (
                 <p className="text-sm text-muted-foreground">
                   Accept segment variants before assembling the final sequence.
                 </p>
               )}
+              <AddAudioClipButton
+                audioClips={audioClips}
+                audioTrack={initialRemotionProps.audio ?? null}
+                onChange={handleAudioClipsChange}
+              />
             </CardContent>
           </Card>
         </section>
@@ -238,16 +242,19 @@ export function AssemblyWorkspace({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Music2 className="h-4 w-4" />
-                Suno music
+                Audio details
               </CardTitle>
               <CardDescription>
-                Uploaded Suno audio is optional; assembly works without music.
+                Fine-tune the selected audio clip, or use the timeline above
+                for direct manipulation.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {initialRemotionProps.audio ? (
                 <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                  <p className="font-medium">{initialRemotionProps.audio.title}</p>
+                  <p className="font-medium">
+                    {initialRemotionProps.audio.title}
+                  </p>
                   <p className="break-all text-xs text-muted-foreground">
                     media_asset: {initialRemotionProps.audio.mediaAssetId}
                   </p>
@@ -257,60 +264,18 @@ export function AssemblyWorkspace({
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>No music uploaded</AlertTitle>
                   <AlertDescription>
-                    Upload a Suno audio asset through the Suno workflow to enable
-                    music sync controls.
+                    Upload a Suno audio asset through the Suno workflow to
+                    enable audio editing.
                   </AlertDescription>
                 </Alert>
               )}
 
-              <AudioNumberInput
-                label="Audio start offset"
-                min={-30}
-                onChange={(value) =>
-                  setAudioSync((current) => ({
-                    ...current,
-                    offsetSeconds: value,
-                  }))
-                }
-                suffix="seconds"
-                value={audioSync.offsetSeconds}
-              />
-              <AudioNumberInput
-                label="Cut from audio"
-                min={0}
-                onChange={(value) =>
-                  setAudioSync((current) => ({
-                    ...current,
-                    cutFromSeconds: value,
-                  }))
-                }
-                suffix="seconds"
-                value={audioSync.cutFromSeconds}
-              />
-              <AudioNumberInput
-                label="Fade in"
-                min={0}
-                onChange={(value) =>
-                  setAudioSync((current) => ({
-                    ...current,
-                    fadeInSeconds: value,
-                  }))
-                }
-                suffix="seconds"
-                value={audioSync.fadeInSeconds}
-              />
-              <AudioNumberInput
-                label="Fade out"
-                min={0}
-                onChange={(value) =>
-                  setAudioSync((current) => ({
-                    ...current,
-                    fadeOutSeconds: value,
-                  }))
-                }
-                suffix="seconds"
-                value={audioSync.fadeOutSeconds}
-              />
+              {audioClips.length > 0 ? (
+                <AudioClipDetails
+                  clips={audioClips}
+                  onChange={handleAudioClipsChange}
+                />
+              ) : null}
             </CardContent>
           </Card>
 
@@ -318,16 +283,16 @@ export function AssemblyWorkspace({
             <CardHeader>
               <CardTitle>Export panel</CardTitle>
               <CardDescription>
-                Save the current order and upload the final rendered MP4 for
-                durable storage plus Mux playback.
+                Save the current timeline and upload the final rendered MP4
+                for durable storage plus Mux playback.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <form action={saveAction} className="space-y-3">
                 <HiddenAssemblyFields
                   audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
-                  audioSyncValue={audioSyncValue}
                   segmentOrder={segmentOrder}
+                  timelineState={timelineStateJson}
                   videoId={videoId}
                 />
                 <SaveButton disabled={segments.length === 0} />
@@ -335,16 +300,16 @@ export function AssemblyWorkspace({
 
               <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
                 Client-side Remotion rendering is not wired in this repo yet.
-                For the hackathon path, render the preview externally or locally,
-                then upload the final MP4 here so Supabase remains the durable
-                source of truth and Mux remains playback only.
+                For the hackathon path, render the preview externally or
+                locally, then upload the final MP4 here so Supabase remains
+                the durable source of truth and Mux remains playback only.
               </div>
 
               <form action={exportAction} className="space-y-3">
                 <HiddenAssemblyFields
                   audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
-                  audioSyncValue={audioSyncValue}
                   segmentOrder={segmentOrder}
+                  timelineState={timelineStateJson}
                   videoId={videoId}
                 />
                 <input
@@ -402,20 +367,20 @@ export function AssemblyWorkspace({
 
 function HiddenAssemblyFields({
   audioMediaAssetId,
-  audioSyncValue,
   segmentOrder,
+  timelineState,
   videoId,
 }: {
   audioMediaAssetId?: string | null;
-  audioSyncValue: string;
   segmentOrder: string;
+  timelineState: string;
   videoId: string;
 }) {
   return (
     <>
       <input name="videoId" type="hidden" value={videoId} />
       <input name="segmentOrder" type="hidden" value={segmentOrder} />
-      <input name="audioSync" type="hidden" value={audioSyncValue} />
+      <input name="timelineState" type="hidden" value={timelineState} />
       <input
         name="audioMediaAssetId"
         type="hidden"
@@ -425,76 +390,183 @@ function HiddenAssemblyFields({
   );
 }
 
-function SortableSegmentCard({
-  index,
-  segment,
+function AudioClipDetails({
+  clips,
+  onChange,
 }: {
-  index: number;
-  segment: AssemblySegmentClip;
+  clips: AssemblyAudioClip[];
+  onChange: (next: AssemblyAudioClip[]) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } =
-    useSortable({ id: segment.segmentId });
-
   return (
-    <div
-      ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-      }}
-      {...attributes}
-      className="flex items-center gap-3 rounded-lg border bg-card p-3"
-    >
-      <button
-        {...listeners}
-        aria-label={`Reorder ${segment.title}`}
-        className="cursor-grab rounded-md border p-2 text-muted-foreground"
-        type="button"
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium">
-        {index + 1}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{segment.title}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {segment.durationSeconds}s · {segment.storageBucket}/
-          {segment.storagePath}
-        </p>
-      </div>
-      <Badge variant="outline">Supabase original</Badge>
+    <div className="space-y-4">
+      {clips.map((clip, index) => (
+        <div
+          className="rounded-lg border bg-muted/20 p-3 text-xs"
+          key={clip.id}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-medium">Audio clip #{index + 1}</span>
+            <Button
+              onClick={() =>
+                onChange(clips.filter((existing) => existing.id !== clip.id))
+              }
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Remove
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField
+              label="Start"
+              min={0}
+              onChange={(value) =>
+                onChange(
+                  clips.map((existing) =>
+                    existing.id === clip.id
+                      ? { ...existing, startOnTimelineSeconds: value }
+                      : existing,
+                  ),
+                )
+              }
+              suffix="s"
+              value={clip.startOnTimelineSeconds}
+            />
+            <NumberField
+              label="In point"
+              min={0}
+              onChange={(value) =>
+                onChange(
+                  clips.map((existing) =>
+                    existing.id === clip.id
+                      ? {
+                          ...existing,
+                          inSeconds: Math.min(
+                            value,
+                            existing.outSeconds - 0.1,
+                          ),
+                        }
+                      : existing,
+                  ),
+                )
+              }
+              suffix="s"
+              value={clip.inSeconds}
+            />
+            <NumberField
+              label="Out point"
+              min={0}
+              onChange={(value) =>
+                onChange(
+                  clips.map((existing) =>
+                    existing.id === clip.id
+                      ? {
+                          ...existing,
+                          outSeconds: Math.max(
+                            value,
+                            existing.inSeconds + 0.1,
+                          ),
+                        }
+                      : existing,
+                  ),
+                )
+              }
+              suffix="s"
+              value={clip.outSeconds}
+            />
+            <NumberField
+              label="Volume"
+              max={2}
+              min={0}
+              onChange={(value) =>
+                onChange(
+                  clips.map((existing) =>
+                    existing.id === clip.id
+                      ? { ...existing, volume: value }
+                      : existing,
+                  ),
+                )
+              }
+              step={0.05}
+              suffix="x"
+              value={clip.volume}
+            />
+            <NumberField
+              label="Fade in"
+              min={0}
+              onChange={(value) =>
+                onChange(
+                  clips.map((existing) =>
+                    existing.id === clip.id
+                      ? { ...existing, fadeInSeconds: value }
+                      : existing,
+                  ),
+                )
+              }
+              suffix="s"
+              value={clip.fadeInSeconds}
+            />
+            <NumberField
+              label="Fade out"
+              min={0}
+              onChange={(value) =>
+                onChange(
+                  clips.map((existing) =>
+                    existing.id === clip.id
+                      ? { ...existing, fadeOutSeconds: value }
+                      : existing,
+                  ),
+                )
+              }
+              suffix="s"
+              value={clip.fadeOutSeconds}
+            />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-function AudioNumberInput({
+function NumberField({
   label,
+  max,
   min,
   onChange,
+  step = 0.1,
   suffix,
   value,
 }: {
   label: string;
+  max?: number;
   min: number;
   onChange: (value: number) => void;
+  step?: number;
   suffix: string;
   value: number;
 }) {
   return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <div className="flex items-center gap-2">
+    <label className="space-y-1 text-[11px]">
+      <span className="text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-1">
         <Input
+          className="h-7 text-xs"
+          max={max}
           min={min}
-          onChange={(event) => onChange(Number(event.target.value))}
-          step="0.1"
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            if (Number.isFinite(next)) {
+              onChange(next);
+            }
+          }}
+          step={step}
           type="number"
-          value={value}
+          value={Number.isFinite(value) ? Number(value.toFixed(2)) : 0}
         />
-        <span className="w-16 text-xs text-muted-foreground">{suffix}</span>
+        <span className="w-3 text-[10px] text-muted-foreground">{suffix}</span>
       </div>
-    </div>
+    </label>
   );
 }
 
@@ -503,7 +575,11 @@ function SaveButton({ disabled }: { disabled: boolean }) {
 
   return (
     <Button disabled={disabled || pending} type="submit" variant="outline">
-      {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+      {pending ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Save className="h-4 w-4" />
+      )}
       Save assembly settings
     </Button>
   );

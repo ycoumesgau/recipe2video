@@ -15,7 +15,13 @@ import { buildMediaStoragePath } from "@/modules/media-assets/storage-paths";
 import { uploadMediaAssetToMux } from "@/modules/media-assets/use-cases/upload-media-asset-to-mux";
 import { updateVideoProjectStatus } from "@/modules/videos/repositories/video.repository";
 
-import type { AssemblyAudioSync } from "./assembly.types";
+import type { AssemblyTimelineState } from "./assembly.types";
+import {
+  applySegmentTrims,
+  getEmptyTimelineState,
+  projectLegacyAudioSync,
+  readTimelineState,
+} from "./timeline-state";
 import {
   createComposition,
   updateCompositionExport,
@@ -25,7 +31,6 @@ import { uploadSunoAudio } from "./use-cases/upload-suno-audio";
 import {
   buildRemotionProps,
   getAssemblyPageData,
-  getDefaultAudioSync,
 } from "./use-cases/get-assembly-data";
 
 export interface AssemblyActionState {
@@ -73,13 +78,14 @@ export async function saveAssemblySettingsAction(
     const { profile } = await assertCostlyActionAllowed();
     const videoId = requireString(formData, "videoId");
     const segmentOrder = parseSegmentOrder(formData.get("segmentOrder"));
-    const audioSync = parseAudioSync(formData.get("audioSync"));
+    const timelineState = parseTimelineState(formData.get("timelineState"));
     const audioMediaAssetId = optionalString(formData, "audioMediaAssetId");
     const assemblyData = await getAssemblyPageData(videoId);
-    const orderedSegments = orderClips(
+    const trimmedSegments = applySegmentTrims(
       assemblyData.availableSegments,
-      segmentOrder,
+      timelineState.segmentTrims,
     );
+    const orderedSegments = orderClips(trimmedSegments, segmentOrder);
 
     if (orderedSegments.length === 0) {
       return {
@@ -96,11 +102,12 @@ export async function saveAssemblySettingsAction(
         videoId,
         segmentOrder,
         audioMediaAssetId,
-        audioSync,
+        audioSync: projectLegacyAudioSync(timelineState.audioClips),
+        timelineState,
         remotionProps: buildRemotionProps({
           segments: orderedSegments,
           audioTrack: assemblyData.audioTrack,
-          audioSync,
+          audioClips: timelineState.audioClips,
         }),
         exportStatus: "pending",
         createdBy: profile.id,
@@ -162,17 +169,18 @@ export async function uploadFinalExportAction(
     }
 
     const segmentOrder = parseSegmentOrder(formData.get("segmentOrder"));
-    const audioSync = parseAudioSync(formData.get("audioSync"));
+    const timelineState = parseTimelineState(formData.get("timelineState"));
     const audioMediaAssetId = optionalString(formData, "audioMediaAssetId");
     const assemblyData = await getAssemblyPageData(videoId);
-    const orderedSegments = orderClips(
+    const trimmedSegments = applySegmentTrims(
       assemblyData.availableSegments,
-      segmentOrder,
+      timelineState.segmentTrims,
     );
+    const orderedSegments = orderClips(trimmedSegments, segmentOrder);
     const remotionProps = buildRemotionProps({
       segments: orderedSegments,
       audioTrack: assemblyData.audioTrack,
-      audioSync,
+      audioClips: timelineState.audioClips,
     });
 
     if (orderedSegments.length === 0) {
@@ -188,7 +196,8 @@ export async function uploadFinalExportAction(
       videoId,
       segmentOrder,
       audioMediaAssetId,
-      audioSync,
+      audioSync: projectLegacyAudioSync(timelineState.audioClips),
+      timelineState,
       remotionProps,
       exportStatus: "rendering",
       createdBy: profile.id,
@@ -221,7 +230,7 @@ export async function uploadFinalExportAction(
       metadata: {
         compositionId: composition.id,
         segmentOrder,
-        audioSync,
+        timelineState,
         source: "assembly_final_export_upload",
       },
       createdBy: profile.id,
@@ -316,26 +325,19 @@ function parseSegmentOrder(value: FormDataEntryValue | null): string[] {
   }
 }
 
-function parseAudioSync(value: FormDataEntryValue | null): AssemblyAudioSync {
+function parseTimelineState(
+  value: FormDataEntryValue | null,
+): AssemblyTimelineState {
   if (typeof value !== "string") {
-    return getDefaultAudioSync();
+    return getEmptyTimelineState();
   }
 
   try {
-    const parsed = JSON.parse(value) as Partial<AssemblyAudioSync>;
-    return {
-      offsetSeconds: readNumber(parsed.offsetSeconds),
-      cutFromSeconds: readNumber(parsed.cutFromSeconds),
-      fadeInSeconds: readNumber(parsed.fadeInSeconds),
-      fadeOutSeconds: readNumber(parsed.fadeOutSeconds),
-    };
+    const parsed = JSON.parse(value);
+    return readTimelineState(parsed, {});
   } catch {
-    return getDefaultAudioSync();
+    return getEmptyTimelineState();
   }
-}
-
-function readNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function requireString(formData: FormData, key: string) {
