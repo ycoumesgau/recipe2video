@@ -8,6 +8,11 @@ import {
   getSegmentReviewData,
   type SegmentReviewData,
 } from "@/modules/generation/use-cases/get-segment-review";
+import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
+
+function formatSegmentPageHeading(segment: SeedanceSegment) {
+  return `S${segment.position}. ${segment.title}`;
+}
 
 export default async function SegmentReviewPage({
   params,
@@ -26,7 +31,11 @@ export default async function SegmentReviewPage({
         <Badge className="mb-3" variant="outline">
           Segment review
         </Badge>
-        <h2 className="licorn-page-title">Segment review</h2>
+        <h2 className="licorn-page-title">
+          {data.segment
+            ? formatSegmentPageHeading(data.segment)
+            : "Segment review"}
+        </h2>
         <p className="max-w-3xl text-muted-foreground">
           Compare generated variants, play Mux review copies, select the
           accepted take, and use agent feedback with visible prompt diffs

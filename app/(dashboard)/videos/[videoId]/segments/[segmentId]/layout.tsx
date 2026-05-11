@@ -1,6 +1,11 @@
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { getSegmentById } from "@/modules/storyboard/repositories/segment.repository";
+import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import { RegisterSegmentCrumb } from "@/modules/videos/ui/video-project-breadcrumbs";
+
+function formatSegmentBreadcrumbTitle(segment: SeedanceSegment) {
+  return `S${segment.position}. ${segment.title}`;
+}
 
 export default async function SegmentDetailLayout({
   children,
@@ -10,28 +15,28 @@ export default async function SegmentDetailLayout({
   params: Promise<{ videoId: string; segmentId: string }>;
 }>) {
   const { segmentId, videoId } = await params;
-  const segmentTitle = await loadSegmentTitleForBreadcrumb(videoId, segmentId);
+  const segment = await loadSegmentForCrumb(videoId, segmentId);
+  const crumbTitle = segment
+    ? formatSegmentBreadcrumbTitle(segment)
+    : "Segment";
 
   return (
     <>
-      <RegisterSegmentCrumb title={segmentTitle} />
+      <RegisterSegmentCrumb title={crumbTitle} />
       {children}
     </>
   );
 }
 
-async function loadSegmentTitleForBreadcrumb(
-  videoId: string,
-  segmentId: string,
-): Promise<string> {
+async function loadSegmentForCrumb(videoId: string, segmentId: string) {
   try {
     const supabase = createSupabaseAdminClient();
     const segment = await getSegmentById(supabase, segmentId);
-    if (segment?.videoId === videoId && segment.title) {
-      return segment.title;
+    if (segment?.videoId === videoId) {
+      return segment;
     }
   } catch {
     /* best-effort crumb */
   }
-  return "Segment";
+  return null;
 }

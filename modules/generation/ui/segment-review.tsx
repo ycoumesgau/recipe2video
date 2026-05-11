@@ -31,6 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentChatPanel } from "@/modules/feedback/ui/agent-chat-panel";
 import { RecipeMuxPlayer } from "@/modules/media-assets/ui/mux-player";
 import type { SegmentStatus } from "@/modules/storyboard/segment-status";
+import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import { VIDEO_MODEL_OPTIONS } from "@/modules/videos/video.constants";
 import type { VideoProject } from "@/modules/videos/video.types";
 
@@ -46,6 +47,10 @@ import type {
   SegmentVariantReviewItem,
 } from "../use-cases/get-segment-review";
 import type { SegmentFeedback } from "@/modules/feedback/feedback.types";
+
+function formatSegmentHeading(segment: SeedanceSegment) {
+  return `S${segment.position}. ${segment.title}`;
+}
 
 const generationStatusVariant: Record<
   GenerationStatus,
@@ -134,8 +139,8 @@ export function SegmentReview({
       <div className="hidden gap-4 lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)_minmax(280px,0.65fr)]">
         <div className="space-y-4">
           <PlaybackCard
+            segmentDisplayName={formatSegmentHeading(data.segment)}
             selectedVariant={selectedVariant}
-            segmentTitle={data.segment.title}
           />
           <VariantList
             segmentId={segmentId}
@@ -183,8 +188,8 @@ export function SegmentReview({
         </TabsList>
         <TabsContent value="video">
           <PlaybackCard
+            segmentDisplayName={formatSegmentHeading(data.segment)}
             selectedVariant={selectedVariant}
-            segmentTitle={data.segment.title}
           />
         </TabsContent>
         <TabsContent value="prompt">
@@ -222,10 +227,10 @@ export function SegmentReview({
 
 function PlaybackCard({
   selectedVariant,
-  segmentTitle,
+  segmentDisplayName,
 }: {
   selectedVariant?: SegmentVariantReviewItem;
-  segmentTitle: string;
+  segmentDisplayName: string;
 }) {
   return (
     <Card>
@@ -238,7 +243,7 @@ function PlaybackCard({
             </Badge>
           ) : null}
         </div>
-        <CardTitle>{segmentTitle}</CardTitle>
+        <CardTitle>Latest generation</CardTitle>
         <CardDescription>
           Mux is used for review playback only. Supabase Storage remains the
           durable media source.
@@ -248,7 +253,7 @@ function PlaybackCard({
         {selectedVariant ? (
           <RecipeMuxPlayer
             playbackId={selectedVariant.mediaAsset?.muxPlaybackId}
-            title={segmentTitle}
+            title={segmentDisplayName}
           />
         ) : (
           <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed bg-muted/40 text-sm text-muted-foreground">

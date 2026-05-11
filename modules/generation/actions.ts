@@ -184,6 +184,7 @@ function assertKnownVideoModel(model: string) {
 
 function revalidateSegmentReviewPaths(videoId: string, segmentId: string) {
   revalidatePath(`/videos/${videoId}`);
+  revalidatePath(`/videos/${videoId}/segments`);
   revalidatePath(`/videos/${videoId}/segments/${segmentId}`);
 }
 
