@@ -14,6 +14,7 @@ import {
 } from "../runway.constants";
 
 import {
+  buildSeedanceGenerationInput,
   persistSegmentOutputWorkflow,
   pollSegmentGenerationWorkflow,
   requestSegmentGenerationWorkflow,
@@ -39,6 +40,54 @@ function seedanceRef(
     source: options.source ?? "asset_library",
   };
 }
+
+test("buildSeedanceGenerationInput maps resolved JIT URLs to Runway's promptImage + references[]", () => {
+  // Pure mapping test for the JIT-resolver -> Runway boundary: the lowest
+  // position becomes `promptImage`, the rest become `references[]` in order.
+  // Ordering matters because Seedance's `references[].role` is positional in
+  // our prompt template.
+  const input = buildSeedanceGenerationInput(
+    {
+      id: "segment-x",
+      videoId: "video-x",
+      title: "Hook",
+      prompt: "Generate a 4s hard cut",
+      durationTarget: 4,
+    } as unknown as SeedanceSegment,
+    [
+      seedanceRef("Whisk", "https://signed/whisk.png", { position: 2 }),
+      seedanceRef("KitchenIslandDefault", "https://signed/kitchen.png", {
+        position: 0,
+      }),
+      seedanceRef("BakedCheeseBlisterFrame", "https://signed/baked.png", {
+        position: 1,
+        source: "reference_assets",
+      }),
+    ],
+  );
+
+  assert.equal(input.promptImage, "https://signed/kitchen.png");
+  assert.deepEqual(input.references, [
+    { type: "image", uri: "https://signed/baked.png" },
+    { type: "image", uri: "https://signed/whisk.png" },
+  ]);
+});
+
+test("buildSeedanceGenerationInput returns undefined references[] when only the prompt image is present", () => {
+  const input = buildSeedanceGenerationInput(
+    {
+      id: "segment-x",
+      videoId: "video-x",
+      title: "Hook",
+      prompt: "Generate a 4s hard cut",
+      durationTarget: 4,
+    } as unknown as SeedanceSegment,
+    [seedanceRef("KitchenIslandDefault", "https://signed/kitchen.png")],
+  );
+
+  assert.equal(input.promptImage, "https://signed/kitchen.png");
+  assert.equal(input.references, undefined);
+});
 
 const baseSegment: SeedanceSegment = {
   id: "segment-1",

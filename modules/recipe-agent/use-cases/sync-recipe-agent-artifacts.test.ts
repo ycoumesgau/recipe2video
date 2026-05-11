@@ -142,6 +142,77 @@ test("buildRecipeAgentArtifactSyncPlan keeps invalid artifacts out of sync plan"
   assert.equal(plan.sunoPrompt, "# still valid markdown");
 });
 
+test("buildRecipeAgentArtifactSyncPlan rejects duplicate canonicalName entries in reference-plan.json", () => {
+  // Regression test for the deduplication invariant: the agent must declare
+  // each canonical asset ONCE and reuse it via usedInSegmentIds[]. Without
+  // this guarantee the sync would happily insert N copies of
+  // `KitchenIslandDefault` into reference_assets, one per segment.
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "reference-plan.json",
+        JSON.stringify({
+          references: [
+            {
+              type: "kitchen",
+              canonicalName: "KitchenIslandDefault",
+              role: "global kitchen identity",
+              usedInSegmentIds: ["segment-1"],
+            },
+            {
+              type: "kitchen",
+              canonicalName: "KitchenIslandDefault",
+              role: "global kitchen identity (duplicate)",
+              usedInSegmentIds: ["segment-2"],
+            },
+          ],
+        }),
+      ),
+    ],
+  });
+
+  assert.equal(plan.valid, false);
+  assert.equal(plan.referencesRaw.length, 0);
+  const invalidRecord = plan.artifactRecords[0];
+  assert.ok(invalidRecord);
+  assert.equal(invalidRecord.validationStatus, "invalid");
+  assert.match(
+    (invalidRecord.validationErrors ?? []).join(" "),
+    /Duplicate reference canonicalName/,
+  );
+});
+
+test("buildRecipeAgentArtifactSyncPlan accepts case-insensitive duplicate detection", () => {
+  // The agent has historically mixed casings (e.g. `kitchenIslandDefault` vs
+  // `KitchenIslandDefault`). The Zod superRefine normalizes via
+  // `.trim().toLowerCase()` so both forms collide as expected.
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "reference-plan.json",
+        JSON.stringify({
+          references: [
+            {
+              type: "kitchen",
+              canonicalName: "KitchenIslandDefault",
+              role: "global kitchen identity",
+            },
+            {
+              type: "kitchen",
+              canonicalName: "kitchenislanddefault",
+              role: "global kitchen identity (lowercased)",
+            },
+          ],
+        }),
+      ),
+    ],
+  });
+
+  assert.equal(plan.valid, false);
+});
+
 test("createArtifactContentHash is stable for unchanged content", () => {
   assert.equal(
     createArtifactContentHash("same content"),
