@@ -5,6 +5,7 @@ import type { AssemblySegmentClip } from "./assembly.types";
 import {
   buildClipsFromPlacements,
   computeDropInsertIndex,
+  computeReorderInsertIndex,
   createDefaultAudioClip,
   defaultPlacementsForSegments,
   generatePlacementId,
@@ -21,7 +22,7 @@ const buildSegmentMeta = (
   overrides: Partial<AssemblySegmentClip> = {},
 ): Omit<
   AssemblySegmentClip,
-  "placementId" | "position" | "inSeconds" | "outSeconds"
+  "placementId" | "position" | "inSeconds" | "outSeconds" | "volume"
 > => ({
   segmentId: overrides.segmentId ?? "seg_1",
   mediaAssetId: overrides.mediaAssetId ?? "asset_1",
@@ -299,6 +300,110 @@ test("readPlacementsState supports the same segmentId appearing multiple times",
   assert.equal(placements[0]?.segmentId, placements[1]?.segmentId);
 });
 
+test("readPlacementsState reads stored video volume", () => {
+  const durations = new Map([["seg_a", 8]]);
+  const placements = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_loud",
+          segmentId: "seg_a",
+          inSeconds: 0,
+          outSeconds: 8,
+          volume: 0.4,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.equal(placements[0]?.volume, 0.4);
+});
+
+test("readPlacementsState clamps volume to [0, 2]", () => {
+  const durations = new Map([["seg_a", 8]]);
+  const result = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_neg",
+          segmentId: "seg_a",
+          inSeconds: 0,
+          outSeconds: 8,
+          volume: -1,
+        },
+        {
+          placementId: "p_huge",
+          segmentId: "seg_a",
+          inSeconds: 0,
+          outSeconds: 8,
+          volume: 99,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.equal(result[0]?.volume, 0);
+  assert.equal(result[1]?.volume, 2);
+});
+
+test("readPlacementsState defaults missing volume to 1", () => {
+  const durations = new Map([["seg_a", 8]]);
+  const placements = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_unset",
+          segmentId: "seg_a",
+          inSeconds: 0,
+          outSeconds: 8,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.equal(placements[0]?.volume, 1);
+});
+
+test("readPlacementsState legacy string[] shape defaults volume to 1", () => {
+  const durations = new Map([["seg_a", 8]]);
+  const placements = readPlacementsState(["seg_a"], null, durations);
+  assert.equal(placements[0]?.volume, 1);
+});
+
+test("serializePlacements round-trips the volume field", () => {
+  const json = serializePlacements([
+    {
+      placementId: "p_1",
+      segmentId: "seg_a",
+      inSeconds: 0,
+      outSeconds: 4,
+      volume: 0.5,
+    },
+  ]);
+  assert.equal(json.placements[0]?.volume, 0.5);
+});
+
+test("splitPlacementAtSourceSeconds preserves volume on both halves", () => {
+  const placements = [
+    buildPlacement({ placementId: "p_a", volume: 0.6 }),
+  ];
+  const result = splitPlacementAtSourceSeconds(
+    placements,
+    "p_a",
+    4,
+    "p_a_right",
+  );
+  assert.ok(result);
+  assert.equal(result.next[0]?.volume, 0.6);
+  assert.equal(result.next[1]?.volume, 0.6);
+});
+
 test("readPlacementsState fills missing placementIds when the persisted JSON omits them", () => {
   const durations = new Map([["seg_a", 8]]);
   const placements = readPlacementsState(
@@ -460,12 +565,14 @@ const buildPlacement = (
     segmentId: string;
     inSeconds: number;
     outSeconds: number;
+    volume: number;
   }> = {},
 ) => ({
   placementId: overrides.placementId ?? "p_1",
   segmentId: overrides.segmentId ?? "seg_a",
   inSeconds: overrides.inSeconds ?? 0,
   outSeconds: overrides.outSeconds ?? 8,
+  volume: overrides.volume ?? 1,
 });
 
 test("splitPlacementAtSourceSeconds splits a placement into two halves sharing the segmentId", () => {
@@ -607,6 +714,69 @@ test("computeDropInsertIndex appends past the last clip's centre", () => {
 
 test("computeDropInsertIndex on empty layout returns 0", () => {
   assert.equal(computeDropInsertIndex([], 5), 0);
+});
+
+// ---------------------------------------------------------------------------
+// computeReorderInsertIndex
+// ---------------------------------------------------------------------------
+
+test("computeReorderInsertIndex keeps the dragged clip in place when not moved", () => {
+  const layouts = [
+    { startSeconds: 0, durationSeconds: 4 },
+    { startSeconds: 4, durationSeconds: 4 },
+    { startSeconds: 8, durationSeconds: 4 },
+  ];
+  // Middle clip dragged 0px: visual leading edge sits at its current start (4).
+  const result = computeReorderInsertIndex(layouts, 1, 4);
+  assert.equal(result.newIndex, 1);
+  assert.equal(result.indicatorSeconds, 4);
+});
+
+test("computeReorderInsertIndex moves the clip to the start when dragged left", () => {
+  const layouts = [
+    { startSeconds: 0, durationSeconds: 4 },
+    { startSeconds: 4, durationSeconds: 4 },
+    { startSeconds: 8, durationSeconds: 4 },
+  ];
+  // Drag the middle clip's leading edge to the very beginning.
+  const result = computeReorderInsertIndex(layouts, 1, 0);
+  assert.equal(result.newIndex, 0);
+  assert.equal(result.indicatorSeconds, 0);
+});
+
+test("computeReorderInsertIndex moves the clip to the end when dragged right", () => {
+  const layouts = [
+    { startSeconds: 0, durationSeconds: 4 },
+    { startSeconds: 4, durationSeconds: 4 },
+    { startSeconds: 8, durationSeconds: 4 },
+  ];
+  // Drag the first clip's leading edge past the end of the timeline.
+  const result = computeReorderInsertIndex(layouts, 0, 100);
+  assert.equal(result.newIndex, 2);
+  // Indicator sits at the cumulative start of "after the last remaining clip".
+  // Without dragged (clip 0), the others have starts 0, 4 → final cumulative = 8.
+  assert.equal(result.indicatorSeconds, 8);
+});
+
+test("computeReorderInsertIndex moves the dragged clip past one neighbour", () => {
+  const layouts = [
+    { startSeconds: 0, durationSeconds: 4 },
+    { startSeconds: 4, durationSeconds: 4 },
+    { startSeconds: 8, durationSeconds: 4 },
+  ];
+  // Drag the first clip past the second's centre (at 6 in the original
+  // layout; once dragged is removed the second sits at start 0..4, third at
+  // 4..8, so the slot AFTER the (former) second clip is at start 4).
+  const result = computeReorderInsertIndex(layouts, 0, 5);
+  assert.equal(result.newIndex, 1);
+  assert.equal(result.indicatorSeconds, 4);
+});
+
+test("computeReorderInsertIndex returns a safe default on out-of-range draggedIdx", () => {
+  const layouts = [{ startSeconds: 0, durationSeconds: 4 }];
+  const result = computeReorderInsertIndex(layouts, 99, 1);
+  assert.equal(result.newIndex, 0);
+  assert.equal(result.indicatorSeconds, 0);
 });
 
 // ---------------------------------------------------------------------------
