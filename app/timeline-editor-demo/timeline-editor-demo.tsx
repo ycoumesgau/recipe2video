@@ -17,6 +17,7 @@ import type {
 } from "@/modules/assembly/assembly.types";
 import { generatePlacementId } from "@/modules/assembly/timeline-state";
 import { generateSyntheticPeaks } from "@/modules/assembly/ui/audio-clip-waveform";
+import { VideoClipMixSection } from "@/modules/assembly/ui/audio-mix-panel";
 import { SegmentBin } from "@/modules/assembly/ui/segment-bin";
 import { TimelineEditor } from "@/modules/assembly/ui/timeline-editor";
 
@@ -30,11 +31,12 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     placementId: "demo-place-1",
     segmentId: "demo-seg-1",
     mediaAssetId: "demo-asset-1",
-    title: "Hook",
+    title: "S1. Hook",
     position: 0,
     durationSeconds: 8,
     inSeconds: 0,
     outSeconds: 8,
+    volume: 1,
     sourceUrl: "demo://hook",
     storageBucket: "demo",
     storagePath: "demo/1.mp4",
@@ -43,11 +45,12 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     placementId: "demo-place-2",
     segmentId: "demo-seg-2",
     mediaAssetId: "demo-asset-2",
-    title: "Beat",
+    title: "S2. Beat",
     position: 1,
     durationSeconds: 8,
     inSeconds: 0,
     outSeconds: 8,
+    volume: 1,
     sourceUrl: "demo://beat",
     storageBucket: "demo",
     storagePath: "demo/2.mp4",
@@ -56,11 +59,12 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     placementId: "demo-place-3",
     segmentId: "demo-seg-3",
     mediaAssetId: "demo-asset-3",
-    title: "Payoff",
+    title: "S3. Payoff",
     position: 2,
     durationSeconds: 8,
     inSeconds: 0,
     outSeconds: 8,
+    volume: 1,
     sourceUrl: "demo://payoff",
     storageBucket: "demo",
     storagePath: "demo/3.mp4",
@@ -130,6 +134,7 @@ export function TimelineEditorDemo() {
           position: safeIndex,
           inSeconds: 0,
           outSeconds: catalogueEntry.durationSeconds,
+          volume: 1,
         };
         return [
           ...current.slice(0, safeIndex),
@@ -199,31 +204,49 @@ export function TimelineEditorDemo() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Live state</CardTitle>
-            <CardDescription>
-              What the timeline editor would persist on save.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <pre className="max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
-              {JSON.stringify(
-                {
-                  placements: segments.map((s) => ({
-                    placementId: s.placementId,
-                    segmentId: s.segmentId,
-                    inSeconds: s.inSeconds,
-                    outSeconds: s.outSeconds,
-                  })),
-                  audioClips,
-                },
-                null,
-                2,
-              )}
-            </pre>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Audio mix</CardTitle>
+              <CardDescription>
+                Per-clip volume. To dim a sub-zone, split the clip on the
+                timeline and lower the sub-placement&apos;s volume.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <VideoClipMixSection
+                onChange={setSegments}
+                segments={segments}
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Live state</CardTitle>
+              <CardDescription>
+                What the timeline editor would persist on save.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <pre className="max-h-[260px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
+                {JSON.stringify(
+                  {
+                    placements: segments.map((s) => ({
+                      placementId: s.placementId,
+                      segmentId: s.segmentId,
+                      inSeconds: s.inSeconds,
+                      outSeconds: s.outSeconds,
+                      volume: s.volume,
+                    })),
+                    audioClips,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <Card>

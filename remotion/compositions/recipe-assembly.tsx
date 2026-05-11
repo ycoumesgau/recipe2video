@@ -42,7 +42,6 @@ export function RecipeAssemblyComposition({
           >
             <Video
               endAt={secondsToFrames(segment.outSeconds, fps)}
-              muted
               src={segment.sourceUrl}
               startFrom={secondsToFrames(segment.inSeconds, fps)}
               style={{
@@ -50,6 +49,7 @@ export function RecipeAssemblyComposition({
                 objectFit: "cover",
                 width: "100%",
               }}
+              volume={clamp(segment.volume ?? 1, 0, 2)}
             />
             <SegmentTitle title={segment.title} />
           </Sequence>

@@ -42,6 +42,7 @@ import {
   type AssemblyActionState,
 } from "@/modules/assembly/actions";
 import { generatePlacementId } from "@/modules/assembly/timeline-state";
+import { VideoClipMixSection } from "@/modules/assembly/ui/audio-mix-panel";
 import { SegmentBin } from "@/modules/assembly/ui/segment-bin";
 import {
   AddAudioClipButton,
@@ -161,6 +162,7 @@ export function AssemblyWorkspace({
           position: safeIndex,
           inSeconds: 0,
           outSeconds: catalogueEntry.durationSeconds,
+          volume: 1,
         };
         return [
           ...current.slice(0, safeIndex),
@@ -257,14 +259,20 @@ export function AssemblyWorkspace({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Music2 className="h-4 w-4" />
-                Audio details
+                Audio mix
               </CardTitle>
               <CardDescription>
-                Fine-tune the selected audio clip, or use the timeline above
-                for direct manipulation.
+                Balance the diegetic video audio against the music. To change
+                volume on a sub-zone of a clip, split it on the timeline and
+                set a different volume on each piece.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-5">
+              <VideoClipMixSection
+                onChange={handleSegmentsChange}
+                segments={segments}
+              />
+
               {initialRemotionProps.audio ? (
                 <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                   <p className="font-medium">
@@ -280,7 +288,7 @@ export function AssemblyWorkspace({
                   <AlertTitle>No music uploaded</AlertTitle>
                   <AlertDescription>
                     Upload a Suno audio asset through the Suno workflow to
-                    enable audio editing.
+                    enable music mixing.
                   </AlertDescription>
                 </Alert>
               )}
