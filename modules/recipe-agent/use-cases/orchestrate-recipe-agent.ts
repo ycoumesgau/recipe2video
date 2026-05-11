@@ -24,7 +24,11 @@ import {
 } from "../repositories/recipe-agent.repository";
 import { applyRecipeAgentStreamToChat } from "../services/recipe-agent-chat-ingest";
 import { finalizeRecipeAgentChatTurn } from "./finalize-recipe-agent-chat-turn";
-import { seedRecipeAgentChatTurn } from "./seed-recipe-agent-chat-turn";
+import {
+  buildRecipeAgentUserChatContent,
+  seedRecipeAgentChatTurn,
+} from "./seed-recipe-agent-chat-turn";
+import { buildRecipeSourceCursorImagesForAgent } from "../services/recipe-source-cursor-images";
 import type {
   AgentRun,
   CreateAgentRunInput,
@@ -141,6 +145,16 @@ export async function sendRecipeAgentMessage(
     deps.getRecipeAgentService?.(project) ?? deps.recipeAgentService;
 
   const currentProject = project;
+  const cursorImages = await buildRecipeSourceCursorImagesForAgent(
+    input.supabase,
+    currentProject,
+    input.stage,
+  );
+  const seedUserMessage = buildRecipeAgentUserChatContent(
+    input.message,
+    cursorImages.length,
+  );
+
   let run: AgentRun | undefined;
   let session: RecipeAgentSession | undefined;
   let chatAssistantMessageId: string | undefined;
@@ -153,7 +167,7 @@ export async function sendRecipeAgentMessage(
     const ids = await seedRecipeAgentChatTurn(input.supabase, {
       videoId: input.videoId,
       agentRunId: current.id,
-      userMessage: input.message,
+      userMessage: seedUserMessage,
       stage: input.stage,
     });
     chatAssistantMessageId = ids.assistantMessageId;
@@ -310,6 +324,7 @@ export async function sendRecipeAgentMessage(
           videoId: input.videoId,
           stage: input.stage,
           message: input.message,
+          cursorImages: cursorImages.length > 0 ? cursorImages : undefined,
           includeArtifactContents: true,
           getAgentRunId: () => run?.id,
           onStreamEvent: handleStreamEvent,
@@ -351,6 +366,7 @@ export async function sendRecipeAgentMessage(
       title: currentProject.title,
       stage: input.stage,
       message: input.message,
+      cursorImages: cursorImages.length > 0 ? cursorImages : undefined,
       includeArtifactContents: true,
       onSessionCreated: async (createdSession) => {
         session = createdSession;
@@ -378,7 +394,7 @@ export async function sendRecipeAgentMessage(
       videoId: input.videoId,
       cursorAgentId: agentSession.agentId,
       stage: input.stage,
-      userMessage: input.message,
+      userMessage: seedUserMessage,
       status: "running",
       createdBy: input.requestedByUserId,
     });

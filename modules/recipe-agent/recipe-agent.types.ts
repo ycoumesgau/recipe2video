@@ -3,6 +3,7 @@ import type {
   RunResultStatus,
   SDKAgent,
   SDKArtifact,
+  SDKImage,
 } from "@cursor/sdk";
 
 import type { RECIPE_AGENT_ARTIFACT_NAMES } from "./recipe-agent.constants";
@@ -89,6 +90,10 @@ export interface SendRecipeAgentMessageInput {
   videoId: string;
   stage: RecipeAgentStage;
   message: string;
+  /**
+   * Optional vision inputs for `agent.send({ text, images })` (e.g. signed Supabase URLs).
+   */
+  cursorImages?: SDKImage[];
   includeArtifactContents?: boolean;
   /**
    * Set after the DB run row exists so streamed Cursor events can be persisted.

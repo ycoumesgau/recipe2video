@@ -40,6 +40,9 @@ function buildInitialRecipeAgentMessage(
     "",
     `Video ID: ${input.videoId}`,
     `Recipe source type: ${input.sourceSummary.type}`,
+    input.sourceSummary.type === "photos"
+      ? "The recipe photos are attached to this Cursor agent turn as signed image URLs (vision), in addition to the filenames listed below."
+      : null,
     input.sourceSummary.recipeUrl
       ? `Recipe URL: ${input.sourceSummary.recipeUrl}`
       : null,

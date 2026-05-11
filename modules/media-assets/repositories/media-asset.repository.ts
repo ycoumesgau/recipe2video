@@ -132,6 +132,22 @@ export async function listMediaAssetsByVideoId(
   return data.map(mapMediaAsset);
 }
 
+/** Recipe source rows for a video, oldest first (upload order). */
+export async function listRecipeSourceMediaAssetsByVideoIdAsc(
+  supabase: SupabaseDataClient,
+  videoId: string,
+): Promise<MediaAsset[]> {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("*")
+    .eq("video_id", videoId)
+    .eq("type", "recipe_source")
+    .order("created_at", { ascending: true });
+
+  throwIfSupabaseError(error, "listRecipeSourceMediaAssetsByVideoIdAsc failed");
+  return data.map(mapMediaAsset);
+}
+
 export async function listMediaAssetsByGenerationIds(
   supabase: SupabaseDataClient,
   generationIds: string[],

@@ -7,6 +7,7 @@ import type {
   RunResult,
   SDKAgent,
   SDKMessage,
+  SDKUserMessage,
 } from "@cursor/sdk";
 
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
@@ -158,6 +159,40 @@ test("createRecipeAgentAndSendMessage sends the first message before disposing",
   assert.equal(result.result.artifacts[0]?.content, "{\"ok\":true}");
   assert.deepEqual(createdSessions, [result.session]);
   assert.equal(sdk.createdAgent.disposed, true);
+});
+
+test("sendMessage forwards cursorImages as SDKUserMessage", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      modelReasoning: "high",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  await service.sendMessage({
+    agentId: "bc-existing",
+    videoId: "video-1",
+    stage: "recipe_ingest",
+    message: "Analyze recipe.",
+    cursorImages: [{ url: "https://signed.example/photo.webp" }],
+    includeArtifactContents: true,
+  });
+
+  const payload = sdk.resumedAgent.sentPayload;
+  assert.ok(payload && typeof payload === "object");
+  assert.ok("text" in payload && "images" in payload);
+  const userMessage = payload as SDKUserMessage;
+  assert.equal(userMessage.images?.length, 1);
+  const firstImage = userMessage.images?.[0];
+  assert.ok(firstImage && "url" in firstImage);
+  assert.equal(firstImage.url, "https://signed.example/photo.webp");
+  assert.match(userMessage.text ?? "", /Stage: recipe_ingest/);
 });
 
 test("sendMessage resumes the same agent and returns recipe artifacts", async () => {
@@ -401,6 +436,7 @@ class FakeSdkAgent implements SDKAgent {
   readonly model = { id: "composer-2" };
   disposed = false;
   sentMessage?: string;
+  sentPayload?: string | SDKUserMessage;
   artifacts = [
     {
       path: "agent-recipes/video-1/recipe-analysis.json",
@@ -424,8 +460,10 @@ class FakeSdkAgent implements SDKAgent {
 
   constructor(readonly agentId: string) {}
 
-  async send(message: string): Promise<Run> {
-    this.sentMessage = message;
+  async send(message: string | SDKUserMessage): Promise<Run> {
+    this.sentPayload = message;
+    this.sentMessage =
+      typeof message === "string" ? message : `${message.text}\n[images:${message.images?.length ?? 0}]`;
     return new FakeRun(
       this.agentId,
       this.conversationArtifacts,

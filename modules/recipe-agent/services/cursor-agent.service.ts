@@ -97,6 +97,7 @@ export function createCursorRecipeAgentService(
             videoId: input.videoId,
             stage: input.stage,
             message: input.message,
+            cursorImages: input.cursorImages,
             includeArtifactContents: input.includeArtifactContents,
             workspacePath: workspace.workspacePath,
             onStreamEvent: input.onStreamEvent,
@@ -121,6 +122,7 @@ export function createCursorRecipeAgentService(
           videoId: input.videoId,
           stage: input.stage,
           message: input.message,
+          cursorImages: input.cursorImages,
           includeArtifactContents: input.includeArtifactContents,
           workspacePath: workspace.workspacePath,
           onStreamEvent: input.onStreamEvent,
@@ -461,17 +463,21 @@ async function sendMessageWithAgent(input: {
   videoId: string;
   stage: SendRecipeAgentMessageInput["stage"];
   message: string;
+  cursorImages?: SendRecipeAgentMessageInput["cursorImages"];
   includeArtifactContents?: boolean;
   workspacePath: string;
   onStreamEvent?: SendRecipeAgentMessageInput["onStreamEvent"];
 }): Promise<RecipeAgentRunResult> {
-  const run = await input.agent.send(
-    buildRecipeAgentUserMessage({
-      stage: input.stage,
-      message: input.message,
-      workspacePath: input.workspacePath,
-    }),
-  );
+  const text = buildRecipeAgentUserMessage({
+    stage: input.stage,
+    message: input.message,
+    workspacePath: input.workspacePath,
+  });
+  const payload =
+    input.cursorImages && input.cursorImages.length > 0
+      ? { text, images: input.cursorImages }
+      : text;
+  const run = await input.agent.send(payload);
   const streamMeta = await consumeAgentRunStream(run, input.onStreamEvent);
   const result = await run.wait();
   const artifacts = await listRecipeArtifacts({
