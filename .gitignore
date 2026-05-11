@@ -2,6 +2,9 @@
 
 # dependencies
 /node_modules
+
+# Prefer npm/package-lock.json in this repo (ignore accidental pnpm lockfile)
+pnpm-lock.yaml
 /.pnp
 .pnp.js
 

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
@@ -163,7 +162,6 @@ export function SegmentReview({
           <StatusPanel
             project={data.project}
             segmentStatus={data.segment.status}
-            videoId={videoId}
             variantCount={data.variants.length}
           />
           <AgentChatPanel
@@ -631,12 +629,10 @@ function ReferencesPanel({ references }: { references: SegmentReference[] }) {
 function StatusPanel({
   project,
   segmentStatus,
-  videoId,
   variantCount,
 }: {
   project: VideoProject | null;
   segmentStatus: SegmentStatus;
-  videoId: string;
   variantCount: number;
 }) {
   return (
@@ -658,9 +654,6 @@ function StatusPanel({
           playback IDs stay on `media_assets`; original files remain in Supabase
           Storage.
         </div>
-        <Button asChild variant="outline">
-          <Link href={`/videos/${project?.id ?? videoId}`}>Back to project</Link>
-        </Button>
       </CardContent>
     </Card>
   );

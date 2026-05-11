@@ -1,9 +1,7 @@
-import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { SegmentReview } from "@/modules/generation/ui/segment-review";
 import {
@@ -24,23 +22,16 @@ export default async function SegmentReviewPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <Badge className="mb-3" variant="outline">
-            Segment review
-          </Badge>
-          <h2 className="licorn-page-title">
-            Segment review
-          </h2>
-          <p className="max-w-3xl text-muted-foreground">
-            Compare generated variants, play Mux review copies, select the
-            accepted take, and use agent feedback with visible prompt diffs
-            before regeneration.
-          </p>
-        </div>
-        <Button asChild variant="outline">
-          <Link href={`/videos/${videoId}`}>Back to project</Link>
-        </Button>
+      <div>
+        <Badge className="mb-3" variant="outline">
+          Segment review
+        </Badge>
+        <h2 className="licorn-page-title">Segment review</h2>
+        <p className="max-w-3xl text-muted-foreground">
+          Compare generated variants, play Mux review copies, select the
+          accepted take, and use agent feedback with visible prompt diffs
+          before regeneration.
+        </p>
       </div>
 
       {dataError ? (

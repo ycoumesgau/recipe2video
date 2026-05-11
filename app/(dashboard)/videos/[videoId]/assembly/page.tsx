@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { getLatestCompositionByVideoId } from "@/modules/assembly/repositories/assembly.repository";
 import { SunoAssemblyPanel } from "@/modules/assembly/ui/suno-assembly-panel";
@@ -33,9 +31,6 @@ export default async function AssemblyPage({
             {data.error ?? "Unable to load assembly data."}
           </AlertDescription>
         </Alert>
-        <Button asChild variant="outline">
-          <Link href={`/videos/${videoId}`}>Back to project</Link>
-        </Button>
       </div>
     );
   }
