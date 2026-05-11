@@ -4,6 +4,7 @@ import {
   VideoProjectBreadcrumbProvider,
   VideoProjectBreadcrumbs,
 } from "@/modules/videos/ui/video-project-breadcrumbs";
+import { VideoProjectSubnav } from "@/modules/videos/ui/video-project-subnav";
 
 export default async function VideoProjectLayout({
   children,
@@ -21,6 +22,7 @@ export default async function VideoProjectLayout({
         projectTitle={projectTitle}
         videoId={videoId}
       />
+      <VideoProjectSubnav videoId={videoId} />
       {children}
     </VideoProjectBreadcrumbProvider>
   );

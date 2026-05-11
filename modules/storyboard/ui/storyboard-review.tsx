@@ -27,11 +27,14 @@ import type { LogicalScene, SeedanceSegment } from "../storyboard.types";
 import { StoryboardActions } from "./storyboard-actions";
 
 export function StoryboardReview({
+  compactPageHeading = false,
   dataError,
   logicalScenes,
   project,
   seedanceSegments,
 }: {
+  /** When true, skip the main H2 and description (provided by the route page). */
+  compactPageHeading?: boolean;
   dataError?: string | null;
   logicalScenes: LogicalScene[];
   project: VideoProject | null;
@@ -62,23 +65,32 @@ export function StoryboardReview({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Badge variant={isApproved ? "default" : "outline"}>
-              {VIDEO_STATUS_LABELS[project.status]}
-            </Badge>
-            <Badge variant="secondary">{project.selectedVideoModel}</Badge>
-          </div>
-          <h2 className="licorn-page-title">
-            Storyboard review
-          </h2>
-          <p className="max-w-3xl text-muted-foreground">
-            Validate the editorial logical scenes separately from the Seedance
-            generation segments before spending Runway credits.
-          </p>
+      {compactPageHeading ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Badge variant={isApproved ? "default" : "outline"}>
+            {VIDEO_STATUS_LABELS[project.status]}
+          </Badge>
+          <Badge variant="secondary">{project.selectedVideoModel}</Badge>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Badge variant={isApproved ? "default" : "outline"}>
+                {VIDEO_STATUS_LABELS[project.status]}
+              </Badge>
+              <Badge variant="secondary">{project.selectedVideoModel}</Badge>
+            </div>
+            <h2 className="licorn-page-title">
+              Storyboard review
+            </h2>
+            <p className="max-w-3xl text-muted-foreground">
+              Validate the editorial logical scenes separately from the Seedance
+              generation segments before spending Runway credits.
+            </p>
+          </div>
+        </div>
+      )}
 
       {dataError ? (
         <Alert>

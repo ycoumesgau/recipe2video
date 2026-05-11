@@ -138,7 +138,16 @@ export function VideoProjectBreadcrumbs({
           <>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>Costs</BreadcrumbPage>
+              <BreadcrumbPage>Costs & logs</BreadcrumbPage>
+            </BreadcrumbItem>
+          </>
+        ) : null}
+
+        {section.kind === "segments_list" ? (
+          <>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Segments</BreadcrumbPage>
             </BreadcrumbItem>
           </>
         ) : null}
@@ -146,23 +155,21 @@ export function VideoProjectBreadcrumbs({
         {section.kind === "segment" ? (
           <>
             <BreadcrumbSeparator />
-            {segmentTitle ? (
-              <>
-                <BreadcrumbItem className="max-w-[min(100%,12rem)] sm:max-w-xs">
-                  <span className="text-muted-foreground">Segment review</span>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem className="max-w-[min(100%,16rem)] min-w-0 sm:max-w-md">
-                  <BreadcrumbPage className="truncate" title={segmentTitle}>
-                    {segmentTitle}
-                  </BreadcrumbPage>
-                </BreadcrumbItem>
-              </>
-            ) : (
-              <BreadcrumbItem>
-                <BreadcrumbPage>Segment review</BreadcrumbPage>
-              </BreadcrumbItem>
-            )}
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href={`${prefix}/segments`}>Segments</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem className="max-w-[min(100%,16rem)] min-w-0 sm:max-w-md">
+              {segmentTitle ? (
+                <BreadcrumbPage className="truncate" title={segmentTitle}>
+                  {segmentTitle}
+                </BreadcrumbPage>
+              ) : (
+                <BreadcrumbPage>…</BreadcrumbPage>
+              )}
+            </BreadcrumbItem>
           </>
         ) : null}
       </BreadcrumbList>
@@ -173,7 +180,16 @@ export function VideoProjectBreadcrumbs({
 function resolveSection(
   pathname: string,
   prefix: string,
-): { kind: "overview" | "storyboard" | "references" | "assembly" | "costs" | "segment" } {
+): {
+  kind:
+    | "overview"
+    | "storyboard"
+    | "references"
+    | "assembly"
+    | "costs"
+    | "segments_list"
+    | "segment";
+} {
   if (pathname === prefix || pathname === `${prefix}/`) {
     return { kind: "overview" };
   }
@@ -189,8 +205,17 @@ function resolveSection(
   if (pathname === `${prefix}/costs`) {
     return { kind: "costs" };
   }
-  if (pathname.startsWith(`${prefix}/segments/`)) {
-    return { kind: "segment" };
+
+  const segmentsBase = `${prefix}/segments`;
+  if (pathname === segmentsBase || pathname === `${segmentsBase}/`) {
+    return { kind: "segments_list" };
   }
+  if (pathname.startsWith(`${segmentsBase}/`)) {
+    const tail = pathname.slice(segmentsBase.length + 1);
+    if (tail.length > 0 && !tail.includes("/")) {
+      return { kind: "segment" };
+    }
+  }
+
   return { kind: "overview" };
 }

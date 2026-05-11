@@ -11,12 +11,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { loadProjectCostDashboardData } from "@/modules/costs/load-cost-dashboard-data";
-import { readDashboardDataMode } from "@/modules/dashboard/dashboard-data-mode";
-import { CostDashboard } from "@/modules/costs/ui/cost-dashboard";
 import type { CostDashboardData } from "@/modules/costs/cost.types";
+import { readDashboardDataMode } from "@/modules/dashboard/dashboard-data-mode";
 import { countActiveGenerationsForSegments } from "@/modules/generation/repositories/generation.repository";
 import {
   getRecipeAgentThreadByVideoId,
@@ -29,7 +27,6 @@ import {
   listAgentRunsByVideoId,
 } from "@/modules/recipe-agent/repositories/recipe-agent.repository";
 import { RecipeAgentPanel } from "@/modules/recipe-agent/ui/recipe-agent-panel";
-import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { listRecipeSourceImagePreviewUrls } from "@/modules/media-assets/use-cases/list-recipe-source-image-preview-urls";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
@@ -51,9 +48,7 @@ export default async function VideoDetailPage({
     project,
     costData,
     dataError,
-    logicalScenes,
     seedanceSegments,
-    storyboardError,
     activeTaskCount,
     agentRuns,
     agentArtifacts,
@@ -78,9 +73,14 @@ export default async function VideoDetailPage({
   return (
     <div className="space-y-6">
       <div>
-        <Badge className="mb-3" variant="outline">
-          Project {project?.status ?? videoId}
-        </Badge>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Badge variant="outline">Overview</Badge>
+          {project ? (
+            <Badge variant="outline">Project {project.status}</Badge>
+          ) : (
+            <Badge variant="outline">{videoId}</Badge>
+          )}
+        </div>
         {project ? (
           <EditableProjectTitle
             initialTitle={project.title}
@@ -112,261 +112,134 @@ export default async function VideoDetailPage({
         </Alert>
       ) : null}
 
-      <Tabs defaultValue="overview">
-        <TabsList className="flex flex-wrap">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="storyboard">Storyboard</TabsTrigger>
-          <TabsTrigger value="references">References</TabsTrigger>
-          <TabsTrigger value="segments">Segments</TabsTrigger>
-          <TabsTrigger value="assembly">Assembly</TabsTrigger>
-          <TabsTrigger value="costs">Costs and Logs</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview">
-          {project && nextAction ? (
-            <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-              <div className="space-y-4">
-                <VideoProjectRscSync
-                  agentPlanningRequested={readAgentPlanningRequested(project)}
-                  agentRunCount={agentRuns.length}
-                  agentStatus={project.agentStatus}
-                  cursorAgentId={project.cursorAgentId ?? null}
-                  projectStatus={project.status}
-                />
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Next required action</CardTitle>
-                    <CardDescription>{nextAction.detail}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4 text-sm">
-                    <ProjectPipelineProgress
-                      acceptedSegmentCount={acceptedSegments}
-                      activeTaskCount={activeTaskCount}
-                      status={project.status}
-                      totalSegmentCount={seedanceSegments.length}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      {nextAction.href ? (
-                        <Button asChild>
-                          <Link href={nextAction.href}>{nextAction.cta}</Link>
-                        </Button>
-                      ) : (
-                        <Button disabled>{nextAction.cta}</Button>
-                      )}
-                      <Button asChild variant="outline">
-                        <Link href="/">Back to dashboard</Link>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <RecipeAgentPanel
-                  artifacts={agentArtifacts}
-                  chatMessages={chatMessages}
-                  latestRunSteps={latestRunSteps}
-                  latestRunTimelineEvents={latestRunTimelineEvents}
-                  project={project}
-                  runs={agentRuns}
-                />
-              </div>
-
-              <div className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Recipe source</CardTitle>
-                    <CardDescription>
-                      What the agent ingested for this project.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3 text-sm">
-                    <OverviewItem label="Source type" value={recipeSource.label} />
-                    {recipeSource.detail ? (
-                      <OverviewItem label="Reference" value={recipeSource.detail} />
-                    ) : null}
-                    {recipeSourcePhotoPreviews.length > 0 ? (
-                      <div className="space-y-2">
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                          Preview
-                        </p>
-                        <RecipeSourcePhotoThumbnails
-                          previews={recipeSourcePhotoPreviews}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Files remain in Supabase Storage. Signed links for this page
-                          refresh on each visit; they are independent from the Cursor agent
-                          URLs.
-                        </p>
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Selected models</CardTitle>
-                    <CardDescription>
-                      No silent fallback: failures surface here instead of
-                      switching model behind the user.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <OverviewItem
-                        label="Video"
-                        value={project.selectedVideoModel}
-                      />
-                      <OverviewItem
-                        label="Image"
-                        value={project.selectedImageModel}
-                      />
-                      <OverviewItem
-                        label="TTS"
-                        value={project.selectedTtsModel}
-                      />
-                      <OverviewItem
-                        label="SFX"
-                        value={project.selectedSfxModel}
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Cost summary</CardTitle>
-                    <CardDescription>
-                      Aggregated from `cost_logs` for this project.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ProjectCostSummary data={costData} />
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          ) : (
+      {project && nextAction ? (
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+          <div className="space-y-4">
+            <VideoProjectRscSync
+              agentPlanningRequested={readAgentPlanningRequested(project)}
+              agentRunCount={agentRuns.length}
+              agentStatus={project.agentStatus}
+              cursorAgentId={project.cursorAgentId ?? null}
+              projectStatus={project.status}
+            />
             <Card>
-              <CardContent className="py-8 text-center text-muted-foreground">
-                No project data is loaded yet.
+              <CardHeader>
+                <CardTitle>Next required action</CardTitle>
+                <CardDescription>{nextAction.detail}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm">
+                <ProjectPipelineProgress
+                  acceptedSegmentCount={acceptedSegments}
+                  activeTaskCount={activeTaskCount}
+                  status={project.status}
+                  totalSegmentCount={seedanceSegments.length}
+                />
+                <div className="flex flex-wrap gap-2">
+                  {nextAction.href ? (
+                    <Button asChild>
+                      <Link href={nextAction.href}>{nextAction.cta}</Link>
+                    </Button>
+                  ) : (
+                    <Button disabled>{nextAction.cta}</Button>
+                  )}
+                  <Button asChild variant="outline">
+                    <Link href="/">Back to dashboard</Link>
+                  </Button>
+                </div>
               </CardContent>
             </Card>
-          )}
-        </TabsContent>
-        <TabsContent value="storyboard">
-          <StoryboardReview
-            dataError={storyboardError}
-            logicalScenes={logicalScenes}
-            project={project}
-            seedanceSegments={seedanceSegments}
-          />
-        </TabsContent>
-        <TabsContent value="references">
-          <Card>
-            <CardHeader>
-              <CardTitle>Reference checkpoint</CardTitle>
-              <CardDescription>
-                Review global and recipe-specific references before any Seedance
-                generation is launched.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <p className="text-muted-foreground">
-                Approvals require a stored Supabase reference image. Runway
-                uploads are explicit so the selected model and media source stay
-                visible.
-              </p>
-              <Button asChild>
-                <Link href={`/videos/${videoId}/references`}>
-                  Open references
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="segments">
-          <Card>
-            <CardHeader>
-              <CardTitle>Segment review</CardTitle>
-              <CardDescription>
-                Open a Seedance segment to compare variants, play Mux review
-                copies, submit feedback, and approve prompt diffs before
-                regeneration.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {seedanceSegments.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                  No Seedance segments are available yet. Load or generate a
-                  storyboard before reviewing variants.
+
+            <RecipeAgentPanel
+              artifacts={agentArtifacts}
+              chatMessages={chatMessages}
+              latestRunSteps={latestRunSteps}
+              latestRunTimelineEvents={latestRunTimelineEvents}
+              project={project}
+              runs={agentRuns}
+            />
+          </div>
+
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recipe source</CardTitle>
+                <CardDescription>
+                  What the agent ingested for this project.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <OverviewItem label="Source type" value={recipeSource.label} />
+                {recipeSource.detail ? (
+                  <OverviewItem label="Reference" value={recipeSource.detail} />
+                ) : null}
+                {recipeSourcePhotoPreviews.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Preview
+                    </p>
+                    <RecipeSourcePhotoThumbnails
+                      previews={recipeSourcePhotoPreviews}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Files remain in Supabase Storage. Signed links for this page
+                      refresh on each visit; they are independent from the Cursor agent
+                      URLs.
+                    </p>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Selected models</CardTitle>
+                <CardDescription>
+                  No silent fallback: failures surface here instead of
+                  switching model behind the user.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <OverviewItem
+                    label="Video"
+                    value={project.selectedVideoModel}
+                  />
+                  <OverviewItem
+                    label="Image"
+                    value={project.selectedImageModel}
+                  />
+                  <OverviewItem
+                    label="TTS"
+                    value={project.selectedTtsModel}
+                  />
+                  <OverviewItem
+                    label="SFX"
+                    value={project.selectedSfxModel}
+                  />
                 </div>
-              ) : (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {seedanceSegments.map((segment) => (
-                    <Card key={segment.id} size="sm">
-                      <CardHeader>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <CardTitle>
-                            S{segment.position}. {segment.title}
-                          </CardTitle>
-                          <Badge variant="outline">{segment.status}</Badge>
-                        </div>
-                        <CardDescription>{segment.arc}</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="grid gap-2 text-sm md:grid-cols-3">
-                          <OverviewItem
-                            label="Duration"
-                            value={formatSeconds(segment.durationTarget)}
-                          />
-                          <OverviewItem
-                            label="References"
-                            value={String(segment.references.length)}
-                          />
-                          <OverviewItem
-                            label="Accepted"
-                            value={segment.selectedGenerationId ? "yes" : "no"}
-                          />
-                        </div>
-                        <Button asChild>
-                          <Link
-                            href={`/videos/${videoId}/segments/${segment.id}`}
-                          >
-                            Review segment
-                          </Link>
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="assembly">
-          <Card>
-            <CardHeader>
-              <CardTitle>Assembly and Suno music</CardTitle>
-              <CardDescription>
-                Generate the manual Suno prompt, upload audio, preview accepted
-                Supabase originals in Remotion, and preserve final exports.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <p className="text-muted-foreground">
-                Remotion assembly uses Supabase Storage originals for preview
-                and export handoff. Uploaded Suno audio is stored as a
-                `suno_audio` media asset. Mux is only used after the final MP4
-                is stored for playback.
-              </p>
-              <Button asChild>
-                <Link href={`/videos/${videoId}/assembly`}>Open assembly</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="costs">
-          <CostDashboard data={costData} />
-        </TabsContent>
-      </Tabs>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Cost summary</CardTitle>
+                <CardDescription>
+                  Aggregated from `cost_logs` for this project.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ProjectCostSummary data={costData} />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            No project data is loaded yet.
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -377,7 +250,7 @@ async function loadProject(videoId: string) {
   try {
     const supabase = createSupabaseAdminClient();
     const project = await getVideoProjectById(supabase, videoId);
-    const [{ logicalScenes, seedanceSegments }, costData] = await Promise.all([
+    const [{ seedanceSegments }, costData] = await Promise.all([
       getStoryboardReviewData(videoId),
       loadProjectCostDashboardData(videoId, { useMockFallback }),
     ]);
@@ -416,9 +289,7 @@ async function loadProject(videoId: string) {
       project,
       costData,
       dataError: null,
-      logicalScenes,
       seedanceSegments,
-      storyboardError: null,
       activeTaskCount,
       agentRuns,
       agentArtifacts,
@@ -431,16 +302,11 @@ async function loadProject(videoId: string) {
     return {
       project: null,
       costData: await loadProjectCostDashboardData(videoId, { useMockFallback }),
-      logicalScenes: [],
       seedanceSegments: [],
       dataError:
         error instanceof Error
           ? error.message
           : "Unable to load project data.",
-      storyboardError:
-        error instanceof Error
-          ? error.message
-          : "Unable to load storyboard data.",
       activeTaskCount: 0,
       agentRuns: [],
       agentArtifacts: [],
@@ -582,7 +448,7 @@ function computeNextAction(input: {
     return {
       detail: `Review Seedance segment variants (${input.acceptedCount}/${input.totalCount} accepted).`,
       cta: "Open segments",
-      href: `/videos/${project.id}#segments`,
+      href: `/videos/${project.id}/segments`,
     };
   }
   if (project.status === "assembling") {
@@ -617,10 +483,3 @@ function OverviewItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatSeconds(seconds: number) {
-  if (seconds <= 0) {
-    return "-";
-  }
-
-  return `${Number(seconds.toFixed(1))}s`;
-}
