@@ -41,6 +41,8 @@ import {
   uploadFinalExportAction,
   type AssemblyActionState,
 } from "@/modules/assembly/actions";
+import { generatePlacementId } from "@/modules/assembly/timeline-state";
+import { SegmentBin } from "@/modules/assembly/ui/segment-bin";
 import {
   AddAudioClipButton,
   TimelineEditor,
@@ -56,6 +58,7 @@ import {
 const initialActionState: AssemblyActionState = {};
 
 export function AssemblyWorkspace({
+  availableSegments,
   compositionId,
   finalExports,
   initialRemotionProps,
@@ -65,6 +68,13 @@ export function AssemblyWorkspace({
   projectTitle,
   videoId,
 }: {
+  /**
+   * Catalogue of every accepted Seedance segment that has a stored media
+   * asset. Drives the {@link SegmentBin} sidebar and is also the source of
+   * truth for the editor when a segment is dropped from the bin onto the
+   * timeline (we look up the metadata here and materialise a placement).
+   */
+  availableSegments: AssemblySegmentClip[];
   compositionId?: string | null;
   finalExports: MediaAsset[];
   initialRemotionProps: AssemblyRemotionProps;
@@ -129,6 +139,47 @@ export function AssemblyWorkspace({
   const handleAudioClipsChange = useCallback((next: AssemblyAudioClip[]) => {
     setAudioClips(next);
   }, []);
+
+  /**
+   * Materialise a fresh placement from the catalogue and insert it at
+   * `insertIndex` in the timeline. Used both by the bin's drag-and-drop
+   * onto the video lane and the bin card's "+" append button.
+   */
+  const handleAddSegmentFromBin = useCallback(
+    (segmentId: string, insertIndex: number) => {
+      const catalogueEntry = availableSegments.find(
+        (segment) => segment.segmentId === segmentId,
+      );
+      if (!catalogueEntry) {
+        return;
+      }
+      setSegments((current) => {
+        const safeIndex = Math.max(0, Math.min(insertIndex, current.length));
+        const newClip: AssemblySegmentClip = {
+          ...catalogueEntry,
+          placementId: generatePlacementId(),
+          position: safeIndex,
+          inSeconds: 0,
+          outSeconds: catalogueEntry.durationSeconds,
+        };
+        return [
+          ...current.slice(0, safeIndex),
+          newClip,
+          ...current.slice(safeIndex),
+        ];
+      });
+    },
+    [availableSegments],
+  );
+  const handleSegmentDroppedFromBin = useCallback(
+    ({ segmentId, insertIndex }: { segmentId: string; insertIndex: number }) =>
+      handleAddSegmentFromBin(segmentId, insertIndex),
+    [handleAddSegmentFromBin],
+  );
+  const handleAppendSegmentFromBin = useCallback(
+    (segmentId: string) => handleAddSegmentFromBin(segmentId, segments.length),
+    [handleAddSegmentFromBin, segments.length],
+  );
 
   return (
     <div className="space-y-6">
@@ -332,26 +383,35 @@ export function AssemblyWorkspace({
           <CardDescription>
             Drag clips to reorder, drag clip edges to trim (the change commits
             on release so you can read the magnitude before letting go), drag
-            audio anywhere on the timeline, and pull the corner to fade. Snaps
-            to the playhead and to neighbouring clip edges.
+            audio anywhere on the timeline, and pull the corner to fade. Drag
+            a card from the bin onto the video lane to add a placement; press
+            <kbd className="mx-1 rounded border bg-muted px-1">S</kbd>
+            to split a selected clip at the playhead and
+            <kbd className="mx-1 rounded border bg-muted px-1">Del</kbd>
+            to remove it.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {segments.length > 0 ? (
-            <TimelineEditor
-              audioClips={audioClips}
-              audioTrack={initialRemotionProps.audio ?? null}
-              fps={initialRemotionProps.fps}
-              onAudioClipsChange={handleAudioClipsChange}
-              onSegmentsChange={handleSegmentsChange}
-              playerRef={playerRef}
-              segments={segments}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Accept segment variants before assembling the final sequence.
+          <SegmentBin
+            availableSegments={availableSegments}
+            onAppend={handleAppendSegmentFromBin}
+          />
+          {segments.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Drag a card from the bin onto the video lane below to start the
+              timeline. Drops snap to the closest clip boundary.
             </p>
-          )}
+          ) : null}
+          <TimelineEditor
+            audioClips={audioClips}
+            audioTrack={initialRemotionProps.audio ?? null}
+            fps={initialRemotionProps.fps}
+            onAudioClipsChange={handleAudioClipsChange}
+            onSegmentDroppedFromBin={handleSegmentDroppedFromBin}
+            onSegmentsChange={handleSegmentsChange}
+            playerRef={playerRef}
+            segments={segments}
+          />
           <AddAudioClipButton
             audioClips={audioClips}
             audioTrack={initialRemotionProps.audio ?? null}

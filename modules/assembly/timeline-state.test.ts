@@ -4,13 +4,17 @@ import test from "node:test";
 import type { AssemblySegmentClip } from "./assembly.types";
 import {
   buildClipsFromPlacements,
+  computeDropInsertIndex,
   createDefaultAudioClip,
   defaultPlacementsForSegments,
+  generatePlacementId,
   getEmptyTimelineState,
+  insertPlacementAt,
   projectLegacyAudioSync,
   readPlacementsState,
   readTimelineState,
   serializePlacements,
+  splitPlacementAtSourceSeconds,
 } from "./timeline-state";
 
 const buildSegmentMeta = (
@@ -444,4 +448,178 @@ test("createDefaultAudioClip uses provided duration", () => {
 test("createDefaultAudioClip falls back to 30s when duration is missing", () => {
   const clip = createDefaultAudioClip({ mediaAssetId: "asset_y" });
   assert.equal(clip.outSeconds, 30);
+});
+
+// ---------------------------------------------------------------------------
+// splitPlacementAtSourceSeconds
+// ---------------------------------------------------------------------------
+
+const buildPlacement = (
+  overrides: Partial<{
+    placementId: string;
+    segmentId: string;
+    inSeconds: number;
+    outSeconds: number;
+  }> = {},
+) => ({
+  placementId: overrides.placementId ?? "p_1",
+  segmentId: overrides.segmentId ?? "seg_a",
+  inSeconds: overrides.inSeconds ?? 0,
+  outSeconds: overrides.outSeconds ?? 8,
+});
+
+test("splitPlacementAtSourceSeconds splits a placement into two halves sharing the segmentId", () => {
+  const placements = [buildPlacement({ placementId: "p_a" })];
+  const result = splitPlacementAtSourceSeconds(
+    placements,
+    "p_a",
+    4,
+    "p_a_right",
+  );
+  assert.ok(result);
+  assert.equal(result.next.length, 2);
+  assert.equal(result.next[0]?.placementId, "p_a");
+  assert.equal(result.next[0]?.outSeconds, 4);
+  assert.equal(result.next[1]?.placementId, "p_a_right");
+  assert.equal(result.next[1]?.inSeconds, 4);
+  assert.equal(result.next[1]?.segmentId, result.next[0]?.segmentId);
+  assert.equal(result.rightPlacementId, "p_a_right");
+});
+
+test("splitPlacementAtSourceSeconds returns null on missing placementId", () => {
+  const placements = [buildPlacement()];
+  const result = splitPlacementAtSourceSeconds(
+    placements,
+    "ghost",
+    4,
+    "p_new",
+  );
+  assert.equal(result, null);
+});
+
+test("splitPlacementAtSourceSeconds returns null when split point is too close to in", () => {
+  const placements = [buildPlacement({ inSeconds: 0, outSeconds: 8 })];
+  const result = splitPlacementAtSourceSeconds(
+    placements,
+    "p_1",
+    0.05,
+    "p_new",
+  );
+  assert.equal(result, null);
+});
+
+test("splitPlacementAtSourceSeconds returns null when split point is too close to out", () => {
+  const placements = [buildPlacement({ inSeconds: 0, outSeconds: 8 })];
+  const result = splitPlacementAtSourceSeconds(
+    placements,
+    "p_1",
+    7.95,
+    "p_new",
+  );
+  assert.equal(result, null);
+});
+
+test("splitPlacementAtSourceSeconds preserves all other placements untouched", () => {
+  const placements = [
+    buildPlacement({ placementId: "p_a", segmentId: "seg_a" }),
+    buildPlacement({ placementId: "p_b", segmentId: "seg_b" }),
+    buildPlacement({ placementId: "p_c", segmentId: "seg_c" }),
+  ];
+  const result = splitPlacementAtSourceSeconds(
+    placements,
+    "p_b",
+    4,
+    "p_b_right",
+  );
+  assert.ok(result);
+  assert.equal(result.next.length, 4);
+  assert.equal(result.next[0]?.placementId, "p_a");
+  assert.equal(result.next[1]?.placementId, "p_b");
+  assert.equal(result.next[2]?.placementId, "p_b_right");
+  assert.equal(result.next[3]?.placementId, "p_c");
+});
+
+// ---------------------------------------------------------------------------
+// insertPlacementAt
+// ---------------------------------------------------------------------------
+
+test("insertPlacementAt inserts at the given index", () => {
+  const placements = [
+    buildPlacement({ placementId: "p_a" }),
+    buildPlacement({ placementId: "p_b" }),
+  ];
+  const next = insertPlacementAt(
+    placements,
+    1,
+    buildPlacement({ placementId: "p_new" }),
+  );
+  assert.equal(next.length, 3);
+  assert.equal(next[0]?.placementId, "p_a");
+  assert.equal(next[1]?.placementId, "p_new");
+  assert.equal(next[2]?.placementId, "p_b");
+});
+
+test("insertPlacementAt clamps a negative index to 0", () => {
+  const next = insertPlacementAt(
+    [buildPlacement({ placementId: "p_a" })],
+    -5,
+    buildPlacement({ placementId: "p_new" }),
+  );
+  assert.equal(next[0]?.placementId, "p_new");
+});
+
+test("insertPlacementAt clamps an out-of-bounds index to length", () => {
+  const next = insertPlacementAt(
+    [buildPlacement({ placementId: "p_a" })],
+    50,
+    buildPlacement({ placementId: "p_new" }),
+  );
+  assert.equal(next[next.length - 1]?.placementId, "p_new");
+});
+
+// ---------------------------------------------------------------------------
+// computeDropInsertIndex
+// ---------------------------------------------------------------------------
+
+test("computeDropInsertIndex returns 0 when dropping before the first clip", () => {
+  const layouts = [
+    { startSeconds: 0, durationSeconds: 4 },
+    { startSeconds: 4, durationSeconds: 4 },
+  ];
+  assert.equal(computeDropInsertIndex(layouts, 1), 0);
+});
+
+test("computeDropInsertIndex returns the middle index when dropping between two clips", () => {
+  const layouts = [
+    { startSeconds: 0, durationSeconds: 4 },
+    { startSeconds: 4, durationSeconds: 4 },
+  ];
+  assert.equal(computeDropInsertIndex(layouts, 3.5), 1);
+});
+
+test("computeDropInsertIndex appends past the last clip's centre", () => {
+  const layouts = [
+    { startSeconds: 0, durationSeconds: 4 },
+    { startSeconds: 4, durationSeconds: 4 },
+  ];
+  assert.equal(computeDropInsertIndex(layouts, 7), 2);
+});
+
+test("computeDropInsertIndex on empty layout returns 0", () => {
+  assert.equal(computeDropInsertIndex([], 5), 0);
+});
+
+// ---------------------------------------------------------------------------
+// generatePlacementId
+// ---------------------------------------------------------------------------
+
+test("generatePlacementId returns prefixed strings that are unique enough", () => {
+  const ids = new Set<string>();
+  for (let i = 0; i < 20; i += 1) {
+    ids.add(generatePlacementId());
+  }
+  assert.equal(ids.size, 20);
+  for (const id of ids) {
+    assert.match(id, /^placement_/);
+  }
 });

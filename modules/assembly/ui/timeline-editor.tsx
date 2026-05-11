@@ -28,7 +28,21 @@ import type {
   AssemblySegmentClip,
 } from "@/modules/assembly/assembly.types";
 
+import {
+  computeDropInsertIndex,
+  generatePlacementId,
+  splitPlacementAtSourceSeconds,
+} from "@/modules/assembly/timeline-state";
+
 import { AudioClipWaveform } from "./audio-clip-waveform";
+
+/**
+ * MIME-style key used by the segment bin (HTML5 drag-and-drop) to ferry the
+ * dragged segmentId from a bin card to the video track's drop target. We
+ * intentionally use a non-`text/plain` key so a stray drag of selected text
+ * can never be misinterpreted as a bin drop.
+ */
+export const BIN_DRAG_MIME = "application/x-recipe2video-segment";
 
 /**
  * Optional pre-computed waveform peaks keyed by audio mediaAssetId. Used by
@@ -142,6 +156,17 @@ export interface TimelineEditorProps {
   onAudioClipsChange: (clips: AssemblyAudioClip[]) => void;
   onSegmentsChange: (segments: AssemblySegmentClip[]) => void;
   /**
+   * Fired when a segment card from the bin is dropped onto the video track.
+   * The editor itself does not own the segment catalogue, so it cannot
+   * materialise the new placement on its own — the parent looks up the
+   * `segmentId` in `availableSegments` and pushes a new clip into
+   * `segments` at the requested index.
+   */
+  onSegmentDroppedFromBin?: (input: {
+    segmentId: string;
+    insertIndex: number;
+  }) => void;
+  /**
    * Optional pre-computed peaks for audio waveform rendering. Indexed by
    * `AssemblyAudioTrack.mediaAssetId`. Mostly used by the demo route.
    */
@@ -156,6 +181,7 @@ export function TimelineEditor({
   fps,
   onAudioClipsChange,
   onSegmentsChange,
+  onSegmentDroppedFromBin,
   peaksByMediaAsset,
   playerRef,
   segments,
@@ -172,6 +198,15 @@ export function TimelineEditor({
     | null
   >(null);
   const [pendingDrag, setPendingDrag] = useState<PendingDrag>(null);
+  /**
+   * Visible insertion marker while a segment card from the bin is being
+   * dragged over the video lane (HTML5 drag-and-drop). Holds the px X
+   * position of the proposed insertion line, or null when no bin drag is
+   * in progress.
+   */
+  const [binDropIndicatorPx, setBinDropIndicatorPx] = useState<number | null>(
+    null,
+  );
 
   const segmentLayout = useMemo(() => {
     const result: Array<{ startSeconds: number; durationSeconds: number }> = [];
@@ -642,39 +677,148 @@ export function TimelineEditor({
   );
 
   const handleSplitAtPlayhead = useCallback(() => {
-    if (!selection || selection.kind !== "audio") {
+    if (!selection) {
       return;
     }
-    const clip = audioClips.find((c) => c.id === selection.clipId);
-    if (!clip) {
+    if (selection.kind === "audio") {
+      const clip = audioClips.find((c) => c.id === selection.clipId);
+      if (!clip) {
+        return;
+      }
+      const playheadOffset = playheadSeconds - clip.startOnTimelineSeconds;
+      if (
+        playheadOffset <= MIN_CLIP_DURATION ||
+        playheadOffset >= clip.outSeconds - clip.inSeconds - MIN_CLIP_DURATION
+      ) {
+        return;
+      }
+      const splitInSource = clip.inSeconds + playheadOffset;
+      const left: AssemblyAudioClip = {
+        ...clip,
+        outSeconds: splitInSource,
+        fadeOutSeconds: 0,
+      };
+      const right: AssemblyAudioClip = {
+        ...clip,
+        id: `${clip.id}_${Math.floor(Math.random() * 1e6)}`,
+        inSeconds: splitInSource,
+        startOnTimelineSeconds: clip.startOnTimelineSeconds + playheadOffset,
+        fadeInSeconds: 0,
+      };
+      onAudioClipsChange(
+        audioClips.flatMap((existing) =>
+          existing.id === clip.id ? [left, right] : [existing],
+        ),
+      );
       return;
     }
-    const playheadOffset = playheadSeconds - clip.startOnTimelineSeconds;
+    // Segment split: locate the placement under the playhead and call the
+    // pure helper that returns two adjacent placements sharing the same
+    // segmentId. Selection moves to the right half so the user can press
+    // 'S' again to chain a second split (typical 5-click middle-cut flow).
+    const idx = segments.findIndex((segment) => segment.placementId === selection.placementId);
+    if (idx === -1) {
+      return;
+    }
+    const layout = segmentLayout[idx];
+    const segment = segments[idx];
+    if (!layout || !segment) {
+      return;
+    }
+    const offsetIntoPlacement = playheadSeconds - layout.startSeconds;
     if (
-      playheadOffset <= MIN_CLIP_DURATION ||
-      playheadOffset >= clip.outSeconds - clip.inSeconds - MIN_CLIP_DURATION
+      offsetIntoPlacement <= MIN_CLIP_DURATION ||
+      offsetIntoPlacement >= layout.durationSeconds - MIN_CLIP_DURATION
     ) {
       return;
     }
-    const splitInSource = clip.inSeconds + playheadOffset;
-    const left: AssemblyAudioClip = {
-      ...clip,
-      outSeconds: splitInSource,
-      fadeOutSeconds: 0,
-    };
-    const right: AssemblyAudioClip = {
-      ...clip,
-      id: `${clip.id}_${Math.floor(Math.random() * 1e6)}`,
-      inSeconds: splitInSource,
-      startOnTimelineSeconds: clip.startOnTimelineSeconds + playheadOffset,
-      fadeInSeconds: 0,
-    };
-    onAudioClipsChange(
-      audioClips.flatMap((existing) =>
-        existing.id === clip.id ? [left, right] : [existing],
-      ),
+    const splitInSource = segment.inSeconds + offsetIntoPlacement;
+    const newPlacementId = generatePlacementId();
+    const result = splitPlacementAtSourceSeconds(
+      segments,
+      segment.placementId,
+      splitInSource,
+      newPlacementId,
     );
-  }, [audioClips, onAudioClipsChange, playheadSeconds, selection]);
+    if (!result) {
+      return;
+    }
+    onSegmentsChange(result.next);
+    setSelection({ kind: "segment", placementId: result.rightPlacementId });
+  }, [
+    audioClips,
+    onAudioClipsChange,
+    onSegmentsChange,
+    playheadSeconds,
+    segmentLayout,
+    segments,
+    selection,
+  ]);
+
+  const handleVideoLaneDragOver = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      // Only react to drags that carry our bin payload — drops of stray
+      // selected text or files should not paint a drop indicator.
+      if (!event.dataTransfer.types.includes(BIN_DRAG_MIME)) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      const tracks = tracksRef.current;
+      if (!tracks) {
+        return;
+      }
+      const rect = tracks.getBoundingClientRect();
+      const dropX = event.clientX - rect.left;
+      const dropSeconds = Math.max(dropX / pxPerSecond, 0);
+      const insertIndex = computeDropInsertIndex(segmentLayout, dropSeconds);
+      const insertX =
+        insertIndex < segmentLayout.length
+          ? (segmentLayout[insertIndex]?.startSeconds ?? 0) * pxPerSecond
+          : segmentLayout.reduce(
+              (acc, layout) =>
+                Math.max(
+                  acc,
+                  (layout.startSeconds + layout.durationSeconds) * pxPerSecond,
+                ),
+              0,
+            );
+      setBinDropIndicatorPx(insertX);
+    },
+    [pxPerSecond, segmentLayout],
+  );
+  const handleVideoLaneDragLeave = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      // Ignore moves between the lane's children (still over the lane).
+      if (
+        event.currentTarget.contains(event.relatedTarget as Node | null)
+      ) {
+        return;
+      }
+      setBinDropIndicatorPx(null);
+    },
+    [],
+  );
+  const handleVideoLaneDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      const segmentId = event.dataTransfer.getData(BIN_DRAG_MIME);
+      setBinDropIndicatorPx(null);
+      if (!segmentId || !onSegmentDroppedFromBin) {
+        return;
+      }
+      event.preventDefault();
+      const tracks = tracksRef.current;
+      if (!tracks) {
+        return;
+      }
+      const rect = tracks.getBoundingClientRect();
+      const dropX = event.clientX - rect.left;
+      const dropSeconds = Math.max(dropX / pxPerSecond, 0);
+      const insertIndex = computeDropInsertIndex(segmentLayout, dropSeconds);
+      onSegmentDroppedFromBin({ segmentId, insertIndex });
+    },
+    [onSegmentDroppedFromBin, pxPerSecond, segmentLayout],
+  );
 
   const handleDeleteSelected = useCallback(() => {
     if (!selection) {
@@ -685,8 +829,21 @@ export function TimelineEditor({
         audioClips.filter((clip) => clip.id !== selection.clipId),
       );
       setSelection(null);
+      return;
     }
-  }, [audioClips, onAudioClipsChange, selection]);
+    onSegmentsChange(
+      segments.filter(
+        (segment) => segment.placementId !== selection.placementId,
+      ),
+    );
+    setSelection(null);
+  }, [
+    audioClips,
+    onAudioClipsChange,
+    onSegmentsChange,
+    segments,
+    selection,
+  ]);
 
   // Keyboard shortcuts: space toggles play/pause, S splits the selected audio
   // clip at the playhead, Delete/Backspace removes the selected audio clip.
@@ -743,7 +900,7 @@ export function TimelineEditor({
         </span>
         <div className="ml-auto flex items-center gap-2">
           <Button
-            disabled={selection?.kind !== "audio"}
+            disabled={!selection}
             onClick={handleSplitAtPlayhead}
             size="sm"
             type="button"
@@ -753,7 +910,7 @@ export function TimelineEditor({
             Split (S)
           </Button>
           <Button
-            disabled={selection?.kind !== "audio"}
+            disabled={!selection}
             onClick={handleDeleteSelected}
             size="sm"
             type="button"
@@ -821,6 +978,9 @@ export function TimelineEditor({
           >
             <TrackLane
               label="Video"
+              onDragLeave={handleVideoLaneDragLeave}
+              onDragOver={handleVideoLaneDragOver}
+              onDrop={handleVideoLaneDrop}
               top={0}
               height={VIDEO_TRACK_HEIGHT}
               widthPx={timelineWidthPx}
@@ -907,6 +1067,12 @@ export function TimelineEditor({
               segments={segments}
               videoTrackHeight={VIDEO_TRACK_HEIGHT}
             />
+            {binDropIndicatorPx !== null ? (
+              <BinDropIndicator
+                heightPx={VIDEO_TRACK_HEIGHT}
+                leftPx={binDropIndicatorPx}
+              />
+            ) : null}
           </div>
 
           <Playhead
@@ -933,11 +1099,11 @@ function ShortcutsLegend({
       </span>
       <span>
         <kbd className="rounded border bg-muted px-1">S</kbd> split selected
-        audio at playhead
+        clip at playhead
       </span>
       <span>
         <kbd className="rounded border bg-muted px-1">Del</kbd> remove
-        selected audio
+        selected clip
       </span>
       <span>Drag clip body to move, edges to trim, top corners to fade.</span>
       <span className="ml-auto">
@@ -999,18 +1165,27 @@ function TrackLane({
   children,
   height,
   label,
+  onDragLeave,
+  onDragOver,
+  onDrop,
   top,
   widthPx,
 }: {
   children: React.ReactNode;
   height: number;
   label: string;
+  onDragLeave?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
   top: number;
   widthPx: number;
 }) {
   return (
     <div
       className="absolute rounded-md border bg-muted/20"
+      onDragLeave={onDragLeave}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       style={{ height, left: 0, top, width: widthPx }}
     >
       <div className="absolute left-1 top-1 z-10 rounded bg-background/80 px-1 text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -1228,6 +1403,25 @@ function Playhead({
     >
       <div className="absolute -left-[5px] -top-[5px] h-2.5 w-2.5 rotate-45 bg-rose-500" />
       <div className="h-full w-px bg-rose-500" />
+    </div>
+  );
+}
+
+function BinDropIndicator({
+  heightPx,
+  leftPx,
+}: {
+  heightPx: number;
+  leftPx: number;
+}) {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute z-30"
+      style={{ height: heightPx, left: leftPx, top: 0 }}
+    >
+      <div className="absolute -left-[5px] -top-[5px] h-2.5 w-2.5 rotate-45 bg-emerald-500" />
+      <div className="h-full w-0.5 bg-emerald-500" />
     </div>
   );
 }
