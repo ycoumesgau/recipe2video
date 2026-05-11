@@ -241,6 +241,115 @@ export function defaultPlacementsForSegments(
 }
 
 /**
+ * Split a placement at a given source-media offset (in seconds, in the
+ * source media's timeline, NOT the global assembly timeline). The placement
+ * is replaced by two adjacent placements that share the same `segmentId`
+ * but have distinct `placementId`s and complementary `[in, out]` windows.
+ *
+ * Returns `null` if the split point is invalid: outside the placement's
+ * `[in, out]` window or too close (<{@link MIN_TRIM_WINDOW}) to either edge.
+ *
+ * Pure function so it can be unit-tested without React state. The parent
+ * component is responsible for calling its own `onChange` handler with the
+ * returned array.
+ */
+export function splitPlacementAtSourceSeconds<
+  T extends {
+    placementId: string;
+    segmentId: string;
+    inSeconds: number;
+    outSeconds: number;
+  },
+>(
+  placements: T[],
+  placementId: string,
+  splitSourceSeconds: number,
+  newPlacementId: string,
+): { next: T[]; rightPlacementId: string } | null {
+  const idx = placements.findIndex((p) => p.placementId === placementId);
+  if (idx === -1) {
+    return null;
+  }
+  const target = placements[idx];
+  if (!target) {
+    return null;
+  }
+  if (
+    splitSourceSeconds <= target.inSeconds + MIN_TRIM_WINDOW ||
+    splitSourceSeconds >= target.outSeconds - MIN_TRIM_WINDOW
+  ) {
+    return null;
+  }
+  const left = { ...target, outSeconds: splitSourceSeconds };
+  const right = {
+    ...target,
+    placementId: newPlacementId,
+    inSeconds: splitSourceSeconds,
+  };
+  const next = [
+    ...placements.slice(0, idx),
+    left,
+    right,
+    ...placements.slice(idx + 1),
+  ];
+  return { next, rightPlacementId: newPlacementId };
+}
+
+/**
+ * Insert a freshly-built placement at a specific index, used by the bin
+ * drop handler. The resulting array is otherwise unchanged. Pure function
+ * for unit testing.
+ */
+export function insertPlacementAt<T>(
+  placements: T[],
+  index: number,
+  placement: T,
+): T[] {
+  const safeIndex = Math.max(0, Math.min(index, placements.length));
+  return [
+    ...placements.slice(0, safeIndex),
+    placement,
+    ...placements.slice(safeIndex),
+  ];
+}
+
+/**
+ * Compute where a horizontal drop position lands on the timeline (insertion
+ * index between existing placements). Drops past the end append. Used by
+ * the video-track drop target when a segment card is dropped from the bin.
+ */
+export function computeDropInsertIndex(
+  layouts: Array<{ startSeconds: number; durationSeconds: number }>,
+  dropSeconds: number,
+): number {
+  for (let i = 0; i < layouts.length; i += 1) {
+    const layout = layouts[i];
+    if (!layout) {
+      continue;
+    }
+    const center = layout.startSeconds + layout.durationSeconds / 2;
+    if (dropSeconds < center) {
+      return i;
+    }
+  }
+  return layouts.length;
+}
+
+/**
+ * Generate a fresh placementId. UUID-flavoured but readable, used both by
+ * split (right half) and bin drop (new placement).
+ */
+export function generatePlacementId() {
+  // crypto.randomUUID is widely available in modern browsers and Node 19+.
+  // Fall back to a Math.random suffix for environments without crypto (e.g.
+  // very old jsdom in tests) so we never throw.
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return `placement_${globalThis.crypto.randomUUID().slice(0, 12)}`;
+  }
+  return `placement_${Math.floor(Math.random() * 1e12).toString(36)}`;
+}
+
+/**
  * Project an {@link AssemblyTimelineState} to the legacy {@link AssemblyAudioSync}
  * shape, used to keep the Remotion preview composition working unchanged for
  * timelines that contain at most one audio clip. With more clips the preview
