@@ -32,7 +32,8 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     serverActions: {
-      bodySizeLimit: "10mb",
+      // Align with Suno upload max (50 MB) + multipart overhead.
+      bodySizeLimit: "55mb",
     },
   },
 };
