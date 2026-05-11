@@ -1,3 +1,4 @@
+import { Badge } from "@/components/ui/badge";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
@@ -13,12 +14,27 @@ export default async function StoryboardPage({
     await loadStoryboardPageData(videoId);
 
   return (
-    <StoryboardReview
-      dataError={dataError}
-      logicalScenes={logicalScenes}
-      project={project}
-      seedanceSegments={seedanceSegments}
-    />
+    <div className="space-y-6">
+      <div>
+        <Badge className="mb-3" variant="outline">
+          Storyboard
+        </Badge>
+        <h2 className="licorn-page-title">
+          {project?.title ?? "Video project"}
+        </h2>
+        <p className="max-w-3xl text-muted-foreground">
+          Validate the editorial logical scenes separately from the Seedance
+          generation segments before spending Runway credits.
+        </p>
+      </div>
+      <StoryboardReview
+        compactPageHeading
+        dataError={dataError}
+        logicalScenes={logicalScenes}
+        project={project}
+        seedanceSegments={seedanceSegments}
+      />
+    </div>
   );
 }
 

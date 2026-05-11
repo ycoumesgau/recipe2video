@@ -59,12 +59,12 @@ export function CostDashboard({ data }: { data: CostDashboardData }) {
       <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <Badge className="mb-3" variant="outline">
-            Issue #16
+            {data.scope === "global" ? "Costs" : "Costs & logs"}
           </Badge>
           <h2 className="licorn-page-title">
             {data.scope === "global"
               ? "Cost dashboard"
-              : `${data.projectTitle ?? "Project"} costs`}
+              : (data.projectTitle ?? "Project")}
           </h2>
           <p className="max-w-3xl text-muted-foreground">
             Track Runway credits, OpenAI token spend, Mux estimates, and

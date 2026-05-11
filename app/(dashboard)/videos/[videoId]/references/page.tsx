@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { getReferenceReviewData } from "@/modules/references/use-cases/get-reference-review";
 import { ReferenceReviewWorkflow } from "@/modules/references/ui/reference-review-workflow";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
+import { VIDEO_STATUS_LABELS } from "@/modules/videos/video-status";
 
 export default async function ProjectReferencesPage({
   params,
@@ -25,26 +26,31 @@ export default async function ProjectReferencesPage({
   return (
     <div className="space-y-6">
       <div>
-        <Badge className="mb-3" variant="outline">
-          Issue #13
-        </Badge>
-        <h2 className="licorn-page-title">Reference review</h2>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Badge variant="outline">References</Badge>
+          {project ? (
+            <Badge variant="outline">
+              {VIDEO_STATUS_LABELS[project.status]}
+            </Badge>
+          ) : null}
+        </div>
+        <h2 className="licorn-page-title">
+          {project?.title ?? "Video project"}
+        </h2>
         <p className="max-w-3xl text-muted-foreground">
           Validate global and recipe-specific reference images before Seedance
           generation. Approved references stay in Supabase Storage; Runway URI
           upload is explicit and tracked.
+          {project ? (
+            <>
+              {" "}
+              Selected image model: {project.selectedImageModel}.
+            </>
+          ) : null}
         </p>
       </div>
 
-      {project ? (
-        <div className="rounded-lg border bg-muted/30 p-4 text-sm">
-          <p className="font-medium">{project.title}</p>
-          <p className="text-muted-foreground">
-            Project status: {project.status}. Selected image model:{" "}
-            {project.selectedImageModel}.
-          </p>
-        </div>
-      ) : (
+      {!project ? (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>Project not found</AlertTitle>
@@ -53,7 +59,7 @@ export default async function ProjectReferencesPage({
             found for this ID.
           </AlertDescription>
         </Alert>
-      )}
+      ) : null}
 
       <ReferenceReviewWorkflow
         data={referenceData}

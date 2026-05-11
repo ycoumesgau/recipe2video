@@ -21,7 +21,7 @@ export function ProjectSegmentsList({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Segment review</CardTitle>
+        <CardTitle>All Seedance segments</CardTitle>
         <CardDescription>
           Open a Seedance segment to compare variants, play Mux review copies,
           submit feedback, and approve prompt diffs before regeneration.

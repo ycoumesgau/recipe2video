@@ -73,9 +73,14 @@ export default async function VideoDetailPage({
   return (
     <div className="space-y-6">
       <div>
-        <Badge className="mb-3" variant="outline">
-          Project {project?.status ?? videoId}
-        </Badge>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Badge variant="outline">Overview</Badge>
+          {project ? (
+            <Badge variant="outline">Project {project.status}</Badge>
+          ) : (
+            <Badge variant="outline">{videoId}</Badge>
+          )}
+        </div>
         {project ? (
           <EditableProjectTitle
             initialTitle={project.title}

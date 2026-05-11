@@ -22,7 +22,9 @@ export default async function ProjectSegmentsPage({
         <Badge className="mb-3" variant="outline">
           Segments
         </Badge>
-        <h2 className="licorn-page-title">Segments</h2>
+        <h2 className="licorn-page-title">
+          {project?.title ?? "Segments"}
+        </h2>
         <p className="max-w-3xl text-muted-foreground">
           Review each Seedance segment, compare variants, and accept takes before
           assembly.
