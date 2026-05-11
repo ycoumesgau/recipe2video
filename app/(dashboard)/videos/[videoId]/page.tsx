@@ -30,11 +30,14 @@ import {
 import { RecipeAgentPanel } from "@/modules/recipe-agent/ui/recipe-agent-panel";
 import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
+import { listRecipeSourceImagePreviewUrls } from "@/modules/media-assets/use-cases/list-recipe-source-image-preview-urls";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
+import { getRecipeSourceSummaryFromRecipeData } from "@/modules/videos/recipe-source-from-recipe-data";
 import type { RecipeSourceSummary, VideoProject } from "@/modules/videos/video.types";
 import { EditableProjectTitle } from "@/modules/videos/ui/editable-project-title";
 import { ProjectPipelineProgress } from "@/modules/videos/ui/project-pipeline-progress";
 import { ProjectDetailArchiveControls } from "@/modules/videos/ui/project-detail-archive-controls";
+import { RecipeSourcePhotoThumbnails } from "@/modules/videos/ui/recipe-source-photo-thumbnails";
 
 export default async function VideoDetailPage({
   params,
@@ -55,6 +58,7 @@ export default async function VideoDetailPage({
     latestRunTimelineEvents,
     chatMessages,
     latestRunSteps,
+    recipeSourcePhotoPreviews,
   } = await loadProject(videoId);
 
   const acceptedSegments = seedanceSegments.filter(
@@ -168,6 +172,21 @@ export default async function VideoDetailPage({
                     <OverviewItem label="Source type" value={recipeSource.label} />
                     {recipeSource.detail ? (
                       <OverviewItem label="Reference" value={recipeSource.detail} />
+                    ) : null}
+                    {recipeSourcePhotoPreviews.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Preview
+                        </p>
+                        <RecipeSourcePhotoThumbnails
+                          previews={recipeSourcePhotoPreviews}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Files remain in Supabase Storage. Signed links for this page
+                          refresh on each visit; they are independent from the Cursor agent
+                          URLs.
+                        </p>
+                      </div>
                     ) : null}
                   </CardContent>
                 </Card>
@@ -355,6 +374,11 @@ async function loadProject(videoId: string) {
       supabase,
       seedanceSegments.map((segment) => segment.id),
     );
+    const recipeSourcePhotoPreviews =
+      project &&
+      getRecipeSourceSummaryFromRecipeData(project.recipeData)?.type === "photos"
+        ? await listRecipeSourceImagePreviewUrls(supabase, project.id)
+        : [];
     const [agentRuns, agentArtifacts, latestRunTimelineEvents, chatMessages, latestRunSteps] =
       project
         ? await (async () => {
@@ -390,6 +414,7 @@ async function loadProject(videoId: string) {
       latestRunTimelineEvents,
       chatMessages,
       latestRunSteps,
+      recipeSourcePhotoPreviews,
     };
   } catch (error) {
     return {
@@ -411,6 +436,7 @@ async function loadProject(videoId: string) {
       latestRunTimelineEvents: [],
       chatMessages: [],
       latestRunSteps: [],
+      recipeSourcePhotoPreviews: [],
     };
   }
 }

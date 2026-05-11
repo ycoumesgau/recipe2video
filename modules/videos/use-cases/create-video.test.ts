@@ -47,6 +47,25 @@ test("buildRecipeAgentMessagePayload sends recipe ingest requests to the recipe 
   assert.match(payload?.message ?? "", /produce or update recipe-analysis\.json/i);
 });
 
+test("buildRecipeAgentMessagePayload mentions vision attachment for photo sources", () => {
+  const payload = buildRecipeAgentMessagePayload({
+    videoId: "video-1",
+    profileId: "user-1",
+    sourceSummary: {
+      type: "photos",
+      recipeUrl: null,
+      pastedTextPreview: null,
+      uploadedFileNames: ["dish.jpg"],
+      demoRecipeId: null,
+    },
+    productionDefaults: productionDefaultsWithDuration,
+    intent: "analyze",
+  });
+
+  assert.match(payload?.message ?? "", /signed image URLs \(vision\)/i);
+  assert.match(payload?.message ?? "", /dish\.jpg/);
+});
+
 test("buildRecipeAgentMessagePayload does not send when saving draft only", () => {
   assert.equal(
     buildRecipeAgentMessagePayload({
