@@ -11,7 +11,6 @@ import type {
   SeedanceGenerationInput,
 } from "@/modules/generation/runway.types";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
-import type { ReferenceAsset } from "@/modules/references/reference.types";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import type { SegmentStatus } from "@/modules/storyboard/segment-status";
 import type { VideoProject } from "@/modules/videos/video.types";
@@ -72,10 +71,34 @@ export interface RequestSegmentGenerationDeps extends SegmentWorkflowBaseDeps {
   isGenerationQueuePaused(): boolean;
   getSegmentById(segmentId: string): Promise<SeedanceSegment | null>;
   getVideoProjectById(videoId: string): Promise<VideoProject | null>;
-  listReferenceAssetsForVideo(videoId: string): Promise<ReferenceAsset[]>;
+  /**
+   * Returns the FINAL Runway reference inputs for the segment, with brand new
+   * signed URLs generated at call time. The pipeline never stores these URLs:
+   * `segment_references` is the source of truth, and the resolver re-issues a
+   * fresh URL on every retry so a segment regenerated hours or days later
+   * never fails on an expired link.
+   */
+  resolveSegmentSeedanceReferences(
+    segmentId: string,
+  ): Promise<SegmentSeedanceReferenceInput[]>;
   startSeedanceGeneration(input: SeedanceGenerationInput): Promise<RunwayTask>;
   createGeneration(input: CreateGenerationInput): Promise<Generation>;
   logCost(input: CreateCostLogInput): Promise<CostLog>;
+}
+
+/**
+ * Resolved, ready-to-call Seedance reference input. Mirrors the just-in-time
+ * resolver's output in `modules/references/use-cases/resolve-segment-seedance-references.ts`.
+ * Mirrored here (rather than imported) so this use-case stays pure and unit
+ * tests don't need to import server-only code.
+ */
+export interface SegmentSeedanceReferenceInput {
+  position: number;
+  role: string;
+  required: boolean;
+  canonicalName: string;
+  uri: string;
+  source: "asset_library" | "reference_assets";
 }
 
 export interface PollSegmentGenerationDeps extends SegmentWorkflowBaseDeps {
@@ -127,13 +150,14 @@ export async function requestSegmentGenerationWorkflow(
   }
 
   assertSeedance2Selected(video);
-  const references = await deps.listReferenceAssetsForVideo(segment.videoId);
-  const generationSegment = resolveSegmentReferences(segment, references);
 
-  // Block instead of "failed" when references are not ready: this is a user
-  // checkpoint (approve + upload kitchen reference), not a Runway failure.
+  // Resolve the references EVERY call: signed URLs are short-lived (15 min)
+  // and the user explicitly asked that retries hours later not fail on an
+  // expired URL. We never cache the resolved uris anywhere.
+  let referenceInputs: SegmentSeedanceReferenceInput[];
   try {
-    assertSegmentReferencesReady(generationSegment);
+    referenceInputs = await deps.resolveSegmentSeedanceReferences(segment.id);
+    assertSegmentReferencesReady(segment, referenceInputs);
   } catch (referenceError) {
     await deps.updateSegmentStatus(segment.id, "blocked");
     throw referenceError;
@@ -142,7 +166,7 @@ export async function requestSegmentGenerationWorkflow(
   await deps.updateSegmentStatus(segment.id, "queued");
 
   try {
-    const generationInput = buildSeedanceGenerationInput(generationSegment);
+    const generationInput = buildSeedanceGenerationInput(segment, referenceInputs);
     const runwayTask = await deps.startSeedanceGeneration(generationInput);
     const costCredits = estimateSeedanceCredits(segment.durationTarget);
     const generation = await deps.createGeneration({
@@ -354,89 +378,24 @@ export async function uploadSegmentMuxWorkflow(
 
 export function buildSeedanceGenerationInput(
   segment: SeedanceSegment,
+  referenceInputs: SegmentSeedanceReferenceInput[],
 ): SeedanceGenerationInput {
-  const references = buildRunwayReferences(segment);
-  const [promptImageReference, ...remainingReferences] = references;
+  const sorted = [...referenceInputs].sort((a, b) => a.position - b.position);
+  const [promptImageReference, ...remainingReferences] = sorted;
 
   return {
     promptText: segment.prompt,
     durationSeconds: segment.durationTarget,
     ratio: RUNWAY_DEFAULT_VIDEO_RATIO,
     promptImage: promptImageReference?.uri,
-    references: remainingReferences.length > 0 ? remainingReferences : undefined,
+    references:
+      remainingReferences.length > 0
+        ? remainingReferences.map<RunwaySeedanceReference>((reference) => ({
+            type: "image",
+            uri: reference.uri,
+          }))
+        : undefined,
   };
-}
-
-function buildRunwayReferences(segment: SeedanceSegment): RunwaySeedanceReference[] {
-  return segment.references.flatMap((reference) =>
-    reference.runwayUri
-      ? [
-          {
-            type: "image" as const,
-            uri: reference.runwayUri,
-          },
-        ]
-      : [],
-  );
-}
-
-function resolveSegmentReferences(
-  segment: SeedanceSegment,
-  referenceAssets: ReferenceAsset[],
-): SeedanceSegment {
-  return {
-    ...segment,
-    references: segment.references.map((segmentReference) => {
-      if (segmentReference.runwayUri) {
-        return segmentReference;
-      }
-
-      const referenceAsset = findMatchingReferenceAsset(
-        referenceAssets,
-        segmentReference,
-      );
-
-      return {
-        ...segmentReference,
-        id: segmentReference.id ?? referenceAsset?.id,
-        runwayUri: referenceAsset?.runwayUri ?? null,
-        mediaAssetId: segmentReference.mediaAssetId ?? referenceAsset?.mediaAssetId,
-      };
-    }),
-  };
-}
-
-function findMatchingReferenceAsset(
-  referenceAssets: ReferenceAsset[],
-  segmentReference: SeedanceSegment["references"][number],
-) {
-  return referenceAssets.find((referenceAsset) =>
-    doesReferenceAssetMatchSegmentReference(referenceAsset, segmentReference),
-  );
-}
-
-function doesReferenceAssetMatchSegmentReference(
-  referenceAsset: ReferenceAsset,
-  segmentReference: SeedanceSegment["references"][number],
-) {
-  if (segmentReference.id && segmentReference.id === referenceAsset.id) {
-    return true;
-  }
-
-  const referenceKeys = [
-    referenceAsset.canonicalName,
-    referenceAsset.type,
-    referenceAsset.id,
-  ].map(normalizeReferenceKey);
-  const segmentKeys = [
-    segmentReference.name,
-    segmentReference.label,
-    segmentReference.role,
-  ].map(normalizeReferenceKey);
-
-  return segmentKeys.some(
-    (key) => key.length > 0 && referenceKeys.includes(key),
-  );
 }
 
 function assertWorkflowAllowed(data: WorkflowAuthData) {
@@ -494,46 +453,59 @@ function assertSeedance2Selected(video: VideoProject) {
 
 /**
  * Enforce the references discipline from `.cursor/rules/recipe2video-seedance-segments.mdc`
- * and the PRD: every Seedance segment needs at least one reference uploaded
- * to Runway, and a global kitchen reference (typically `@KitchenIslandDefault`)
- * is mandatory. If any of these is missing, the segment must be blocked rather
- * than generated without references.
+ * and the PRD: every Seedance segment needs at least one resolved reference,
+ * a global kitchen reference (typically `@KitchenIslandDefault`) is
+ * mandatory, and the Seedance 9-reference cap must hold.
+ *
+ * The check now operates on the JIT-resolved inputs: a resolved entry implies
+ * the reference's media is uploaded to Supabase Storage and a signed URL has
+ * just been minted. We still walk `segment.references[]` to detect rows that
+ * the storyboard considers REQUIRED but that the resolver could not resolve
+ * (typically because the agent forgot to declare them in reference-plan.json
+ * or because the global is not in asset_library yet).
  */
-function assertSegmentReferencesReady(segment: SeedanceSegment) {
-  if (segment.references.length > MAX_SEEDANCE_REFERENCE_INPUTS) {
+function assertSegmentReferencesReady(
+  segment: SeedanceSegment,
+  referenceInputs: SegmentSeedanceReferenceInput[],
+) {
+  if (referenceInputs.length > MAX_SEEDANCE_REFERENCE_INPUTS) {
     throw new Error(
-      `Segment ${segment.id} has ${segment.references.length} Seedance reference inputs; Seedance supports at most 9.`,
+      `Segment ${segment.id} resolved ${referenceInputs.length} Seedance reference inputs; Seedance supports at most ${MAX_SEEDANCE_REFERENCE_INPUTS}.`,
     );
   }
 
-  const requiredReferences = segment.references.filter(
-    (reference) => reference.required !== false,
-  );
-  const missingRunwayReferences = requiredReferences.filter(
-    (reference) => !reference.runwayUri,
-  );
-
-  if (requiredReferences.length === 0 || missingRunwayReferences.length > 0) {
+  if (referenceInputs.length === 0) {
     throw new Error(
-      `Segment ${segment.id} has required references not uploaded to Runway: ${missingRunwayReferences.map((reference) => reference.label || reference.name).join(", ") || "none planned"}. Approve and upload references before generation.`,
+      `Segment ${segment.id} has no resolved Seedance references. Sync the agent's reference-plan.json or upload the missing assets to the library before generation.`,
     );
   }
 
-  const hasKitchenReference = requiredReferences.some((reference) => {
-    const haystack = [
-      reference.name ?? "",
-      reference.label ?? "",
-      reference.role ?? "",
-    ]
-      .join(" ")
-      .toLowerCase();
+  // Cross-check that every REQUIRED entry in segment.references[] has a
+  // matching resolved input. We compare by canonical name (the resolver
+  // returns the asset_library.canonical_name OR reference_assets.canonical_name).
+  const resolvedNames = new Set(
+    referenceInputs.map((input) => input.canonicalName.toLowerCase()),
+  );
+  const missingRequired = segment.references
+    .filter((reference) => reference.required !== false)
+    .filter((reference) => !resolvedNames.has((reference.name ?? "").toLowerCase()));
 
+  if (missingRequired.length > 0) {
+    throw new Error(
+      `Segment ${segment.id} has required references that could not be resolved against the library or recipe-specific references: ${missingRequired
+        .map((reference) => reference.label || reference.name)
+        .join(", ")}.`,
+    );
+  }
+
+  const hasKitchenReference = referenceInputs.some((input) => {
+    const haystack = `${input.canonicalName} ${input.role}`.toLowerCase();
     return haystack.includes("kitchen") || haystack.includes("island");
   });
 
   if (!hasKitchenReference) {
     throw new Error(
-      `Segment ${segment.id} is missing a global kitchen reference (e.g. @KitchenIslandDefault). Upload it to Runway before generation.`,
+      `Segment ${segment.id} is missing a global kitchen reference (e.g. @KitchenIslandDefault).`,
     );
   }
 }
@@ -543,14 +515,6 @@ function getSeedanceReferenceInputCount(input: SeedanceGenerationInput) {
     (typeof input.promptImage === "string" ? 1 : 0) +
     (input.references?.length ?? 0)
   );
-}
-
-function normalizeReferenceKey(value: string | null | undefined) {
-  return (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function estimateSeedanceCredits(durationSeconds: number) {

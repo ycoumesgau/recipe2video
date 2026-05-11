@@ -6,7 +6,6 @@ import type {
   RunwayTaskStatus,
   SeedanceGenerationInput,
 } from "@/modules/generation/runway.types";
-import type { ReferenceAsset } from "@/modules/references/reference.types";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import type { VideoProject } from "@/modules/videos/video.types";
 import {
@@ -18,7 +17,28 @@ import {
   persistSegmentOutputWorkflow,
   pollSegmentGenerationWorkflow,
   requestSegmentGenerationWorkflow,
+  type SegmentSeedanceReferenceInput,
 } from "./orchestrate-segment-generation";
+
+function seedanceRef(
+  canonicalName: string,
+  uri: string,
+  options: {
+    position?: number;
+    role?: string;
+    required?: boolean;
+    source?: "asset_library" | "reference_assets";
+  } = {},
+): SegmentSeedanceReferenceInput {
+  return {
+    position: options.position ?? 0,
+    role: options.role ?? "global Licorn kitchen environment",
+    required: options.required ?? true,
+    canonicalName,
+    uri,
+    source: options.source ?? "asset_library",
+  };
+}
 
 const baseSegment: SeedanceSegment = {
   id: "segment-1",
@@ -106,7 +126,9 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
       isGenerationQueuePaused: () => false,
       getSegmentById: async () => baseSegment,
       getVideoProjectById: async () => baseVideo,
-      listReferenceAssetsForVideo: async () => [],
+      resolveSegmentSeedanceReferences: async () => [
+        seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png"),
+      ],
       updateSegmentStatus: async (_segmentId, status) => {
         segmentStatuses.push(status);
         return { ...baseSegment, status };
@@ -139,7 +161,7 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
   assert.deepEqual(segmentStatuses, ["queued", "generating"]);
   assert.deepEqual(sentEvents, ["segment.generation.poll.requested"]);
   assert.deepEqual(costOperations, ["seedance_segment_generation_started"]);
-  assert.equal(generationInputs[0]?.promptImage, "runway://test/kitchen");
+  assert.equal(generationInputs[0]?.promptImage, "https://signed.test/kitchen.png");
   assert.equal(generationInputs[0]?.ratio, RUNWAY_DEFAULT_VIDEO_RATIO);
 });
 
@@ -156,7 +178,7 @@ test("requestSegmentGenerationWorkflow blocks new generation when the global que
       isGenerationQueuePaused: () => true,
       getSegmentById: async () => baseSegment,
       getVideoProjectById: async () => baseVideo,
-      listReferenceAssetsForVideo: async () => [],
+      resolveSegmentSeedanceReferences: async () => [],
       updateSegmentStatus: async (_segmentId, status) => {
         segmentStatuses.push(status);
         return { ...baseSegment, status };
@@ -178,9 +200,9 @@ test("requestSegmentGenerationWorkflow blocks new generation when the global que
   assert.deepEqual(segmentStatuses, ["blocked"]);
 });
 
-test("requestSegmentGenerationWorkflow resolves uploaded reference assets before Runway", async () => {
+test("requestSegmentGenerationWorkflow uses JIT signed URLs from the resolver", async () => {
   const generationInputs: SeedanceGenerationInput[] = [];
-  const segmentWithoutRunwayUri: SeedanceSegment = {
+  const segmentWithTwoRefs: SeedanceSegment = {
     ...baseSegment,
     references: [
       {
@@ -210,14 +232,21 @@ test("requestSegmentGenerationWorkflow resolves uploaded reference assets before
     },
     {
       isGenerationQueuePaused: () => false,
-      getSegmentById: async () => segmentWithoutRunwayUri,
+      getSegmentById: async () => segmentWithTwoRefs,
       getVideoProjectById: async () => baseVideo,
-      listReferenceAssetsForVideo: async () => [
-        referenceAsset("KitchenIslandDefault", "kitchen", "runway://kitchen"),
-        referenceAsset("RawChouxCrownFrame", "recipe_state", "runway://raw-choux"),
+      resolveSegmentSeedanceReferences: async () => [
+        seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png", {
+          position: 0,
+          source: "asset_library",
+        }),
+        seedanceRef("RawChouxCrownFrame", "https://signed.test/raw-choux.png", {
+          position: 1,
+          role: "current recipe state and fragile food geometry",
+          source: "reference_assets",
+        }),
       ],
       updateSegmentStatus: async (_segmentId, status) => ({
-        ...segmentWithoutRunwayUri,
+        ...segmentWithTwoRefs,
         status,
       }),
       createGeneration: async () => ({
@@ -239,9 +268,9 @@ test("requestSegmentGenerationWorkflow resolves uploaded reference assets before
     },
   );
 
-  assert.equal(generationInputs[0]?.promptImage, "runway://kitchen");
+  assert.equal(generationInputs[0]?.promptImage, "https://signed.test/kitchen.png");
   assert.deepEqual(generationInputs[0]?.references, [
-    { type: "image", uri: "runway://raw-choux" },
+    { type: "image", uri: "https://signed.test/raw-choux.png" },
   ]);
 });
 
@@ -272,9 +301,7 @@ test("requestSegmentGenerationWorkflow blocks when required reference asset is n
             ],
           }),
           getVideoProjectById: async () => baseVideo,
-          listReferenceAssetsForVideo: async () => [
-            referenceAsset("KitchenIslandDefault", "kitchen", null, "approved"),
-          ],
+          resolveSegmentSeedanceReferences: async () => [],
           updateSegmentStatus: async (_segmentId, status) => {
             segmentStatuses.push(status);
             return { ...baseSegment, status };
@@ -289,7 +316,7 @@ test("requestSegmentGenerationWorkflow blocks when required reference asset is n
           sendEvent: async () => {},
         },
       ),
-    /not uploaded to Runway/,
+    /no resolved Seedance references/,
   );
 
   assert.deepEqual(segmentStatuses, ["blocked"]);
@@ -322,7 +349,20 @@ test("requestSegmentGenerationWorkflow blocks when Seedance reference limit is e
             })),
           }),
           getVideoProjectById: async () => baseVideo,
-          listReferenceAssetsForVideo: async () => [],
+          resolveSegmentSeedanceReferences: async () =>
+            Array.from({ length: 10 }, (_, index) =>
+              seedanceRef(
+                index === 0 ? "KitchenIslandDefault" : `State${index}`,
+                `https://signed.test/ref-${index}.png`,
+                {
+                  position: index,
+                  role:
+                    index === 0
+                      ? "global Licorn kitchen environment"
+                      : `recipe state reference ${index}`,
+                },
+              ),
+            ),
           updateSegmentStatus: async (_segmentId, status) => {
             segmentStatuses.push(status);
             return { ...baseSegment, status };
@@ -480,22 +520,3 @@ function baseCostLog(operation: string) {
   };
 }
 
-function referenceAsset(
-  canonicalName: string,
-  type: string,
-  runwayUri: string | null,
-  status: ReferenceAsset["status"] = "uploaded_to_runway",
-): ReferenceAsset {
-  return {
-    id: `reference-${canonicalName}`,
-    videoId: "video-1",
-    mediaAssetId: null,
-    type,
-    canonicalName,
-    source: "agent_reference_plan",
-    runwayUri,
-    prompt: null,
-    status,
-    createdAt: "2026-05-09T00:00:00.000Z",
-  };
-}
