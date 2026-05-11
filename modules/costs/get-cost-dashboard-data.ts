@@ -1,7 +1,7 @@
 import {
   RUNWAY_BUDGET_WARNING_THRESHOLDS,
-  RUNWAY_HACKATHON_CREDIT_BUDGET,
 } from "./cost.constants";
+import type { RunwayOrganizationBalance } from "./runway-organization-balance";
 import type {
   CostBreakdownRow,
   CostBudgetState,
@@ -17,6 +17,7 @@ interface GetCostDashboardDataInput {
   scope?: "global" | "project";
   projectId?: string;
   projectTitle?: string;
+  runwayBalance?: RunwayOrganizationBalance | null;
 }
 
 export function getCostDashboardData(
@@ -26,7 +27,10 @@ export function getCostDashboardData(
   const logs = [...input.logs].sort(compareLogsByCreatedAtDesc);
   const budgetLogs = input.globalLogs ?? logs;
   const runwayCreditsForScope = sumRunwayCredits(logs);
-  const budget = getRunwayBudgetState(sumRunwayCredits(budgetLogs));
+  const budget = getRunwayBudgetState(sumRunwayCredits(budgetLogs), {
+    runwayCreditBalance: input.runwayBalance?.creditBalance ?? null,
+    maxMonthlyCreditSpend: input.runwayBalance?.maxMonthlyCreditSpend ?? null,
+  });
   const failedOrRejected = buildFailedOrRejectedRow(logs);
   const acceptedSegmentCount = countAcceptedSegments(logs);
   const exportedVideoCount =
@@ -50,8 +54,14 @@ export function getCostDashboardData(
       },
       {
         label: "Credits remaining",
-        value: formatCredits(budget.creditsRemaining),
-        helper: `${budget.percentRemaining}% of the hackathon budget remains`,
+        value: budget.runwayBalanceKnown
+          ? formatCredits(budget.creditsRemaining)
+          : "n/a",
+        helper: budget.runwayBalanceKnown
+          ? input.runwayBalance?.maxMonthlyCreditSpend
+            ? `${budget.percentRemaining}% vs Runway monthly spend cap`
+            : `${budget.percentRemaining}% vs balance + app-logged usage`
+          : "Runway balance unavailable — set RUNWAYML_API_SECRET",
       },
       {
         label: "OpenAI token spend",
@@ -92,20 +102,53 @@ export function getCostDashboardData(
   };
 }
 
+export interface RunwayBudgetOptions {
+  runwayCreditBalance?: number | null;
+  maxMonthlyCreditSpend?: number | null;
+}
+
 export function getRunwayBudgetState(
   runwayCreditsUsed: number,
-  budgetCredits = RUNWAY_HACKATHON_CREDIT_BUDGET,
+  options: RunwayBudgetOptions = {},
 ): CostBudgetState {
-  const creditsRemaining = Math.max(0, budgetCredits - runwayCreditsUsed);
+  const balanceRaw = options.runwayCreditBalance;
+  const runwayBalanceKnown =
+    typeof balanceRaw === "number" && Number.isFinite(balanceRaw);
+  const creditsRemainingFromApi = runwayBalanceKnown
+    ? Math.max(0, Math.round(balanceRaw as number))
+    : 0;
+
+  const monthlyRaw = options.maxMonthlyCreditSpend;
+  const hasMonthlyCap =
+    typeof monthlyRaw === "number" &&
+    Number.isFinite(monthlyRaw) &&
+    monthlyRaw > 0;
+
+  let budgetCredits: number;
+  if (runwayBalanceKnown && hasMonthlyCap) {
+    budgetCredits = Math.round(monthlyRaw as number);
+  } else if (runwayBalanceKnown) {
+    budgetCredits = Math.max(
+      creditsRemainingFromApi + Math.round(runwayCreditsUsed),
+      1,
+    );
+  } else {
+    budgetCredits = Math.max(Math.round(runwayCreditsUsed), 1);
+  }
+
+  const creditsRemaining = runwayBalanceKnown ? creditsRemainingFromApi : 0;
   const rawPercentRemaining =
     budgetCredits > 0 ? (creditsRemaining / budgetCredits) * 100 : 0;
-  const percentRemaining = Math.round(rawPercentRemaining);
-  const warningLevel =
-    rawPercentRemaining <= RUNWAY_BUDGET_WARNING_THRESHOLDS[1]
-      ? RUNWAY_BUDGET_WARNING_THRESHOLDS[1]
-      : rawPercentRemaining <= RUNWAY_BUDGET_WARNING_THRESHOLDS[0]
-        ? RUNWAY_BUDGET_WARNING_THRESHOLDS[0]
-        : null;
+  const percentRemaining = Math.round(Math.min(100, rawPercentRemaining));
+
+  let warningLevel: 20 | 10 | null = null;
+  if (runwayBalanceKnown) {
+    if (rawPercentRemaining <= RUNWAY_BUDGET_WARNING_THRESHOLDS[1]) {
+      warningLevel = RUNWAY_BUDGET_WARNING_THRESHOLDS[1];
+    } else if (rawPercentRemaining <= RUNWAY_BUDGET_WARNING_THRESHOLDS[0]) {
+      warningLevel = RUNWAY_BUDGET_WARNING_THRESHOLDS[0];
+    }
+  }
 
   return {
     budgetCredits,
@@ -113,6 +156,7 @@ export function getRunwayBudgetState(
     creditsRemaining,
     percentRemaining,
     warningLevel,
+    runwayBalanceKnown,
   };
 }
 

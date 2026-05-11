@@ -7,9 +7,19 @@ import {
   listCostLogs,
   listCostLogsByVideoId,
 } from "./repositories/cost.repository";
+import { fetchRunwayOrganizationBalance } from "./runway-organization-balance";
 import type { CostDashboardProjectRef, CostLog } from "./cost.types";
 
-export async function loadGlobalCostDashboardData() {
+export type LoadCostDashboardOptions = {
+  useMockFallback?: boolean;
+};
+
+export async function loadGlobalCostDashboardData(
+  options: LoadCostDashboardOptions = {},
+) {
+  const useMockFallback = options.useMockFallback ?? false;
+  const runwayBalance = await fetchRunwayOrganizationBalance();
+
   try {
     const supabase = createSupabaseAdminClient();
     const [logs, projects] = await Promise.all([
@@ -18,20 +28,34 @@ export async function loadGlobalCostDashboardData() {
     ]);
 
     return getCostDashboardData({
-      logs: logs.length > 0 ? logs : SEEDED_COST_LOGS,
-      projects: projects.length > 0 ? projects : SEEDED_COST_PROJECTS,
+      logs:
+        logs.length > 0 ? logs : useMockFallback ? SEEDED_COST_LOGS : [],
+      projects:
+        projects.length > 0
+          ? projects
+          : useMockFallback
+            ? SEEDED_COST_PROJECTS
+            : [],
       scope: "global",
+      runwayBalance,
     });
   } catch {
     return getCostDashboardData({
-      logs: SEEDED_COST_LOGS,
-      projects: SEEDED_COST_PROJECTS,
+      logs: useMockFallback ? SEEDED_COST_LOGS : [],
+      projects: useMockFallback ? SEEDED_COST_PROJECTS : [],
       scope: "global",
+      runwayBalance,
     });
   }
 }
 
-export async function loadProjectCostDashboardData(videoId: string) {
+export async function loadProjectCostDashboardData(
+  videoId: string,
+  options: LoadCostDashboardOptions = {},
+) {
+  const useMockFallback = options.useMockFallback ?? false;
+  const runwayBalance = await fetchRunwayOrganizationBalance();
+
   try {
     const supabase = createSupabaseAdminClient();
     const [projectLogs, globalLogs, projects] = await Promise.all([
@@ -40,9 +64,24 @@ export async function loadProjectCostDashboardData(videoId: string) {
       listVideoProjects(supabase, { limit: 50, archiveFilter: "all" }),
     ]);
     const project = projects.find((item) => item.id === videoId);
-    const displayLogs = projectLogs.length > 0 ? projectLogs : seededLogsForVideo(videoId);
-    const budgetLogs = globalLogs.length > 0 ? globalLogs : SEEDED_COST_LOGS;
-    const projectRefs = projects.length > 0 ? projects : SEEDED_COST_PROJECTS;
+    const displayLogs =
+      projectLogs.length > 0
+        ? projectLogs
+        : useMockFallback
+          ? seededLogsForVideo(videoId)
+          : [];
+    const budgetLogs =
+      globalLogs.length > 0
+        ? globalLogs
+        : useMockFallback
+          ? SEEDED_COST_LOGS
+          : [];
+    const projectRefs =
+      projects.length > 0
+        ? projects
+        : useMockFallback
+          ? SEEDED_COST_PROJECTS
+          : [];
 
     return getCostDashboardData({
       logs: displayLogs,
@@ -51,15 +90,17 @@ export async function loadProjectCostDashboardData(videoId: string) {
       scope: "project",
       projectId: videoId,
       projectTitle: project?.title ?? seededProjectTitle(videoId),
+      runwayBalance,
     });
   } catch {
     return getCostDashboardData({
-      logs: seededLogsForVideo(videoId),
-      globalLogs: SEEDED_COST_LOGS,
-      projects: SEEDED_COST_PROJECTS,
+      logs: useMockFallback ? seededLogsForVideo(videoId) : [],
+      globalLogs: useMockFallback ? SEEDED_COST_LOGS : [],
+      projects: useMockFallback ? SEEDED_COST_PROJECTS : [],
       scope: "project",
       projectId: videoId,
       projectTitle: seededProjectTitle(videoId),
+      runwayBalance,
     });
   }
 }

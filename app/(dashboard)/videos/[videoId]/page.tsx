@@ -14,6 +14,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { loadProjectCostDashboardData } from "@/modules/costs/load-cost-dashboard-data";
+import { readDashboardDataMode } from "@/modules/dashboard/dashboard-data-mode";
 import { CostDashboard } from "@/modules/costs/ui/cost-dashboard";
 import type { CostDashboardData } from "@/modules/costs/cost.types";
 import { countActiveGenerationsForSegments } from "@/modules/generation/repositories/generation.repository";
@@ -371,12 +372,14 @@ export default async function VideoDetailPage({
 }
 
 async function loadProject(videoId: string) {
+  const useMockFallback = (await readDashboardDataMode()) === "mock";
+
   try {
     const supabase = createSupabaseAdminClient();
     const project = await getVideoProjectById(supabase, videoId);
     const [{ logicalScenes, seedanceSegments }, costData] = await Promise.all([
       getStoryboardReviewData(videoId),
-      loadProjectCostDashboardData(videoId),
+      loadProjectCostDashboardData(videoId, { useMockFallback }),
     ]);
     const activeTaskCount = await countActiveGenerationsForSegments(
       supabase,
@@ -427,7 +430,7 @@ async function loadProject(videoId: string) {
   } catch (error) {
     return {
       project: null,
-      costData: await loadProjectCostDashboardData(videoId),
+      costData: await loadProjectCostDashboardData(videoId, { useMockFallback }),
       logicalScenes: [],
       seedanceSegments: [],
       dataError:

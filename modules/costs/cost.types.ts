@@ -71,6 +71,8 @@ export interface CostBudgetState {
   creditsRemaining: number;
   percentRemaining: number;
   warningLevel: 20 | 10 | null;
+  /** When false, creditsRemaining is a placeholder — configure RUNWAYML_API_SECRET. */
+  runwayBalanceKnown: boolean;
 }
 
 export interface CostSummaryMetric {
