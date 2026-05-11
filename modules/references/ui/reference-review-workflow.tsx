@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   ImageIcon,
   RefreshCcw,
@@ -29,9 +30,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import type { VideoStatus } from "@/modules/videos/video-status";
 
 import {
   approveReferenceAction,
+  markReferencesReadyAction,
   rejectReferenceAction,
   requestReferenceRegenerationAction,
   updateReferencePromptAction,
@@ -61,10 +64,12 @@ const statusBadgeVariant: Record<
 export function ReferenceReviewWorkflow({
   data,
   notice,
+  projectStatus,
   videoId,
 }: {
   data: ReferenceReviewData;
   notice?: { type: "success" | "error"; message: string } | null;
+  projectStatus?: VideoStatus | null;
   videoId: string;
 }) {
   return (
@@ -116,11 +121,119 @@ export function ReferenceReviewWorkflow({
         </div>
 
         <div className="space-y-4">
+          <ContinueToSegmentsCard
+            projectStatus={projectStatus}
+            readiness={data.segmentReadiness}
+            videoId={videoId}
+          />
           <ManualReferenceUploadCard videoId={videoId} />
           <SegmentReadinessCard readiness={data.segmentReadiness} />
         </div>
       </div>
     </div>
+  );
+}
+
+function ContinueToSegmentsCard({
+  projectStatus,
+  readiness,
+  videoId,
+}: {
+  projectStatus: VideoStatus | null | undefined;
+  readiness: SegmentReferenceReadiness[];
+  videoId: string;
+}) {
+  // The card is the ONLY entry point that flips a project from
+  // `storyboard_approved` to `references_ready`. Without it, projects
+  // whose references are all library globals (so there's nothing to
+  // approve / upload manually) silently get stuck on this page forever.
+  const blockingSegments = readiness.filter(
+    (segment) =>
+      segment.exceedsReferenceLimit ||
+      segment.missingApprovedReferences.length > 0 ||
+      segment.missingRunwayUploads.length > 0,
+  );
+
+  if (projectStatus === "references_ready" || projectStatus === "generating" || projectStatus === "review" || projectStatus === "assembling" || projectStatus === "exported") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            References ready
+          </CardTitle>
+          <CardDescription>
+            This checkpoint is already validated. Move on to the segments tab
+            to generate or review variants.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  if (projectStatus !== "storyboard_approved") {
+    // Earlier in the pipeline: nothing to surface here yet.
+    return null;
+  }
+
+  const isBlocked = blockingSegments.length > 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Continue to segments</CardTitle>
+        <CardDescription>
+          {isBlocked
+            ? "Resolve the blocking segments below before marking references ready."
+            : "All segments resolve their references. Mark them ready to unlock Seedance generation."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isBlocked ? (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>
+              {blockingSegments.length} segment
+              {blockingSegments.length === 1 ? "" : "s"} still blocked
+            </AlertTitle>
+            <AlertDescription>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs">
+                {blockingSegments.slice(0, 5).map((segment) => (
+                  <li key={segment.segmentId}>
+                    <span className="font-medium">{segment.segmentTitle}</span>:{" "}
+                    {[
+                      segment.exceedsReferenceLimit
+                        ? "exceeds 9 references"
+                        : null,
+                      segment.missingApprovedReferences.length > 0
+                        ? `missing approval — ${segment.missingApprovedReferences.join(", ")}`
+                        : null,
+                      segment.missingRunwayUploads.length > 0
+                        ? `missing Runway upload — ${segment.missingRunwayUploads.join(", ")}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join("; ")}
+                  </li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        <form action={markReferencesReadyAction}>
+          <input name="videoId" type="hidden" value={videoId} />
+          <Button disabled={isBlocked} type="submit">
+            <ArrowRight className="h-4 w-4" />
+            Mark references ready
+          </Button>
+        </form>
+        <p className="text-xs text-muted-foreground">
+          Sends a `video.references.generate.requested` event so any planned
+          recipe-specific image is generated first; the project flips to
+          `references_ready` automatically once every reference is resolved.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

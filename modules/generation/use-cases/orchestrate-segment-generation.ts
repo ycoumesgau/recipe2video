@@ -11,6 +11,10 @@ import type {
   SeedanceGenerationInput,
 } from "@/modules/generation/runway.types";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
+import {
+  buildMatchableNameSet,
+  normalizeReferenceName,
+} from "@/modules/references/reference-matching";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import type { SegmentStatus } from "@/modules/storyboard/segment-status";
 import type { VideoProject } from "@/modules/videos/video.types";
@@ -21,6 +25,23 @@ import {
 } from "../runway.constants";
 
 const MAX_SEEDANCE_REFERENCE_INPUTS = 9;
+/**
+ * Seedance 2 only accepts integer durations between 5 and 15 seconds. Anything
+ * outside that range is rejected by Runway with an opaque "Validation of body
+ * failed" error, so we surface a precise message at the orchestrator boundary.
+ * Source: https://docs.dev.runwayml.com/guides/seedance/#reference
+ */
+const SEEDANCE2_MIN_DURATION_SECONDS = 5;
+const SEEDANCE2_MAX_DURATION_SECONDS = 15;
+/**
+ * Per-reference size cap enforced by Runway's API:
+ *   `Asset size exceeds 16.0MB.` (path: references[i].uri)
+ *
+ * Surfaced as a constant so the same number is used both for the pre-flight
+ * guard (here) and for the asset-library normalization script in
+ * `scripts/normalize-asset-library-images.ts`.
+ */
+const RUNWAY_MAX_REFERENCE_BYTES = 16 * 1024 * 1024;
 
 interface WorkflowAuthData {
   requestedByUserId: string;
@@ -97,8 +118,25 @@ export interface SegmentSeedanceReferenceInput {
   role: string;
   required: boolean;
   canonicalName: string;
+  /**
+   * Alternative names this reference is also known by (asset_library aliases
+   * for library entries, empty for recipe-specific entries). Required so the
+   * validator can match against the alias the agent wrote in
+   * `segments.references[].name` (e.g. `KitchenIslandDefault`) rather than
+   * forcing every consumer to know the storage canonical (`island_default`).
+   */
+  aliases?: string[];
   uri: string;
   source: "asset_library" | "reference_assets";
+  /**
+   * Stored byte size of the underlying media. Used by the pre-flight guard
+   * to refuse generations whose references exceed Runway's 16 MB-per-asset
+   * cap. Optional so unit tests that exercise unrelated logic don't have to
+   * fabricate it; missing or 0 means "unknown" and the guard is skipped.
+   */
+  fileSizeBytes?: number;
+  /** Stored MIME type of the underlying media (used for error hints). */
+  mimeType?: string | null;
 }
 
 export interface PollSegmentGenerationDeps extends SegmentWorkflowBaseDeps {
@@ -158,6 +196,8 @@ export async function requestSegmentGenerationWorkflow(
   try {
     referenceInputs = await deps.resolveSegmentSeedanceReferences(segment.id);
     assertSegmentReferencesReady(segment, referenceInputs);
+    assertReferencesUnderRunwaySizeLimit(segment, referenceInputs);
+    assertSeedance2DurationValid(segment);
   } catch (referenceError) {
     await deps.updateSegmentStatus(segment.id, "blocked");
     throw referenceError;
@@ -376,21 +416,37 @@ export async function uploadSegmentMuxWorkflow(
   await deps.uploadMediaAssetToMux(data.mediaAssetId);
 }
 
+/**
+ * Maps the JIT-resolved Seedance reference inputs into the Runway request shape.
+ *
+ * Seedance 2 exposes "image references" exclusively on the `text_to_video`
+ * endpoint — up to 9 entries in the top-level `references[]` array. The
+ * `image_to_video` endpoint expects `promptImage` to be a single source frame
+ * or a `[first, last]` keyframe pair, and explicitly rejects a top-level
+ * `references` field (`unrecognized_keys: ["references"]` 400 error from the
+ * Runway API). Recipe2Video pipes 1..9 character/state/style references per
+ * segment, so every reference goes into `references[]` and the orchestrator
+ * always targets `text_to_video`.
+ *
+ * Reference order is preserved (sorted by `position`) because the Seedance
+ * prompt template addresses them positionally (`@KitchenIslandDefault` first,
+ * then state and pose references).
+ *
+ * Source: https://docs.dev.runwayml.com/guides/seedance/
+ */
 export function buildSeedanceGenerationInput(
   segment: SeedanceSegment,
   referenceInputs: SegmentSeedanceReferenceInput[],
 ): SeedanceGenerationInput {
   const sorted = [...referenceInputs].sort((a, b) => a.position - b.position);
-  const [promptImageReference, ...remainingReferences] = sorted;
 
   return {
     promptText: segment.prompt,
     durationSeconds: segment.durationTarget,
     ratio: RUNWAY_DEFAULT_VIDEO_RATIO,
-    promptImage: promptImageReference?.uri,
     references:
-      remainingReferences.length > 0
-        ? remainingReferences.map<RunwaySeedanceReference>((reference) => ({
+      sorted.length > 0
+        ? sorted.map<RunwaySeedanceReference>((reference) => ({
             type: "image",
             uri: reference.uri,
           }))
@@ -480,15 +536,21 @@ function assertSegmentReferencesReady(
     );
   }
 
-  // Cross-check that every REQUIRED entry in segment.references[] has a
-  // matching resolved input. We compare by canonical name (the resolver
-  // returns the asset_library.canonical_name OR reference_assets.canonical_name).
-  const resolvedNames = new Set(
-    referenceInputs.map((input) => input.canonicalName.toLowerCase()),
-  );
+  // The resolver returns the asset_library.canonical_name (e.g. `island_default`)
+  // while `segments.references[].name` typically holds the alias the agent
+  // wrote (e.g. `KitchenIslandDefault`). We therefore aggregate canonicalName
+  // PLUS aliases and use a tolerant normalization (case-insensitive, ignores
+  // every separator) so an honest mismatch like `Character-sheet` vs
+  // `CharacterSheet` does not block a perfectly-wired segment. The linker
+  // (findAssetLibraryByCanonicalNames) is already alias-aware; if the
+  // validator is stricter than the linker, segments end up "blocked" with a
+  // misleading "could not be resolved" error while their data is fine.
+  const resolvedNames = buildMatchableNameSet(referenceInputs);
   const missingRequired = segment.references
     .filter((reference) => reference.required !== false)
-    .filter((reference) => !resolvedNames.has((reference.name ?? "").toLowerCase()));
+    .filter(
+      (reference) => !resolvedNames.has(normalizeReferenceName(reference.name)),
+    );
 
   if (missingRequired.length > 0) {
     throw new Error(
@@ -499,7 +561,9 @@ function assertSegmentReferencesReady(
   }
 
   const hasKitchenReference = referenceInputs.some((input) => {
-    const haystack = `${input.canonicalName} ${input.role}`.toLowerCase();
+    const aliasHaystack = (input.aliases ?? []).join(" ").toLowerCase();
+    const haystack =
+      `${input.canonicalName} ${input.role} ${aliasHaystack}`.toLowerCase();
     return haystack.includes("kitchen") || haystack.includes("island");
   });
 
@@ -515,6 +579,71 @@ function getSeedanceReferenceInputCount(input: SeedanceGenerationInput) {
     (typeof input.promptImage === "string" ? 1 : 0) +
     (input.references?.length ?? 0)
   );
+}
+
+/**
+ * Pre-flight validation of every resolved reference against Runway's 16 MB
+ * per-asset cap. Without this guard, an oversize PNG (typical case: a 4K
+ * kitchen rendering at ~17 MB) gets handed to Runway, which fetches the
+ * signed URL, weighs the asset, and rejects the entire request with
+ * `Asset size exceeds 16.0MB. (path: references[i].uri)`. That error costs
+ * us a Runway round-trip and an Inngest retry, and the operator-facing
+ * message would have to be reverse-engineered from a JSON `cause`. By
+ * checking the `media_assets.file_size_bytes` we already have in memory,
+ * we can refuse the segment with a precise, actionable message that names
+ * the offending reference and the size it must reach.
+ *
+ * `fileSizeBytes` is optional on the input type so legacy/test inputs that
+ * don't surface it pass through; production callers always populate it
+ * via `resolveSegmentSeedanceReferences`.
+ */
+function assertReferencesUnderRunwaySizeLimit(
+  segment: SeedanceSegment,
+  referenceInputs: SegmentSeedanceReferenceInput[],
+) {
+  const oversize = referenceInputs.filter(
+    (input) =>
+      typeof input.fileSizeBytes === "number" &&
+      input.fileSizeBytes > RUNWAY_MAX_REFERENCE_BYTES,
+  );
+
+  if (oversize.length === 0) {
+    return;
+  }
+
+  const limitMb = (RUNWAY_MAX_REFERENCE_BYTES / (1024 * 1024)).toFixed(1);
+  const details = oversize
+    .map((input) => {
+      const sizeMb = ((input.fileSizeBytes ?? 0) / (1024 * 1024)).toFixed(2);
+      const mime = input.mimeType ? ` ${input.mimeType}` : "";
+      return `${input.canonicalName} (${sizeMb}MB${mime})`;
+    })
+    .join(", ");
+
+  throw new Error(
+    `Segment ${segment.id} has reference(s) above Runway's ${limitMb}MB-per-asset limit: ${details}. Re-encode/downscale these assets (e.g. via \`npm run normalize:asset-library\`) before regenerating.`,
+  );
+}
+
+/**
+ * Pre-flight validation of `segment.durationTarget` against Seedance 2's
+ * 5–15s integer window. Without this, an out-of-range duration is rejected by
+ * Runway as a generic "Validation of body failed" error which is hard to
+ * diagnose in the UI; surfacing the exact constraint here lets the operator
+ * fix the storyboard before triggering Inngest.
+ */
+function assertSeedance2DurationValid(segment: SeedanceSegment) {
+  const duration = segment.durationTarget;
+  const isInteger = Number.isInteger(duration);
+  const inRange =
+    duration >= SEEDANCE2_MIN_DURATION_SECONDS &&
+    duration <= SEEDANCE2_MAX_DURATION_SECONDS;
+
+  if (!isInteger || !inRange) {
+    throw new Error(
+      `Segment ${segment.id} has duration_target=${duration}s, but Seedance 2 only accepts integer durations between ${SEEDANCE2_MIN_DURATION_SECONDS}s and ${SEEDANCE2_MAX_DURATION_SECONDS}s. Adjust the storyboard before regenerating.`,
+    );
+  }
 }
 
 function estimateSeedanceCredits(durationSeconds: number) {

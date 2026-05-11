@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "tsx --test \"modules/**/*.test.ts\"",
     "seed:asset-library": "tsx --env-file=.env.local scripts/seed-asset-library.ts",
+    "normalize:asset-library": "tsx --env-file=.env.local scripts/normalize-asset-library-images.ts",
     "postinstall": "node scripts/ensure-sqlite3.mjs"
   },
   "dependencies": {
@@ -47,6 +48,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"

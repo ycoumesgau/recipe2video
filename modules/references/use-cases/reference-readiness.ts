@@ -1,6 +1,7 @@
 import { RUNWAY_MAX_SEEDANCE_REFERENCES } from "@/modules/generation/runway.constants";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 
+import { matchesReference, normalizeReferenceName } from "../reference-matching";
 import type {
   ReferenceAsset,
   SegmentReferenceReadiness,
@@ -36,6 +37,13 @@ export function buildSegmentReadiness(
           ({ asset, segmentReference }) =>
             !segmentReference.runwayUri &&
             isApprovedReference(asset) &&
+            // Library globals are streamed to Runway just-in-time via signed
+            // URLs (see `resolveSegmentSeedanceReferences`). They never carry
+            // a persisted `runwayUri`, so flagging them as "needs Runway
+            // upload" misled users into hunting for a button that does not
+            // exist. Recipe-specific approved references still need an
+            // explicit upload (`uploadReferenceToRunwayAction`).
+            !isLibraryGlobal(asset) &&
             !asset?.runwayUri,
         )
         .map(({ segmentReference }) => segmentReference.label || segmentReference.name),
@@ -60,18 +68,36 @@ export function doesSegmentReferenceMatch(
     return true;
   }
 
-  const referenceKeys = [
-    reference.canonicalName,
-    reference.type,
-    reference.id,
-  ].map(normalizeReferenceKey);
-  const segmentKeys = [
+  // Match against the canonical name AND every alias on either side. A
+  // library entry stores `canonical_name = "island_default"` with
+  // `aliases = ["KitchenIslandDefault"]`; segments typically reference it
+  // by alias. We also fall back to `type` and `role` because some legacy
+  // segments still use those.
+  const candidateNames = [
     segmentReference.name,
     segmentReference.label,
     segmentReference.role,
-  ].map(normalizeReferenceKey);
+  ];
 
-  return segmentKeys.some((key) => key.length > 0 && referenceKeys.includes(key));
+  if (
+    candidateNames.some((name) =>
+      matchesReference(
+        { canonicalName: reference.canonicalName, aliases: reference.aliases },
+        name,
+      ),
+    )
+  ) {
+    return true;
+  }
+
+  // Last-resort fallback for malformed legacy data: normalize the reference
+  // type / id so a stale row that lost its canonical name still resolves.
+  const normalizedReferenceFallback = new Set(
+    [reference.type, reference.id].map(normalizeReferenceName).filter(Boolean),
+  );
+  return candidateNames.some((name) =>
+    normalizedReferenceFallback.has(normalizeReferenceName(name)),
+  );
 }
 
 function isApprovedReference(reference: ReferenceAsset | undefined) {
@@ -81,10 +107,6 @@ function isApprovedReference(reference: ReferenceAsset | undefined) {
   );
 }
 
-function normalizeReferenceKey(value: string | null | undefined) {
-  return (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+function isLibraryGlobal(reference: ReferenceAsset | undefined) {
+  return reference?.source === "asset_library";
 }

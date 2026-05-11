@@ -31,7 +31,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentChatPanel } from "@/modules/feedback/ui/agent-chat-panel";
 import { RecipeMuxPlayer } from "@/modules/media-assets/ui/mux-player";
 import type { SegmentStatus } from "@/modules/storyboard/segment-status";
-import type { SegmentReference } from "@/modules/storyboard/storyboard.types";
 import { VIDEO_MODEL_OPTIONS } from "@/modules/videos/video.constants";
 import type { VideoProject } from "@/modules/videos/video.types";
 
@@ -42,6 +41,7 @@ import {
 } from "../actions";
 import type { GenerationStatus } from "../generation-status";
 import type {
+  SegmentReferenceResolutionItem,
   SegmentReviewData,
   SegmentVariantReviewItem,
 } from "../use-cases/get-segment-review";
@@ -149,13 +149,14 @@ export function SegmentReview({
           <PromptPanel
             project={data.project}
             segment={data.segment}
+            variantCount={data.variants.length}
             videoId={videoId}
           />
           <PromptHistoryCard
             currentPrompt={data.segment.prompt}
             feedbacks={data.feedbacks}
           />
-          <ReferencesPanel references={data.segment.references} />
+          <ReferencesPanel resolutions={data.referenceResolutions} />
         </div>
 
         <div className="space-y-4">
@@ -190,6 +191,7 @@ export function SegmentReview({
           <PromptPanel
             project={data.project}
             segment={data.segment}
+            variantCount={data.variants.length}
             videoId={videoId}
           />
           <PromptHistoryCard
@@ -426,10 +428,12 @@ function VariantActionButton({
 function PromptPanel({
   project,
   segment,
+  variantCount,
   videoId,
 }: {
   project: VideoProject | null;
   segment: NonNullable<SegmentReviewData["segment"]>;
+  variantCount: number;
   videoId: string;
 }) {
   return (
@@ -461,6 +465,7 @@ function PromptPanel({
           <Metric label="Reference count" value={String(segment.references.length)} />
         </div>
         <RegenerationForm
+          hasExistingVariants={variantCount > 0}
           project={project}
           segmentId={segment.id}
           videoId={videoId}
@@ -471,20 +476,29 @@ function PromptPanel({
 }
 
 function RegenerationForm({
+  hasExistingVariants,
   project,
   segmentId,
   videoId,
 }: {
+  hasExistingVariants: boolean;
   project: VideoProject | null;
   segmentId: string;
   videoId: string;
 }) {
+  // The same `requestSegmentRegenerationAction` powers the very first
+  // generation AND every subsequent retry. Calling the button "Request
+  // regeneration" before any variant exists confused users into thinking
+  // they had missed a primary "Generate" entry point. We adapt the label
+  // and helper copy based on whether a variant has already been produced.
   return (
     <form action={requestSegmentRegenerationAction} className="space-y-3 rounded-lg border p-3">
       <input name="videoId" type="hidden" value={videoId} />
       <input name="segmentId" type="hidden" value={segmentId} />
       <div className="space-y-2">
-        <Label htmlFor="selectedVideoModel">Regeneration model</Label>
+        <Label htmlFor="selectedVideoModel">
+          {hasExistingVariants ? "Regeneration model" : "Generation model"}
+        </Label>
         <Select
           defaultValue={project?.selectedVideoModel ?? "seedance2"}
           name="selectedVideoModel"
@@ -507,7 +521,7 @@ function RegenerationForm({
       </p>
       <Button type="submit">
         <RefreshCcw className="h-4 w-4" />
-        Request regeneration
+        {hasExistingVariants ? "Request regeneration" : "Generate this segment"}
       </Button>
     </form>
   );
@@ -586,44 +600,104 @@ function PromptHistoryCard({
   );
 }
 
-function ReferencesPanel({ references }: { references: SegmentReference[] }) {
+function ReferencesPanel({
+  resolutions,
+}: {
+  resolutions: SegmentReferenceResolutionItem[];
+}) {
+  // The legacy `ReferencesPanel` displayed `runwayUri` from the segment's
+  // JSON, which is never populated for library globals (those are streamed
+  // to Runway just-in-time via signed URLs). The "Missing Runway URI"
+  // string then falsely suggested an upload step that does not exist for
+  // globals. The new panel reads the actual segment_references resolution
+  // and reports whether each reference is ready, missing storage, or
+  // unresolved.
   return (
     <Card>
       <CardHeader>
         <CardTitle>References</CardTitle>
         <CardDescription>
-          Segment references must be approved and uploaded to Runway before
-          generation.
+          Library globals are streamed to Runway with a fresh signed URL at
+          generation time. Recipe-specific references must be approved before
+          they show up here as ready.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {references.length === 0 ? (
+        {resolutions.length === 0 ? (
           <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
             No references are attached to this segment.
           </div>
         ) : (
-          references.map((reference) => (
-            <div
-              className="rounded-lg border bg-muted/20 p-3 text-sm"
-              key={reference.id ?? reference.label}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">@{reference.label}</Badge>
-                {reference.required ? <Badge variant="secondary">required</Badge> : null}
-              </div>
-              <p className="mt-2 font-medium">{reference.name}</p>
-              <p className="text-muted-foreground">{reference.role}</p>
-              <p className="mt-2 break-all text-xs text-muted-foreground">
-                {reference.runwayUri
-                  ? `Runway URI: ${reference.runwayUri}`
-                  : "Missing Runway URI"}
-              </p>
-            </div>
+          resolutions.map((resolution) => (
+            <ReferenceResolutionRow
+              key={`${resolution.position ?? "unresolved"}-${resolution.declaredName}`}
+              resolution={resolution}
+            />
           ))
         )}
       </CardContent>
     </Card>
   );
+}
+
+function ReferenceResolutionRow({
+  resolution,
+}: {
+  resolution: SegmentReferenceResolutionItem;
+}) {
+  const status = computeResolutionStatus(resolution);
+
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">@{resolution.declaredLabel}</Badge>
+        {resolution.required ? <Badge variant="secondary">required</Badge> : null}
+        <Badge variant={status.variant} className="ml-auto">
+          {status.label}
+        </Badge>
+      </div>
+      <p className="mt-2 font-medium">{resolution.declaredName}</p>
+      <p className="text-muted-foreground">{resolution.role}</p>
+      <p className="mt-2 text-xs text-muted-foreground">{status.description}</p>
+    </div>
+  );
+}
+
+function computeResolutionStatus(resolution: SegmentReferenceResolutionItem): {
+  label: string;
+  description: string;
+  variant: "default" | "secondary" | "destructive" | "outline";
+} {
+  if (!resolution.resolvedCanonicalName) {
+    return {
+      label: "not resolved",
+      description:
+        "This reference name is not in asset_library nor declared in reference-plan.json. Sync the agent or rename the reference to a known canonical / alias.",
+      variant: "destructive",
+    };
+  }
+
+  if (!resolution.hasStorage) {
+    return {
+      label: "no storage",
+      description: `${resolution.resolvedCanonicalName} is wired but its media is missing in Supabase Storage. Upload or regenerate the source image before launching Seedance.`,
+      variant: "destructive",
+    };
+  }
+
+  if (resolution.resolvedSource === "asset_library") {
+    return {
+      label: "ready · library global",
+      description: `Resolved to ${resolution.resolvedCanonicalName}. Streamed to Runway just-in-time with a fresh signed URL — no manual upload needed.`,
+      variant: "secondary",
+    };
+  }
+
+  return {
+    label: "ready · recipe-specific",
+    description: `Resolved to ${resolution.resolvedCanonicalName}. Will be streamed to Runway with a fresh signed URL at generation time.`,
+    variant: "default",
+  };
 }
 
 function StatusPanel({
