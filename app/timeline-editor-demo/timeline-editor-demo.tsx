@@ -25,6 +25,7 @@ import {
 
 const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
   {
+    placementId: "demo-place-1",
     segmentId: "demo-seg-1",
     mediaAssetId: "demo-asset-1",
     title: "Hook",
@@ -37,6 +38,7 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     storagePath: "demo/1.mp4",
   },
   {
+    placementId: "demo-place-2",
     segmentId: "demo-seg-2",
     mediaAssetId: "demo-asset-2",
     title: "Beat",
@@ -49,6 +51,7 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     storagePath: "demo/2.mp4",
   },
   {
+    placementId: "demo-place-3",
     segmentId: "demo-seg-3",
     mediaAssetId: "demo-asset-3",
     title: "Payoff",
@@ -160,13 +163,12 @@ export function TimelineEditorDemo() {
             <pre className="max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
               {JSON.stringify(
                 {
-                  segmentTrims: Object.fromEntries(
-                    segments.map((s) => [
-                      s.segmentId,
-                      { inSeconds: s.inSeconds, outSeconds: s.outSeconds },
-                    ]),
-                  ),
-                  segmentOrder: segments.map((s) => s.segmentId),
+                  placements: segments.map((s) => ({
+                    placementId: s.placementId,
+                    segmentId: s.segmentId,
+                    inSeconds: s.inSeconds,
+                    outSeconds: s.outSeconds,
+                  })),
                   audioClips,
                 },
                 null,

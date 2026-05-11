@@ -8,26 +8,35 @@ import type {
   AssemblyRemotionProps,
   AssemblyTimelineState,
   Composition,
+  SegmentPlacement,
 } from "../assembly.types";
 import type { ExportStatus } from "../export-status";
+import { serializePlacements } from "../timeline-state";
 
 type CompositionRow = Database["public"]["Tables"]["compositions"]["Row"];
 
 export interface SaveCompositionInput {
   id?: string;
   videoId: string;
-  segmentOrder: string[];
+  /**
+   * Ordered list of placements on the video track. Persisted in
+   * `compositions.segment_order` as `{ schema: 'placements_v1', ... }`.
+   * The reader (`readPlacementsState`) still accepts the two legacy shapes
+   * (`string[]` with optional `segmentTrims`) for backward compat.
+   */
+  placements: SegmentPlacement[];
   audioMediaAssetId?: string | null;
   /**
    * Legacy single-track audio sync. Kept for forward compatibility but the
    * new {@link timelineState} field is the source of truth and is what
-   * actually gets persisted in `compositions.audio_sync` (the column hosts
-   * either shape thanks to its JSON typing).
+   * actually gets persisted in `compositions.audio_sync`.
    */
   audioSync?: AssemblyAudioSync;
   /**
-   * New timeline shape: per-segment trims + array of audio clips.
-   * Persisted in `compositions.audio_sync` as `{ schema: 'timeline_v2', ... }`.
+   * Audio side of the timeline state. Persisted in
+   * `compositions.audio_sync` as `{ schema: 'timeline_v2', audioClips: [...] }`.
+   * Per-segment trims are no longer carried here — they live inline on each
+   * placement.
    */
   timelineState?: AssemblyTimelineState;
   remotionProps: AssemblyRemotionProps;
@@ -36,18 +45,26 @@ export interface SaveCompositionInput {
   createdBy?: string | null;
 }
 
+function serializeSegmentOrderColumn(
+  input: Pick<SaveCompositionInput, "placements">,
+) {
+  return toJson(serializePlacements(input.placements));
+}
+
 function serializeAudioSyncColumn(
   input: Pick<SaveCompositionInput, "timelineState" | "audioSync">,
 ) {
   if (input.timelineState) {
-    return toJson(input.timelineState);
+    return toJson({
+      schema: "timeline_v2",
+      audioClips: input.timelineState.audioClips,
+    });
   }
   if (input.audioSync) {
     return toJson(input.audioSync);
   }
   return toJson({
     schema: "timeline_v2",
-    segmentTrims: {},
     audioClips: [],
   });
 }
@@ -78,7 +95,7 @@ export async function createComposition(
       id: input.id,
       video_id: input.videoId,
       export_media_asset_id: input.exportMediaAssetId ?? null,
-      segment_order: toJson(input.segmentOrder),
+      segment_order: serializeSegmentOrderColumn(input),
       audio_media_asset_id: input.audioMediaAssetId ?? null,
       audio_sync: serializeAudioSyncColumn(input),
       remotion_props: toJson(input.remotionProps),
@@ -123,7 +140,7 @@ export async function upsertDraftComposition(
     const { data, error } = await supabase
       .from("compositions")
       .update({
-        segment_order: toJson(input.segmentOrder),
+        segment_order: serializeSegmentOrderColumn(input),
         audio_media_asset_id: input.audioMediaAssetId ?? null,
         audio_sync: serializeAudioSyncColumn(input),
         remotion_props: toJson(input.remotionProps),

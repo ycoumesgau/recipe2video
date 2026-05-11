@@ -38,7 +38,7 @@ export function RecipeAssemblyComposition({
           <Sequence
             durationInFrames={layout.durationFrames}
             from={layout.fromFrames}
-            key={`${segment.segmentId}-${segment.mediaAssetId}`}
+            key={segment.placementId}
           >
             <Video
               endAt={secondsToFrames(segment.outSeconds, fps)}

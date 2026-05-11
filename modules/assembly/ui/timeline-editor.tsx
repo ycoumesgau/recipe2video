@@ -51,14 +51,14 @@ type DragMode =
   | { kind: "idle" }
   | {
       kind: "segment-move";
-      segmentId: string;
+      placementId: string;
       pointerId: number;
       startX: number;
       originalIndex: number;
     }
   | {
       kind: "segment-trim";
-      segmentId: string;
+      placementId: string;
       side: "left" | "right";
       pointerId: number;
       startX: number;
@@ -110,7 +110,7 @@ type PendingDrag =
   | null
   | {
       kind: "segment-trim";
-      segmentId: string;
+      placementId: string;
       side: "left" | "right";
       nextInSeconds: number;
       nextOutSeconds: number;
@@ -167,7 +167,7 @@ export function TimelineEditor({
   const [playheadFrame, setPlayheadFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [selection, setSelection] = useState<
-    | { kind: "segment"; segmentId: string }
+    | { kind: "segment"; placementId: string }
     | { kind: "audio"; clipId: string }
     | null
   >(null);
@@ -328,29 +328,31 @@ export function TimelineEditor({
   const handleSegmentPointerDown = useCallback(
     (
       event: ReactPointerEvent<HTMLDivElement>,
-      segmentId: string,
+      placementId: string,
       mode: "move" | "trim-left" | "trim-right",
     ) => {
-      const segment = segments.find((s) => s.segmentId === segmentId);
+      const segment = segments.find((s) => s.placementId === placementId);
       if (!segment) {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
       (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-      setSelection({ kind: "segment", segmentId });
+      setSelection({ kind: "segment", placementId });
       if (mode === "move") {
         dragModeRef.current = {
           kind: "segment-move",
-          segmentId,
+          placementId,
           pointerId: event.pointerId,
           startX: event.clientX,
-          originalIndex: segments.findIndex((s) => s.segmentId === segmentId),
+          originalIndex: segments.findIndex(
+            (s) => s.placementId === placementId,
+          ),
         };
       } else {
         dragModeRef.current = {
           kind: "segment-trim",
-          segmentId,
+          placementId,
           side: mode === "trim-left" ? "left" : "right",
           pointerId: event.pointerId,
           startX: event.clientX,
@@ -427,7 +429,9 @@ export function TimelineEditor({
       const deltaSeconds = deltaX / pxPerSecond;
 
       if (drag.kind === "segment-trim") {
-        const segment = segments.find((s) => s.segmentId === drag.segmentId);
+        const segment = segments.find(
+          (s) => s.placementId === drag.placementId,
+        );
         if (!segment) {
           return;
         }
@@ -449,14 +453,14 @@ export function TimelineEditor({
         // Defer commit to pointerup so neighbours don't reflow during drag.
         setPendingDrag({
           kind: "segment-trim",
-          segmentId: drag.segmentId,
+          placementId: drag.placementId,
           side: drag.side,
           nextInSeconds,
           nextOutSeconds,
         });
       } else if (drag.kind === "segment-move") {
         const draggedIdx = segments.findIndex(
-          (s) => s.segmentId === drag.segmentId,
+          (s) => s.placementId === drag.placementId,
         );
         if (draggedIdx === -1) {
           return;
@@ -575,7 +579,7 @@ export function TimelineEditor({
       if (pending.kind === "segment-trim") {
         onSegmentsChange(
           segments.map((segment) =>
-            segment.segmentId === pending.segmentId
+            segment.placementId === pending.placementId
               ? {
                   ...segment,
                   inSeconds: pending.nextInSeconds,
@@ -833,14 +837,18 @@ export function TimelineEditor({
                 const leftPx = layout.startSeconds * pxPerSecond;
                 const isSelected =
                   selection?.kind === "segment" &&
-                  selection.segmentId === segment.segmentId;
+                  selection.placementId === segment.placementId;
                 return (
                   <SegmentClipBox
                     isSelected={isSelected}
-                    key={segment.segmentId}
+                    key={segment.placementId}
                     leftPx={leftPx}
                     onPointerDown={(event, mode) =>
-                      handleSegmentPointerDown(event, segment.segmentId, mode)
+                      handleSegmentPointerDown(
+                        event,
+                        segment.placementId,
+                        mode,
+                      )
                     }
                     segment={segment}
                     widthPx={widthPx}
@@ -1255,7 +1263,7 @@ function DragGhost({
 
   if (pendingDrag.kind === "segment-trim") {
     const idx = segments.findIndex(
-      (segment) => segment.segmentId === pendingDrag.segmentId,
+      (segment) => segment.placementId === pendingDrag.placementId,
     );
     const segment = segments[idx];
     const layout = segmentLayout[idx];

@@ -100,25 +100,24 @@ export function AssemblyWorkspace({
   );
   const durationInFrames = getAssemblyDurationInFrames(remotionProps);
 
-  const segmentOrder = useMemo(
-    () => JSON.stringify(segments.map((segment) => segment.segmentId)),
+  const placementsJson = useMemo(
+    () =>
+      JSON.stringify({
+        schema: "placements_v1",
+        placements: segments.map((segment) => ({
+          placementId: segment.placementId,
+          segmentId: segment.segmentId,
+          inSeconds: segment.inSeconds,
+          outSeconds: segment.outSeconds,
+        })),
+      }),
     [segments],
   );
 
-  const timelineStateValue = useMemo<AssemblyTimelineState>(() => {
-    const segmentTrims: AssemblyTimelineState["segmentTrims"] = {};
-    for (const segment of segments) {
-      segmentTrims[segment.segmentId] = {
-        inSeconds: segment.inSeconds,
-        outSeconds: segment.outSeconds,
-      };
-    }
-    return {
-      schema: "timeline_v2",
-      segmentTrims,
-      audioClips,
-    };
-  }, [audioClips, segments]);
+  const timelineStateValue = useMemo<AssemblyTimelineState>(
+    () => ({ schema: "timeline_v2", audioClips }),
+    [audioClips],
+  );
   const timelineStateJson = useMemo(
     () => JSON.stringify(timelineStateValue),
     [timelineStateValue],
@@ -256,7 +255,7 @@ export function AssemblyWorkspace({
               <form action={saveAction} className="space-y-3">
                 <HiddenAssemblyFields
                   audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
-                  segmentOrder={segmentOrder}
+                  placements={placementsJson}
                   timelineState={timelineStateJson}
                   videoId={videoId}
                 />
@@ -273,7 +272,7 @@ export function AssemblyWorkspace({
               <form action={exportAction} className="space-y-3">
                 <HiddenAssemblyFields
                   audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
-                  segmentOrder={segmentOrder}
+                  placements={placementsJson}
                   timelineState={timelineStateJson}
                   videoId={videoId}
                 />
@@ -366,19 +365,19 @@ export function AssemblyWorkspace({
 
 function HiddenAssemblyFields({
   audioMediaAssetId,
-  segmentOrder,
+  placements,
   timelineState,
   videoId,
 }: {
   audioMediaAssetId?: string | null;
-  segmentOrder: string;
+  placements: string;
   timelineState: string;
   videoId: string;
 }) {
   return (
     <>
       <input name="videoId" type="hidden" value={videoId} />
-      <input name="segmentOrder" type="hidden" value={segmentOrder} />
+      <input name="placements" type="hidden" value={placements} />
       <input name="timelineState" type="hidden" value={timelineState} />
       <input
         name="audioMediaAssetId"
