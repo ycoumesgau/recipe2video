@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { LicornKpiCard } from "@/components/ui/licorn-kpi-card";
 import {
   Table,
   TableBody,
@@ -69,7 +70,7 @@ export function StoryboardReview({
             </Badge>
             <Badge variant="secondary">{project.selectedVideoModel}</Badge>
           </div>
-          <h2 className="text-3xl font-semibold tracking-tight">
+          <h2 className="licorn-page-title">
             Storyboard review
           </h2>
           <p className="max-w-3xl text-muted-foreground">
@@ -267,7 +268,7 @@ function SeedanceSegmentCards({
                 <Badge variant="outline">{segment.status}</Badge>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="min-h-0 space-y-4">
               <div className="grid gap-3 text-sm md:grid-cols-3">
                 <SegmentFact
                   label="Duration"
@@ -304,11 +305,16 @@ function SeedanceSegmentCards({
                 </div>
               </div>
 
-              <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="min-h-0 min-w-0 rounded-lg border bg-muted/30 p-3">
                 <p className="mb-2 text-sm font-medium">Prompt preview</p>
-                <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                  {truncatePrompt(segment.prompt)}
-                </p>
+                <div
+                  className="max-h-36 min-h-0 min-w-0 overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch] pr-1"
+                  tabIndex={0}
+                >
+                  <p className="whitespace-pre-wrap break-words font-mono text-sm text-muted-foreground">
+                    {segment.prompt}
+                  </p>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-1.5">
@@ -338,16 +344,7 @@ function SeedanceSegmentCards({
 }
 
 function MetricCard({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          {label}
-        </p>
-        <p className="mt-1 text-2xl font-semibold">{value}</p>
-      </CardContent>
-    </Card>
-  );
+  return <LicornKpiCard label={label} value={value} />;
 }
 
 function SegmentFact({ label, value }: { label: string; value: string }) {
@@ -382,6 +379,3 @@ function formatSeconds(seconds: number) {
   return `${Number(seconds.toFixed(1))}s`;
 }
 
-function truncatePrompt(prompt: string) {
-  return prompt.length > 520 ? `${prompt.slice(0, 520)}...` : prompt;
-}

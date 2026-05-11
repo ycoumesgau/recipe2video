@@ -80,7 +80,7 @@ function RecipeAgentChatThreadPanel({
                     className="flex justify-end py-2"
                     key={message.id}
                   >
-                    <div className="max-w-[88%] rounded-2xl bg-primary px-3 py-2 text-sm text-primary-foreground">
+                    <div className="max-w-[88%] rounded-2xl bg-cream px-3 py-2 text-sm text-cream-foreground">
                       <MessagePrimitive.Parts>
                         {({ part }) =>
                           part.type === "text" ? (
@@ -313,7 +313,7 @@ export function RecipeAgentChat({
                     key={`${step.agentRunId}-${step.seq}`}
                   >
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="font-semibold text-foreground">
+                      <span className="font-heading font-bold text-foreground">
                         #{step.seq} · {step.stepType}
                       </span>
                       <Badge variant="outline">{step.state}</Badge>

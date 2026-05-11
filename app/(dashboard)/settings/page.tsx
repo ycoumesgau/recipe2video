@@ -45,7 +45,7 @@ export default async function SettingsPage() {
         <Badge className="mb-3" variant="outline">
           Internal Licorn settings
         </Badge>
-        <h2 className="text-3xl font-semibold tracking-tight">Settings</h2>
+        <h2 className="licorn-page-title">Settings</h2>
         <p className="max-w-3xl text-muted-foreground">
           Recipe2Video is an internal Licorn cockpit. Sensitive configuration
           stays in environment variables on the server. This page exposes the

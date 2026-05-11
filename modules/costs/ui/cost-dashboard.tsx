@@ -21,6 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { LicornKpiCard } from "@/components/ui/licorn-kpi-card";
 import {
   Select,
   SelectContent,
@@ -60,7 +61,7 @@ export function CostDashboard({ data }: { data: CostDashboardData }) {
           <Badge className="mb-3" variant="outline">
             Issue #16
           </Badge>
-          <h2 className="text-3xl font-semibold tracking-tight">
+          <h2 className="licorn-page-title">
             {data.scope === "global"
               ? "Cost dashboard"
               : `${data.projectTitle ?? "Project"} costs`}
@@ -150,15 +151,12 @@ export function CostDashboard({ data }: { data: CostDashboardData }) {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {data.summaryMetrics.map((metric) => (
-          <Card key={metric.label} size="sm">
-            <CardHeader>
-              <CardDescription>{metric.label}</CardDescription>
-              <CardTitle className="text-2xl">{metric.value}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">
-              {metric.helper}
-            </CardContent>
-          </Card>
+          <LicornKpiCard
+            key={metric.label}
+            helper={metric.helper}
+            label={metric.label}
+            value={metric.value}
+          />
         ))}
       </section>
 

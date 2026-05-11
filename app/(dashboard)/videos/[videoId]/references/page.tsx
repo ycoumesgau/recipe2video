@@ -31,7 +31,7 @@ export default async function ProjectReferencesPage({
           <Badge className="mb-3" variant="outline">
             Issue #13
           </Badge>
-          <h2 className="text-3xl font-semibold tracking-tight">
+          <h2 className="licorn-page-title">
             Reference review
           </h2>
           <p className="max-w-3xl text-muted-foreground">

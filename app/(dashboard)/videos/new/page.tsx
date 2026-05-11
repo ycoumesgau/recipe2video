@@ -15,7 +15,7 @@ export default function NewVideoPage() {
         <Badge className="mb-3" variant="outline">
           Issue #11
         </Badge>
-        <h2 className="text-3xl font-semibold tracking-tight">
+        <h2 className="licorn-page-title">
           Create video
         </h2>
         <p className="text-muted-foreground">

@@ -1,21 +1,27 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Quicksand } from "next/font/google";
+
+import { ThemeProvider } from "@/components/theme-provider";
+
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+/** Quick Send → grille Quicksand (corps + titres). */
+const quicksand = Quicksand({
+  variable: "--font-quicksand",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Recipe2Video",
+  title: {
+    default: "Recipe2Video · Licorn",
+    template: "%s · Recipe2Video",
+  },
   description:
-    "Internal Licorn production cockpit for Runway-powered recipe videos.",
+    "Cockpit de production interne Licorn pour les vidéos de recettes (Runway, Mux…).",
+  icons: {
+    icon: [{ url: "/branding/favicon-licorn.png", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({
@@ -25,10 +31,13 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+      suppressHydrationWarning
+      lang="fr"
+      className={`${quicksand.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

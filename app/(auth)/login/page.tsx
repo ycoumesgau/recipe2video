@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { ThemeModeDropdown } from "@/components/layout/theme-mode-dropdown";
 import { LoginForm } from "@/modules/auth/ui/login-form";
 import {
   getCurrentProfile,
@@ -30,7 +31,10 @@ export default async function LoginPage({
   const initialState = getInitialState(params.status);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6">
+    <main className="relative flex min-h-screen flex-col items-center justify-center bg-background p-6">
+      <div className="absolute top-4 right-4 md:top-6 md:right-6">
+        <ThemeModeDropdown />
+      </div>
       <LoginForm initialState={initialState} />
     </main>
   );

@@ -127,7 +127,7 @@ export function ProjectPipelineProgress({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-sm font-heading font-bold uppercase tracking-wide text-muted-foreground">
           Pipeline progress
         </h3>
         <Badge variant={activeTaskCount > 0 ? "default" : "outline"}>

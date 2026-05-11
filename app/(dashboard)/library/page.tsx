@@ -69,9 +69,7 @@ export default async function LibraryPage({
           <Badge className="mb-3" variant="outline">
             Global library
           </Badge>
-          <h2 className="text-3xl font-semibold tracking-tight">
-            Asset library
-          </h2>
+          <h2 className="licorn-page-title">Asset library</h2>
           <p className="max-w-3xl text-muted-foreground">
             Canonical kitchen / character / pose / expression / utensil assets
             shared across every recipe. Changes here are saved to Supabase
@@ -130,7 +128,7 @@ export default async function LibraryPage({
         return (
           <section key={category} className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-semibold tracking-tight">
+              <h3 className="licorn-section-title">
                 {ASSET_LIBRARY_CATEGORY_DISPLAY[category]}
               </h3>
               <Badge variant="secondary">{items.length}</Badge>
@@ -147,7 +145,7 @@ export default async function LibraryPage({
       {deprecated.length > 0 ? (
         <section className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-xl font-semibold tracking-tight text-muted-foreground">
+            <h3 className="licorn-section-title-muted">
               Deprecated
             </h3>
             <Badge variant="outline">{deprecated.length}</Badge>

@@ -20,7 +20,36 @@ function formatEventPreview(payload: Record<string, unknown>): string {
   }
 }
 
-export function AgentRunTimeline({
+function initialEventsHydrationKey(
+  latestRunId: string | null,
+  events: AgentRunTimelineEvent[],
+) {
+  const tail = events
+    .slice(-12)
+    .map((event) => `${event.id}:${event.seq}`)
+    .join("|");
+  return `${latestRunId ?? "none"}:${events.length}:${tail}`;
+}
+
+export function AgentRunTimeline(props: {
+  videoId: string;
+  agentStatus: RecipeAgentStatus;
+  latestRunId: string | null;
+  initialEvents: AgentRunTimelineEvent[];
+}) {
+  const { videoId, latestRunId, initialEvents } = props;
+
+  const hydrationKey = initialEventsHydrationKey(latestRunId, initialEvents);
+
+  return (
+    <AgentRunTimelineInner
+      key={`${videoId}:${hydrationKey}`}
+      {...props}
+    />
+  );
+}
+
+function AgentRunTimelineInner({
   videoId,
   agentStatus,
   latestRunId,
@@ -60,22 +89,21 @@ export function AgentRunTimeline({
   }, [latestRunId, videoId]);
 
   useEffect(() => {
-    setEvents(initialEvents);
-  }, [initialEvents, latestRunId]);
-
-  useEffect(() => {
     if (!shouldPoll || !latestRunId) {
       return;
     }
 
-    const id = setInterval(() => {
+    const id = window.setInterval(() => {
       void refresh();
     }, 3500);
 
-    void refresh();
+    const kickoffId = window.setTimeout(() => {
+      void refresh();
+    }, 0);
 
     return () => {
       clearInterval(id);
+      clearTimeout(kickoffId);
     };
   }, [latestRunId, refresh, shouldPoll]);
 
@@ -115,7 +143,7 @@ export function AgentRunTimeline({
                 key={`${event.id}-${event.seq}`}
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2 text-[11px] text-muted-foreground">
-                  <span className="font-semibold text-foreground">
+                  <span className="font-heading font-bold text-foreground">
                     #{event.seq} · {event.eventType}
                   </span>
                   <span>{formatTimelineTime(event.createdAt)}</span>
