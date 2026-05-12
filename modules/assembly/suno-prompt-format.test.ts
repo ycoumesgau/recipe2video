@@ -8,6 +8,12 @@ import {
 
 const parisBrestTemplate = `# Suno Prompt — Paris-Brest
 
+## Title
+
+\`\`\`text
+Praline Crown
+\`\`\`
+
 ## Style of Music
 
 \`\`\`text
@@ -18,12 +24,6 @@ K-pop electronic pop with crisp four-on-the-floor kicks.
 
 \`\`\`text
 No aggressive rap, no metal.
-\`\`\`
-
-## Title
-
-\`\`\`text
-Praline Crown
 \`\`\`
 
 ## Auto Lyrics Prompt
@@ -88,6 +88,7 @@ test("buildNormalizedMarkdownPack skips empty sections", () => {
     autoLyricsPrompt: "",
     shortVersionPlan: "S",
   });
+  assert.ok(pack.indexOf("## Title") < pack.indexOf("## Style of Music"));
   assert.match(pack, /## Style of Music/);
   assert.match(pack, /## Title/);
   assert.match(pack, /## Short Version/);

@@ -134,9 +134,9 @@ test("buildRecipeAgentArtifactSyncPlan maps valid suno-prompt.json to sunoPrompt
         JSON.stringify({
           schemaVersion: 1,
           fields: {
+            title: "Kitchen Glow",
             styleOfMusic: "Synth pop",
             excludeStyles: "Metal",
-            title: "Kitchen Glow",
             autoLyricsPrompt: "Write about baking.",
             shortVersionPlan: "Use chorus for Reels.",
           },

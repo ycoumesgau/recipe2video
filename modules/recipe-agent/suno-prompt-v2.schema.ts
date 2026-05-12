@@ -18,9 +18,9 @@ export const SunoPromptV2Schema = z
       .optional(),
     fields: z
       .object({
+        title: z.string(),
         styleOfMusic: z.string(),
         excludeStyles: z.string(),
-        title: z.string(),
         autoLyricsPrompt: z.string(),
         shortVersionPlan: z.string(),
       })
@@ -59,6 +59,10 @@ export function buildMarkdownPackFromV2(data: SunoPromptV2): string {
   }
 
   blocks.push(
+    "## Title",
+    "```text",
+    f.title,
+    "```",
     "## Style of Music",
     "```text",
     f.styleOfMusic,
@@ -66,10 +70,6 @@ export function buildMarkdownPackFromV2(data: SunoPromptV2): string {
     "## Exclude Styles",
     "```text",
     f.excludeStyles,
-    "```",
-    "## Title",
-    "```text",
-    f.title,
     "```",
     "## Auto Lyrics Prompt",
     "```text",

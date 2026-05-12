@@ -99,9 +99,17 @@ export function SunoPromptPack({
         <QuickCopyRow
           copiedKey={lastCopied}
           onCopy={copyLabel}
+          titleText={f.title}
           styleText={f.styleOfMusic}
           excludeText={f.excludeStyles}
           lyricsText={f.autoLyricsPrompt}
+        />
+        <SunoFieldCard
+          copied={lastCopied === "title"}
+          description="Suno → Title (set first — names the project in Suno)"
+          label="Title"
+          onCopy={() => copyLabel("title", f.title)}
+          value={f.title}
         />
         <SunoFieldCard
           copied={lastCopied === "style"}
@@ -116,13 +124,6 @@ export function SunoPromptPack({
           label="Exclude styles"
           onCopy={() => copyLabel("exclude", f.excludeStyles)}
           value={f.excludeStyles}
-        />
-        <SunoFieldCard
-          copied={lastCopied === "title"}
-          description="Suno → Title"
-          label="Title"
-          onCopy={() => copyLabel("title", f.title)}
-          value={f.title}
         />
         <SunoFieldCard
           copied={lastCopied === "lyrics"}
@@ -209,6 +210,7 @@ export function SunoPromptPack({
       <QuickCopyRow
         copiedKey={lastCopied}
         onCopy={copyLabel}
+        titleText={s.title}
         styleText={s.styleOfMusic}
         excludeText={s.excludeStyles}
         lyricsText={s.autoLyricsPrompt}
@@ -223,6 +225,13 @@ export function SunoPromptPack({
         />
       ) : null}
       <SunoFieldCard
+        copied={lastCopied === "title"}
+        description="Suno → Title (set first — names the project in Suno)"
+        label="Title"
+        onCopy={() => copyLabel("title", s.title)}
+        value={s.title}
+      />
+      <SunoFieldCard
         copied={lastCopied === "style"}
         description="Suno → Custom Mode → Style of Music"
         label="Style of Music"
@@ -235,13 +244,6 @@ export function SunoPromptPack({
         label="Exclude styles"
         onCopy={() => copyLabel("exclude", s.excludeStyles)}
         value={s.excludeStyles}
-      />
-      <SunoFieldCard
-        copied={lastCopied === "title"}
-        description="Suno → Title"
-        label="Title"
-        onCopy={() => copyLabel("title", s.title)}
-        value={s.title}
       />
       <SunoFieldCard
         copied={lastCopied === "lyrics"}
@@ -279,11 +281,9 @@ function SunoHowToAlert() {
             not a 30-second “whole song”.
           </li>
           <li>
-            Paste <span className="font-medium">Style</span>, then <span className="font-medium">Excludes</span>, then
-            the <span className="font-medium">auto lyrics</span> prompt in the matching Suno fields.
-          </li>
-          <li>
-            Set the <span className="font-medium">Title</span> in Suno from the Title field.
+            In Suno, set the <span className="font-medium">Title</span> first, then paste{" "}
+            <span className="font-medium">Style</span>, <span className="font-medium">Excludes</span>, and the{" "}
+            <span className="font-medium">auto lyrics</span> prompt into the matching Custom Mode fields.
           </li>
           <li>Use the short-version plan when editing the vertical cut.</li>
         </ol>
@@ -293,12 +293,14 @@ function SunoHowToAlert() {
 }
 
 function QuickCopyRow({
+  titleText,
   styleText,
   excludeText,
   lyricsText,
   onCopy,
   copiedKey,
 }: {
+  titleText: string;
   styleText: string;
   excludeText: string;
   lyricsText: string;
@@ -307,6 +309,16 @@ function QuickCopyRow({
 }) {
   return (
     <div className="flex flex-wrap gap-2">
+      <Button
+        disabled={!titleText.trim()}
+        onClick={() => onCopy("quick-title", titleText)}
+        size="sm"
+        type="button"
+        variant="secondary"
+      >
+        {copiedKey === "quick-title" ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+        Copy title
+      </Button>
       <Button
         disabled={!styleText.trim()}
         onClick={() => onCopy("quick-style", styleText)}

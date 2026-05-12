@@ -132,9 +132,9 @@ export function buildNormalizedMarkdownPack(sections: SunoMarkdownSections): str
     parts.push(sections.preamble.trim());
   }
   const blocks: [string, string][] = [
+    ["Title", sections.title],
     ["Style of Music", sections.styleOfMusic],
     ["Exclude Styles", sections.excludeStyles],
-    ["Title", sections.title],
     ["Auto Lyrics Prompt", sections.autoLyricsPrompt],
     ["Short Version To Extract Later", sections.shortVersionPlan],
   ];

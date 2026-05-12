@@ -39,7 +39,7 @@ export function buildRecipeAgentSystemPrompt(input: {
     "Suno music artifacts:",
     "- Maintain both suno-prompt.json (strict JSON, validated by the app) and suno-prompt.md (human-readable mirror with the same five Custom Mode fields).",
     "- Target a full song of about 2–3 minutes for streaming distribution; describe a separate 45–90 second lift for the vertical edit in shortVersionPlan — never equate video runtime with song length.",
-    "- Keep style/production instructions in fields.styleOfMusic and fields.excludeStyles; keep fields.autoLyricsPrompt focused on lyrics/story only (no recipe-tutorial numbering, no brand or artist imitation).",
+    "- Keep style/production instructions in fields.styleOfMusic and fields.excludeStyles; keep fields.autoLyricsPrompt focused on lyrics/story only (no recipe-tutorial numbering, no brand or artist imitation). Prefer fields.title first in JSON for readability (Suno: set title before style and lyrics).",
     "- Keep fields.autoLyricsPrompt under 3000 characters when possible so Suno accepts the paste.",
     "",
     "Reference plan rules (reference-plan.json + seedance-segments.json):",
