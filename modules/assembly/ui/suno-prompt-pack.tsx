@@ -32,8 +32,10 @@ import type { SunoPromptV2 } from "@/modules/recipe-agent/suno-prompt-v2.schema"
 import { buildMarkdownPackFromV2 } from "@/modules/recipe-agent/suno-prompt-v2.schema";
 
 import type { SunoAssemblyPromptView } from "../suno-assembly-prompt";
-import type { SunoMarkdownSections } from "../suno-prompt-format";
 import { buildNormalizedMarkdownPack } from "../suno-prompt-format";
+
+/** Field cards that use expand/collapse (title is always expanded in the UI). */
+const SUNO_MARKDOWN_ACCORDION_FIELD_IDS = ["style", "exclude", "lyrics", "short"] as const;
 
 type SunoPromptAccordionContextValue = {
   isFieldOpen: (id: string) => boolean;
@@ -171,15 +173,6 @@ function buildSessionMetaLines(data: SunoPromptV2): string[] {
   return lines;
 }
 
-function markdownPromptFieldIds(sections: SunoMarkdownSections): string[] {
-  const ids: string[] = [];
-  if (sections.preamble.trim()) {
-    ids.push("preamble");
-  }
-  ids.push("title", "style", "exclude", "lyrics", "short");
-  return ids;
-}
-
 export function SunoPromptPack({
   videoId,
   view,
@@ -240,7 +233,7 @@ export function SunoPromptPack({
   if (view.source === "v2") {
     const f = view.v2.fields;
     const fullPack = buildMarkdownPackFromV2(view.v2);
-    const v2FieldIds = ["title", "style", "exclude", "lyrics", "short"];
+    const v2FieldIds = ["style", "exclude", "lyrics", "short"];
     if (hasSessionMetaBlock(view.v2)) {
       v2FieldIds.push("session");
     }
@@ -264,33 +257,32 @@ export function SunoPromptPack({
             <SunoAccordionBulkControls />
           </div>
           <div className="space-y-4">
-            <SunoFieldCard
+            <SunoTitleCard
               copied={lastCopied === "title"}
               description="Suno → Title (set first — names the project in Suno)"
-              fieldId="title"
-              label="Title"
               onCopy={() => copyLabel("title", f.title)}
-              textareaClassName="min-h-24"
               value={f.title}
             />
-            <SunoFieldCard
-              copied={lastCopied === "style"}
-              description="Suno → Custom Mode → Style of Music"
-              fieldId="style"
-              label="Style of Music"
-              onCopy={() => copyLabel("style", f.styleOfMusic)}
-              textareaClassName="min-h-28"
-              value={f.styleOfMusic}
-            />
-            <SunoFieldCard
-              copied={lastCopied === "exclude"}
-              description="Suno → Custom Mode → Exclude styles"
-              fieldId="exclude"
-              label="Exclude styles"
-              onCopy={() => copyLabel("exclude", f.excludeStyles)}
-              textareaClassName="min-h-28"
-              value={f.excludeStyles}
-            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <SunoFieldCard
+                copied={lastCopied === "style"}
+                description="Suno → Custom Mode → Style of Music"
+                fieldId="style"
+                label="Style of Music"
+                onCopy={() => copyLabel("style", f.styleOfMusic)}
+                textareaClassName="min-h-32"
+                value={f.styleOfMusic}
+              />
+              <SunoFieldCard
+                copied={lastCopied === "exclude"}
+                description="Suno → Custom Mode → Exclude styles"
+                fieldId="exclude"
+                label="Exclude styles"
+                onCopy={() => copyLabel("exclude", f.excludeStyles)}
+                textareaClassName="min-h-32"
+                value={f.excludeStyles}
+              />
+            </div>
             <SunoFieldCard
               copied={lastCopied === "lyrics"}
               description="Suno → Custom Mode → Lyrics prompt (auto)"
@@ -306,7 +298,7 @@ export function SunoPromptPack({
               fieldId="short"
               label="Short version plan"
               onCopy={() => copyLabel("short", f.shortVersionPlan)}
-              textareaClassName="min-h-24"
+              textareaClassName="min-h-28"
               value={f.shortVersionPlan}
             />
           </div>
@@ -364,7 +356,7 @@ export function SunoPromptPack({
     );
   }
 
-  const markdownFieldIds = markdownPromptFieldIds(s);
+  const markdownAccordionFieldIds = [...SUNO_MARKDOWN_ACCORDION_FIELD_IDS];
 
   return (
     <div className="space-y-4">
@@ -373,7 +365,10 @@ export function SunoPromptPack({
         <Badge variant="secondary">Legacy markdown</Badge>
         <Badge variant="outline">Parsed sections</Badge>
       </div>
-      <SunoPromptAccordionProvider fieldIds={markdownFieldIds} key={JSON.stringify(markdownFieldIds)}>
+      <SunoPromptAccordionProvider
+        fieldIds={markdownAccordionFieldIds}
+        key={JSON.stringify(markdownAccordionFieldIds)}
+      >
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <QuickCopyRow
             copiedKey={lastCopied}
@@ -386,44 +381,32 @@ export function SunoPromptPack({
           <SunoAccordionBulkControls />
         </div>
         <div className="space-y-4">
-          {s.preamble.trim() ? (
-            <SunoFieldCard
-              copied={lastCopied === "preamble"}
-              description="Intro / notes from the agent (optional in Suno)"
-              fieldId="preamble"
-              label="Preamble"
-              onCopy={() => copyLabel("preamble", s.preamble)}
-              textareaClassName="min-h-24"
-              value={s.preamble}
-            />
-          ) : null}
-          <SunoFieldCard
+          <SunoTitleCard
             copied={lastCopied === "title"}
             description="Suno → Title (set first — names the project in Suno)"
-            fieldId="title"
-            label="Title"
             onCopy={() => copyLabel("title", s.title)}
-            textareaClassName="min-h-24"
             value={s.title}
           />
-          <SunoFieldCard
-            copied={lastCopied === "style"}
-            description="Suno → Custom Mode → Style of Music"
-            fieldId="style"
-            label="Style of Music"
-            onCopy={() => copyLabel("style", s.styleOfMusic)}
-            textareaClassName="min-h-28"
-            value={s.styleOfMusic}
-          />
-          <SunoFieldCard
-            copied={lastCopied === "exclude"}
-            description="Suno → Custom Mode → Exclude styles"
-            fieldId="exclude"
-            label="Exclude styles"
-            onCopy={() => copyLabel("exclude", s.excludeStyles)}
-            textareaClassName="min-h-28"
-            value={s.excludeStyles}
-          />
+          <div className="grid gap-4 md:grid-cols-2">
+            <SunoFieldCard
+              copied={lastCopied === "style"}
+              description="Suno → Custom Mode → Style of Music"
+              fieldId="style"
+              label="Style of Music"
+              onCopy={() => copyLabel("style", s.styleOfMusic)}
+              textareaClassName="min-h-32"
+              value={s.styleOfMusic}
+            />
+            <SunoFieldCard
+              copied={lastCopied === "exclude"}
+              description="Suno → Custom Mode → Exclude styles"
+              fieldId="exclude"
+              label="Exclude styles"
+              onCopy={() => copyLabel("exclude", s.excludeStyles)}
+              textareaClassName="min-h-32"
+              value={s.excludeStyles}
+            />
+          </div>
           <SunoFieldCard
             copied={lastCopied === "lyrics"}
             description="Suno → Custom Mode → Lyrics prompt (auto)"
@@ -439,7 +422,7 @@ export function SunoPromptPack({
             fieldId="short"
             label="Short version plan"
             onCopy={() => copyLabel("short", s.shortVersionPlan)}
-            textareaClassName="min-h-24"
+            textareaClassName="min-h-28"
             value={s.shortVersionPlan}
           />
         </div>
@@ -450,6 +433,50 @@ export function SunoPromptPack({
         />
       </SunoPromptAccordionProvider>
     </div>
+  );
+}
+
+function SunoTitleCard({
+  value,
+  copied,
+  onCopy,
+  description,
+}: {
+  value: string;
+  copied: boolean;
+  onCopy: () => void;
+  description: string;
+}) {
+  return (
+    <Card>
+      <CardHeader className="space-y-1 pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <CardTitle className="text-base">Title</CardTitle>
+            <CardDescription className="text-xs leading-snug">{description}</CardDescription>
+          </div>
+          <Button
+            className="shrink-0"
+            disabled={!value.trim()}
+            onClick={onCopy}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <Textarea
+          aria-label="Title for Suno"
+          className="min-h-[4.25rem] resize-y font-mono text-sm leading-relaxed md:min-h-[5rem]"
+          readOnly
+          value={value}
+        />
+      </CardContent>
+    </Card>
   );
 }
 
