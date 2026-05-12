@@ -3,7 +3,6 @@ import {
   CheckCircle2,
   ChevronDown,
   FileAudio,
-  Music2,
   Upload,
 } from "lucide-react";
 
@@ -73,38 +72,7 @@ export function SunoAssemblyPanel({
         </Alert>
       ) : null}
 
-      <Collapsible defaultOpen={false}>
-        <Alert className="border-none bg-muted/50 p-0">
-          <div className="flex items-start gap-3 p-4">
-            <Music2 className="mt-0.5 h-4 w-4 shrink-0" />
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex items-start justify-between gap-2">
-                <AlertTitle className="mb-0">Manual Suno workflow</AlertTitle>
-                <CollapsibleTrigger asChild>
-                  <Button
-                    aria-label="Show or hide workflow details"
-                    className="shrink-0 [&[data-state=open]>svg]:rotate-180"
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <ChevronDown className="h-4 w-4 transition-transform duration-200" />
-                  </Button>
-                </CollapsibleTrigger>
-              </div>
-              <CollapsibleContent>
-                <AlertDescription className="mt-2">
-                  Recipe2Video does not call a Suno API. Generate the prompt here, paste
-                  it into Suno manually, then upload the resulting audio as the durable
-                  project track.
-                </AlertDescription>
-              </CollapsibleContent>
-            </div>
-          </div>
-        </Alert>
-      </Collapsible>
-
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,400px)]">
         <SunoPromptPack videoId={videoId} view={sunoView} />
         <div className="space-y-4">
           <SunoAudioUploadCard videoId={videoId} />
