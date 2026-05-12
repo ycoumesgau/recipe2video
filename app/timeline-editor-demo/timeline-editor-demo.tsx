@@ -191,6 +191,7 @@ export function TimelineEditorDemo() {
           <CardContent>
             <div className="overflow-hidden rounded-xl border bg-black">
               <Player
+                acknowledgeRemotionLicense
                 component={TimelineDemoComposition}
                 compositionHeight={remotionProps.height}
                 compositionWidth={remotionProps.width}

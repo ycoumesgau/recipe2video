@@ -251,6 +251,7 @@ export function AssemblyWorkspace({
               {segments.length > 0 ? (
                 <div className="overflow-hidden rounded-xl border bg-black">
                   <Player
+                    acknowledgeRemotionLicense
                     component={RecipeAssemblyComposition}
                     compositionHeight={initialRemotionProps.height}
                     compositionWidth={initialRemotionProps.width}
