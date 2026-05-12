@@ -1181,6 +1181,8 @@ After each agent run the application downloads all files from
 
 **Suno assembly UI priority:** `recipe_data.sunoPromptV2` (structured JSON) first, else parsed `recipe_data.sunoPrompt` markdown, else a non-destructive fallback that directs operators to run a Suno revision via the Recipe Agent.
 
+**Authoring:** The Cursor skill `suno-music-generation` (creative template + JSON/markdown contract) lives in the **`recipe2video-agent-workspace`** repository under `.cursor/skills/`, not in the application repository.
+
 Invalid `suno-prompt.json` files are recorded on the `agent_artifacts` row with `validationStatus: invalid` but do **not** fail the overall artifact sync plan (blocking errors remain reserved for core JSON planning artifacts).
 
 Validation and sync rules:
