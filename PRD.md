@@ -164,7 +164,7 @@ Persona: Runway Hackathon Judge
   * Budget hard stop: Allow the user to pause all new generations when budget thresholds are reached.
 
 * Suno music workflow (Priority: P1)
-  * Suno prompt generation: Generate a copy-ready Suno prompt using the existing `suno-music-generation` logic from the `videos` repo.
+  * Suno prompt generation: Agent workspace skill `suno-music-generation` (repo `recipe2video-agent-workspace`) produces `suno-prompt.json` + `suno-prompt.md`, aligned with the creative template from the historical `videos` repo.
   * Manual Suno execution: Clearly guide the user to paste the prompt into Suno manually.
   * Audio upload: Let the user upload the generated Suno audio file back into the project and store it in Supabase Storage.
   * Music alignment: Use Remotion to align the music with selected video segments, including start offset, cut point, fade in, and fade out.

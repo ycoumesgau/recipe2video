@@ -37,6 +37,9 @@ import type {
   SeedanceSegment,
 } from "@/modules/storyboard/storyboard.types";
 
+import type { SunoPromptV2 } from "@/modules/recipe-agent/suno-prompt-v2.schema";
+import { SunoPromptV2Schema } from "@/modules/recipe-agent/suno-prompt-v2.schema";
+
 import type {
   RecipeAgentArtifact,
   UpsertAgentArtifactInput,
@@ -130,6 +133,7 @@ export interface RecipeAgentArtifactSyncPlan {
    */
   referencesRaw: ReferencePlanEntry[];
   sunoPrompt: string | null;
+  sunoPromptV2: SunoPromptV2 | null;
   errors: string[];
 }
 
@@ -143,9 +147,28 @@ export function buildRecipeAgentArtifactSyncPlan(
   let segments: RecipeAgentArtifactSyncPlan["segments"] = [];
   let referencesRaw: ReferencePlanEntry[] = [];
   let sunoPrompt: string | null = null;
+  let sunoPromptV2: SunoPromptV2 | null = null;
 
   for (const artifact of input.artifacts) {
     const content = artifact.content ?? "";
+
+    if (artifact.name === "suno-prompt.json") {
+      const jsonOutcome = validateSunoPromptJsonArtifact(content);
+      artifactRecords.push({
+        videoId: input.videoId,
+        artifactName: artifact.name,
+        artifactPath: artifact.path,
+        content,
+        contentHash: createArtifactContentHash(content),
+        validationStatus: jsonOutcome.errors.length > 0 ? "invalid" : "valid",
+        validationErrors: jsonOutcome.errors,
+      });
+      if (jsonOutcome.value) {
+        sunoPromptV2 = jsonOutcome.value;
+      }
+      continue;
+    }
+
     const validation = validateArtifact({
       name: artifact.name,
       content,
@@ -205,6 +228,7 @@ export function buildRecipeAgentArtifactSyncPlan(
     segments,
     referencesRaw,
     sunoPrompt,
+    sunoPromptV2,
     errors,
   };
 }
@@ -360,11 +384,17 @@ export async function syncRecipeAgentArtifacts(
     });
   }
 
+  const sunoPatch: Record<string, unknown> = {};
+  if (plan.sunoPromptV2) {
+    sunoPatch.sunoPromptV2 = plan.sunoPromptV2;
+    sunoPatch.sunoPromptV2SyncedAt = new Date().toISOString();
+  }
   if (plan.sunoPrompt) {
-    await mergeVideoProjectRecipeData(supabase, input.videoId, {
-      sunoPrompt: plan.sunoPrompt,
-      sunoPromptSyncedAt: new Date().toISOString(),
-    });
+    sunoPatch.sunoPrompt = plan.sunoPrompt;
+    sunoPatch.sunoPromptSyncedAt = new Date().toISOString();
+  }
+  if (Object.keys(sunoPatch).length > 0) {
+    await mergeVideoProjectRecipeData(supabase, input.videoId, sunoPatch);
   }
 
   return plan;
@@ -372,6 +402,35 @@ export async function syncRecipeAgentArtifacts(
 
 export function createArtifactContentHash(content: string) {
   return createHash("sha256").update(content).digest("hex");
+}
+
+function validateSunoPromptJsonArtifact(content: string): {
+  value: SunoPromptV2 | null;
+  errors: string[];
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    return {
+      value: null,
+      errors: [
+        `Invalid JSON: ${error instanceof Error ? error.message : "unknown parse error"}`,
+      ],
+    };
+  }
+
+  const result = SunoPromptV2Schema.safeParse(parsed);
+  if (!result.success) {
+    return {
+      value: null,
+      errors: result.error.issues.map(
+        (issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`,
+      ),
+    };
+  }
+
+  return { value: result.data, errors: [] };
 }
 
 function validateArtifact(input: {

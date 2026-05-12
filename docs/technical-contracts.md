@@ -1095,6 +1095,7 @@ agent-recipes/{videoId}/
   logical-scenes.json
   seedance-segments.json
   reference-plan.json
+  suno-prompt.json
   suno-prompt.md
   changelog.md
 ```
@@ -1168,14 +1169,21 @@ After each agent run the application downloads all files from
 | `logical-scenes.json` | `LogicalScenesEnvelopeSchema` | `logical_scenes` table (replace) |
 | `seedance-segments.json` | `SeedanceSegmentsEnvelopeSchema` | `segments` table (replace) |
 | `reference-plan.json` | `ReferencePlanSchema` | `reference_assets` table (replace) |
+| `suno-prompt.json` | `SunoPromptV2Schema` | `videos.recipe_data.sunoPromptV2` + `sunoPromptV2SyncedAt` (merge) |
 
 **Markdown artifacts — accepted as-is (no schema validation):**
 
 | Artifact | Sync target |
 |---|---|
 | `decisions.md` | Stored in `agent_artifacts` only |
-| `suno-prompt.md` | `videos.recipe_data.sunoPrompt` |
+| `suno-prompt.md` | `videos.recipe_data.sunoPrompt` + `sunoPromptSyncedAt` (merge) |
 | `changelog.md` | Stored in `agent_artifacts` only |
+
+**Suno assembly UI priority:** `recipe_data.sunoPromptV2` (structured JSON) first, else parsed `recipe_data.sunoPrompt` markdown, else a non-destructive fallback that directs operators to run a Suno revision via the Recipe Agent.
+
+**Authoring:** The Cursor skill `suno-music-generation` (creative template + JSON/markdown contract) lives in the **`recipe2video-agent-workspace`** repository under `.cursor/skills/`, not in the application repository.
+
+Invalid `suno-prompt.json` files are recorded on the `agent_artifacts` row with `validationStatus: invalid` but do **not** fail the overall artifact sync plan (blocking errors remain reserved for core JSON planning artifacts).
 
 Validation and sync rules:
 
@@ -1382,6 +1390,7 @@ fixtures/paris-brest/
   references.json
   prompt-diff-example.json
   cost-logs.json
+  suno-prompt.json
   suno-prompt.md
   README.md
 
