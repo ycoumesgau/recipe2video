@@ -17,6 +17,10 @@ import type {
   Composition,
   SegmentPlacement,
 } from "../assembly.types";
+import {
+  ASSEMBLY_CANVAS_HEIGHT,
+  ASSEMBLY_CANVAS_WIDTH,
+} from "../assembly.constants";
 import { getLatestCompositionByVideoId } from "../repositories/assembly.repository";
 import {
   buildClipsFromPlacements,
@@ -31,8 +35,6 @@ import {
 export { getDefaultAudioSync, getEmptyTimelineState } from "../timeline-state";
 
 const DEFAULT_FPS = 30;
-const DEFAULT_WIDTH = 720;
-const DEFAULT_HEIGHT = 1280;
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 /**
@@ -185,8 +187,8 @@ export function buildRemotionProps(input: {
 }): AssemblyRemotionProps {
   return {
     fps: DEFAULT_FPS,
-    width: DEFAULT_WIDTH,
-    height: DEFAULT_HEIGHT,
+    width: ASSEMBLY_CANVAS_WIDTH,
+    height: ASSEMBLY_CANVAS_HEIGHT,
     segments: input.segments,
     audio: input.audioTrack,
     audioSync: legacyFromAudioClips(input.audioClips),

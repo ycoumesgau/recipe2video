@@ -4,6 +4,11 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Player, type PlayerRef } from "@remotion/player";
 
 import {
+  ASSEMBLY_CANVAS_HEIGHT,
+  ASSEMBLY_CANVAS_WIDTH,
+} from "@/modules/assembly/assembly.constants";
+
+import {
   Card,
   CardContent,
   CardDescription,
@@ -159,8 +164,8 @@ export function TimelineEditorDemo() {
   const remotionProps = useMemo(
     () => ({
       fps: 30,
-      width: 720,
-      height: 1280,
+      width: ASSEMBLY_CANVAS_WIDTH,
+      height: ASSEMBLY_CANVAS_HEIGHT,
       segments,
       audio: INITIAL_AUDIO_TRACK,
       audioClips,
