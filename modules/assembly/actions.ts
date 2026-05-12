@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { inngest } from "@/inngest/client";
+import { INNGEST_EVENTS } from "@/inngest/events";
+
 import {
   assertCostlyActionAllowed,
   isAuthAccessError,
@@ -152,6 +155,96 @@ export async function saveAssemblySettingsAction(
     return formatAssemblyActionError(
       error,
       "Unable to save assembly settings.",
+    );
+  }
+}
+
+export async function requestAssemblyRenderAction(
+  _previousState: AssemblyActionState,
+  formData: FormData,
+): Promise<AssemblyActionState> {
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    const videoId = requireString(formData, "videoId");
+    const assemblyData = await getAssemblyPageData(videoId);
+    const placements = parsePlacementsPayload(
+      formData.get("placements"),
+      assemblyData.availableSegments,
+    );
+    const timelineState = parseTimelineState(formData.get("timelineState"));
+    const audioMediaAssetId = optionalString(formData, "audioMediaAssetId");
+
+    const orderedClips = buildClipsFromPlacements(
+      placements,
+      new Map(
+        assemblyData.availableSegments.map((segment) => [
+          segment.segmentId,
+          {
+            segmentId: segment.segmentId,
+            mediaAssetId: segment.mediaAssetId,
+            generationId: segment.generationId,
+            title: segment.title,
+            durationSeconds: segment.durationSeconds,
+            sourceUrl: segment.sourceUrl,
+            storageBucket: segment.storageBucket,
+            storagePath: segment.storagePath,
+          },
+        ]),
+      ),
+    );
+
+    if (orderedClips.length === 0) {
+      return {
+        status: "error",
+        message: "No accepted Supabase-stored segment clips are available yet.",
+      };
+    }
+
+    const supabase = createSupabaseAdminClient();
+    const composition = await upsertDraftComposition(supabase, {
+      videoId,
+      placements,
+      audioMediaAssetId,
+      audioSync: projectLegacyAudioSync(timelineState.audioClips),
+      timelineState,
+      remotionProps: buildRemotionProps({
+        segments: orderedClips,
+        audioTrack: assemblyData.audioTrack,
+        audioClips: timelineState.audioClips,
+      }),
+      exportStatus: "pending",
+      createdBy: profile.id,
+    });
+
+    await updateCompositionExport(supabase, {
+      compositionId: composition.id,
+      exportStatus: "rendering",
+    });
+
+    await updateVideoProjectStatus(supabase, videoId, "assembling");
+
+    await inngest.send({
+      name: INNGEST_EVENTS.compositionRenderRequested,
+      data: {
+        videoId,
+        compositionId: composition.id,
+        requestedByUserId: profile.id,
+        isAllowlisted: true,
+      },
+    });
+
+    revalidateAssemblyPaths(videoId);
+
+    return {
+      status: "success",
+      message:
+        "Assembly saved and cloud render queued. This page refreshes while the export runs.",
+      compositionId: composition.id,
+    };
+  } catch (error) {
+    return formatAssemblyActionError(
+      error,
+      "Unable to queue assembly render.",
     );
   }
 }

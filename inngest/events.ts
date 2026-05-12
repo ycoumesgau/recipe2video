@@ -20,11 +20,6 @@ interface WorkflowAuthEventData {
   isAllowlisted?: boolean;
 }
 
-// `composition.render.requested` was declared but never handled. Server-side
-// Remotion rendering is a post-hackathon item (see `docs/demo-runbook.md`
-// "Phase 5 follow-ups"). The current export path stores a user-uploaded MP4
-// directly through `uploadFinalExportAction`. Re-add the event when a real
-// render worker (Vercel Sandbox or @remotion/renderer) is wired.
 export const INNGEST_EVENTS = {
   videoRecipeIngestRequested: "video.recipe.ingest.requested",
   videoStoryboardGenerateRequested: "video.storyboard.generate.requested",
@@ -34,6 +29,7 @@ export const INNGEST_EVENTS = {
   segmentOutputPersistRequested: "segment.output.persist.requested",
   segmentMuxUploadRequested: "segment.mux.upload.requested",
   segmentFeedbackApplyRequested: "segment.feedback.apply.requested",
+  compositionRenderRequested: "composition.render.requested",
   costLogRequested: "cost.log.requested",
   recipeAgentCreateRequested: "recipe.agent.create.requested",
   recipeAgentMessageRequested: "recipe.agent.message.requested",
@@ -82,6 +78,11 @@ export interface RecipeAgentSyncRequestedData extends WorkflowAuthEventData {
   artifacts: RecipeAgentArtifact[];
 }
 
+export interface CompositionRenderRequestedData extends WorkflowAuthEventData {
+  videoId: string;
+  compositionId: string;
+}
+
 export type CostLogRequestedData = WorkflowAuthEventData & CreateCostLogInput;
 
 export type Recipe2VideoEventPayloads = {
@@ -93,6 +94,7 @@ export type Recipe2VideoEventPayloads = {
   [INNGEST_EVENTS.segmentOutputPersistRequested]: SegmentOutputPersistRequestedData;
   [INNGEST_EVENTS.segmentMuxUploadRequested]: SegmentMuxUploadRequestedData;
   [INNGEST_EVENTS.segmentFeedbackApplyRequested]: FeedbackApplyRequestedData;
+  [INNGEST_EVENTS.compositionRenderRequested]: CompositionRenderRequestedData;
   [INNGEST_EVENTS.costLogRequested]: CostLogRequestedData;
   [INNGEST_EVENTS.recipeAgentCreateRequested]: RecipeAgentCreateRequestedData;
   [INNGEST_EVENTS.recipeAgentMessageRequested]: RecipeAgentMessageRequestedData;

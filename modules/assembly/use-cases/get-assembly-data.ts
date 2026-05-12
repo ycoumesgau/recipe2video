@@ -6,6 +6,7 @@ import { createStorageSignedUrl } from "@/modules/media-assets/services/storage.
 import { listSegmentsByVideoId } from "@/modules/storyboard/repositories/segment.repository";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
+import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 
 import type {
   AssemblyAudioClip,
@@ -20,6 +21,7 @@ import type {
 import {
   ASSEMBLY_CANVAS_HEIGHT,
   ASSEMBLY_CANVAS_WIDTH,
+  ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
 } from "../assembly.constants";
 import { getLatestCompositionByVideoId } from "../repositories/assembly.repository";
 import {
@@ -83,14 +85,18 @@ export async function getAssemblyPageData(
     (segment) => segment.status === "accepted",
   );
   const audioTrack = await buildAudioTrack(
+    supabase,
     mediaAssets,
     composition?.audioMediaAssetId ?? null,
+    SIGNED_URL_TTL_SECONDS,
   );
 
   // Build the catalogue of available segments (one entry per segmentId).
   const availableEntries = await buildSegmentCatalogue(
+    supabase,
     acceptedSegments,
     mediaAssets,
+    SIGNED_URL_TTL_SECONDS,
   );
   const availableBySegmentId = new Map(
     availableEntries.map((entry) => [entry.segmentId, entry]),
@@ -225,8 +231,10 @@ function ensureAudioClipForLinkedTrack(
 }
 
 async function buildSegmentCatalogue(
+  supabase: SupabaseDataClient,
   acceptedSegments: SeedanceSegment[],
   mediaAssets: MediaAsset[],
+  signedUrlTtlSeconds: number,
 ): Promise<SegmentCatalogueEntry[]> {
   const entries: SegmentCatalogueEntry[] = [];
   for (const segment of acceptedSegments) {
@@ -247,7 +255,11 @@ async function buildSegmentCatalogue(
       // not the timeline position which can change with reorders.
       title: `S${segment.position}. ${segment.title}`,
       durationSeconds,
-      sourceUrl: await createStorageSignedUrlForAsset(mediaAsset),
+      sourceUrl: await createStorageSignedUrlForAsset(
+        supabase,
+        mediaAsset,
+        signedUrlTtlSeconds,
+      ),
       storageBucket: mediaAsset.storageBucket,
       storagePath: mediaAsset.storagePath,
     });
@@ -256,8 +268,10 @@ async function buildSegmentCatalogue(
 }
 
 async function buildAudioTrack(
+  supabase: SupabaseDataClient,
   mediaAssets: MediaAsset[],
   preferredAudioMediaAssetId: string | null,
+  signedUrlTtlSeconds: number,
 ): Promise<AssemblyAudioTrack | null> {
   const preferred = preferredAudioMediaAssetId
     ? mediaAssets.find(
@@ -283,7 +297,11 @@ async function buildAudioTrack(
   return {
     mediaAssetId: audioAsset.id,
     title: audioAsset.originalFilename ?? "Suno audio",
-    sourceUrl: await createStorageSignedUrlForAsset(audioAsset),
+    sourceUrl: await createStorageSignedUrlForAsset(
+      supabase,
+      audioAsset,
+      signedUrlTtlSeconds,
+    ),
     durationSeconds: audioAsset.durationSeconds,
   };
 }
@@ -316,10 +334,92 @@ function selectSegmentSourceAsset(
   );
 }
 
-async function createStorageSignedUrlForAsset(mediaAsset: MediaAsset) {
-  return createStorageSignedUrl(createSupabaseAdminClient(), {
+async function createStorageSignedUrlForAsset(
+  supabase: SupabaseDataClient,
+  mediaAsset: MediaAsset,
+  expiresInSeconds: number,
+) {
+  return createStorageSignedUrl(supabase, {
     bucket: mediaAsset.storageBucket as MediaStorageBucket,
     path: mediaAsset.storagePath!,
-    expiresInSeconds: SIGNED_URL_TTL_SECONDS,
+    expiresInSeconds,
+  });
+}
+
+/**
+ * Builds {@link AssemblyRemotionProps} for a **specific** composition row with
+ * freshly signed Supabase URLs (longer TTL for cloud export).
+ */
+export async function buildRemotionPropsForCompositionRow(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  composition: Composition,
+): Promise<AssemblyRemotionProps> {
+  if (composition.videoId !== videoId) {
+    throw new Error("Composition does not belong to this video project.");
+  }
+
+  const [segments, mediaAssets] = await Promise.all([
+    listSegmentsByVideoId(supabase, videoId),
+    listMediaAssetsByVideoId(supabase, videoId),
+  ]);
+
+  const acceptedSegments = segments.filter(
+    (segment) => segment.status === "accepted",
+  );
+  const audioTrack = await buildAudioTrack(
+    supabase,
+    mediaAssets,
+    composition.audioMediaAssetId ?? null,
+    ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
+  );
+
+  const availableEntries = await buildSegmentCatalogue(
+    supabase,
+    acceptedSegments,
+    mediaAssets,
+    ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
+  );
+  const availableBySegmentId = new Map(
+    availableEntries.map((entry) => [entry.segmentId, entry]),
+  );
+  const availableDurations = new Map(
+    availableEntries.map((entry) => [entry.segmentId, entry.durationSeconds]),
+  );
+
+  const persistedPlacements = readPlacementsState(
+    composition.segmentOrder,
+    composition.audioSync,
+    availableDurations,
+  );
+  if (persistedPlacements.length === 0) {
+    throw new Error("Composition has no segment placements to render.");
+  }
+
+  const persistedTimelineState = readTimelineState(
+    composition.audioSync ?? null,
+    {
+      audioMediaAssetId: composition.audioMediaAssetId,
+      audioDurationSeconds: audioTrack?.durationSeconds,
+    },
+  );
+  const seededAudioClips = ensureAudioClipForLinkedTrack(
+    persistedTimelineState.audioClips,
+    audioTrack,
+  );
+  const timelineState: AssemblyTimelineState = {
+    schema: "timeline_v2",
+    audioClips: seededAudioClips,
+  };
+
+  const orderedSegments = buildClipsFromPlacements(
+    persistedPlacements,
+    availableBySegmentId,
+  );
+
+  return buildRemotionProps({
+    segments: orderedSegments,
+    audioTrack,
+    audioClips: timelineState.audioClips,
   });
 }

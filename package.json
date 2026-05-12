@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && npx tsx scripts/build-remotion-export.ts",
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test \"modules/**/*.test.ts\"",
@@ -19,10 +19,13 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@mux/mux-player-react": "^3.13.0",
+    "@remotion/bundler": "^4.0.459",
     "@remotion/player": "^4.0.459",
+    "@remotion/renderer": "^4.0.459",
     "@runwayml/sdk": "^3.21.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
+    "@vercel/sandbox": "^1.10.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "inngest": "^4.3.0",
@@ -43,6 +46,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@remotion/cli": "^4.0.459",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

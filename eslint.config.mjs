@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "remotion-export/serve/**",
+    "remotion-export/node_modules/**",
   ]),
 ]);
 

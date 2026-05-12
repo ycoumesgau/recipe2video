@@ -13,7 +13,7 @@ Recipe2Video is a Next.js 16 (App Router) application with TypeScript, Tailwind 
 | Dev server | `npm run dev` |
 | Lint | `npm run lint` |
 | Tests | `npm test` |
-| Build | `npm run build` |
+| Build | `npm run build` (runs Next.js build then bundles Remotion into `remotion-export/` for cloud assembly export) |
 
 ### Environment variables
 

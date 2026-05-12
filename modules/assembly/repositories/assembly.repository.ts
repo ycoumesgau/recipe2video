@@ -85,6 +85,20 @@ export async function getLatestCompositionByVideoId(
   return data ? mapComposition(data) : null;
 }
 
+export async function getCompositionById(
+  supabase: SupabaseDataClient,
+  compositionId: string,
+): Promise<Composition | null> {
+  const { data, error } = await supabase
+    .from("compositions")
+    .select("*")
+    .eq("id", compositionId)
+    .maybeSingle();
+
+  throwIfSupabaseError(error, "getCompositionById failed");
+  return data ? mapComposition(data) : null;
+}
+
 export async function createComposition(
   supabase: SupabaseDataClient,
   input: SaveCompositionInput,

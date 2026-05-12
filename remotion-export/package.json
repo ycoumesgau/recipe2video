@@ -1,0 +1,9 @@
+{
+  "name": "recipe2video-remotion-export",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@remotion/renderer": "4.0.459",
+    "remotion": "4.0.459"
+  }
+}
