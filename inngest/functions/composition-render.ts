@@ -1,3 +1,5 @@
+import "server-only";
+
 import { revalidatePath } from "next/cache";
 
 import { assertAllowlistedUser } from "@/modules/auth/assert-allowlisted-user";

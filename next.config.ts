@@ -26,7 +26,10 @@ function supabaseImageRemotePatterns(): NonNullable<
 }
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@cursor/sdk", "@vercel/sandbox"],
+  // @cursor/sdk: keep external (native / large). @vercel/sandbox must NOT be
+  // listed here: Turbopack in `next dev` fails to resolve it for the Inngest
+  // route graph ("Can't resolve '@vercel/sandbox'"); bundling it server-side is fine.
+  serverExternalPackages: ["@cursor/sdk"],
   images: {
     remotePatterns: supabaseImageRemotePatterns(),
   },
