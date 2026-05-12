@@ -21,7 +21,7 @@ export default async function MusicPage({
 
   if (data.error || !data.musicData) {
     return (
-      <div className="mx-auto max-w-5xl space-y-6">
+      <div className="space-y-6">
         <div>
           <Badge className="mb-3" variant="outline">
             Music
@@ -46,7 +46,7 @@ export default async function MusicPage({
   const pageTitle = data.musicData.project?.title ?? "Video project";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div className="space-y-8">
       <div>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Badge variant="outline">Music</Badge>

@@ -104,7 +104,7 @@ export function SunoAssemblyPanel({
         </Alert>
       </Collapsible>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,400px)]">
         <SunoPromptPack videoId={videoId} view={sunoView} />
         <div className="space-y-4">
           <SunoAudioUploadCard videoId={videoId} />
