@@ -40,6 +40,7 @@ import {
   DEFAULT_TTS_MODEL,
   DEFAULT_VIDEO_MODEL,
   IMAGE_MODEL_OPTIONS,
+  MAX_COMPLEMENTARY_AGENT_INSTRUCTIONS_LENGTH,
   MAX_RECIPE_SOURCE_FILE_SIZE_BYTES,
   MAX_VIDEO_TITLE_LENGTH,
   SFX_MODEL_OPTIONS,
@@ -225,6 +226,34 @@ export function NewVideoWizardForm() {
               </div>
             </TabsContent>
           </Tabs>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Complementary instructions for the recipe agent</CardTitle>
+          <CardDescription>
+            Optional. Use this for constraints the models should respect from the
+            first planning pass (for example target size for shaped dishes). When
+            you choose “Create project and analyze recipe”, these notes
+            are included verbatim in the initial agent message.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Label htmlFor="complementaryAgentInstructions">Agent notes</Label>
+            <Textarea
+              id="complementaryAgentInstructions"
+              name="complementaryAgentInstructions"
+              maxLength={MAX_COMPLEMENTARY_AGENT_INSTRUCTIONS_LENGTH}
+              placeholder='e.g. For arancini, show a ball about 5–6 cm in diameter so scale stays consistent across shots.'
+              rows={4}
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave blank if you have nothing specific to add. Saved on the draft
+              and sent with the first analysis request only.
+            </p>
+          </div>
         </CardContent>
       </Card>
 

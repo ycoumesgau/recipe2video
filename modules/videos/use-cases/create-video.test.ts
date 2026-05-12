@@ -47,6 +47,41 @@ test("buildRecipeAgentMessagePayload sends recipe ingest requests to the recipe 
   assert.match(payload?.message ?? "", /produce or update recipe-analysis\.json/i);
 });
 
+test("buildRecipeAgentMessagePayload includes complementary creator instructions when provided", () => {
+  const payload = buildRecipeAgentMessagePayload({
+    videoId: "video-1",
+    profileId: "user-1",
+    sourceSummary: textSource(),
+    pastedRecipeText: "Risotto balls.",
+    productionDefaults: productionDefaultsWithDuration,
+    intent: "analyze",
+    complementaryAgentInstructions:
+      "Shape arancini to about 5–6 cm diameter for consistent scale.",
+  });
+
+  assert.match(
+    payload?.message ?? "",
+    /Complementary instructions from the creator/i,
+  );
+  assert.match(payload?.message ?? "", /5–6 cm diameter/);
+});
+
+test("buildRecipeAgentMessagePayload omits complementary block when absent", () => {
+  const payload = buildRecipeAgentMessagePayload({
+    videoId: "video-1",
+    profileId: "user-1",
+    sourceSummary: textSource(),
+    pastedRecipeText: "Quick noodle bowl.",
+    productionDefaults: productionDefaultsWithDuration,
+    intent: "analyze",
+  });
+
+  assert.doesNotMatch(
+    payload?.message ?? "",
+    /Complementary instructions from the creator/i,
+  );
+});
+
 test("buildRecipeAgentMessagePayload mentions vision attachment for photo sources", () => {
   const payload = buildRecipeAgentMessagePayload({
     videoId: "video-1",

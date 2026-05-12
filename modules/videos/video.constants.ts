@@ -1,6 +1,9 @@
 /** Max length for `videos.title` (wizard + inline rename). */
 export const MAX_VIDEO_TITLE_LENGTH = 200;
 
+/** Max length for optional complementary instructions appended to the initial recipe agent prompt. */
+export const MAX_COMPLEMENTARY_AGENT_INSTRUCTIONS_LENGTH = 8000;
+
 export const DEFAULT_VIDEO_MODEL = "seedance2";
 export const DEFAULT_IMAGE_MODEL = "gpt_image_2";
 export const DEFAULT_TTS_MODEL = "eleven_multilingual_v2";

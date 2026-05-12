@@ -43,6 +43,10 @@ export async function createVideoDraftAction(
       cursorAgentModel: getString(formData, "cursorAgentModel"),
       cursorAgentReasoning: getString(formData, "cursorAgentReasoning"),
       intent: normalizeIntent(getString(formData, "intent")),
+      complementaryAgentInstructions: getString(
+        formData,
+        "complementaryAgentInstructions",
+      ),
     });
 
     redirect(`/videos/${result.videoId}`);
