@@ -59,8 +59,34 @@ const AUDIO_TRACK_HEIGHT = 84;
 const TIMELINE_HEIGHT =
   TRACK_RULER_HEIGHT + VIDEO_TRACK_HEIGHT + AUDIO_TRACK_HEIGHT + 8;
 const TRIM_HANDLE_WIDTH = 14;
-const SNAP_TOLERANCE_PX = 6;
+const SNAP_TOLERANCE_PX = 10;
 const MIN_CLIP_DURATION = 0.2;
+
+/**
+ * Categorisation of the snap-target sources, used to colour the snap
+ * indicator differently depending on what the audio is sticking to.
+ *
+ * - `video-start` : timeline 0 that also happens to be the first video
+ *   clip's leading edge. Visually treated like a video boundary.
+ * - `video-boundary` : start or end of any video clip on the timeline.
+ *   This is the main case the user asked for ("audio s'accroche au
+ *   début / la fin d'une plage vidéo").
+ * - `audio-boundary` : start or end of another audio clip on the
+ *   timeline (excluding the one being dragged).
+ * - `playhead` : current Remotion playhead position.
+ * - `origin` : timeline 0 when no video clip is there.
+ */
+type SnapTargetKind =
+  | "video-start"
+  | "video-boundary"
+  | "audio-boundary"
+  | "playhead"
+  | "origin";
+
+interface SnapTarget {
+  seconds: number;
+  kind: SnapTargetKind;
+}
 
 type DragMode =
   | { kind: "idle" }
@@ -228,6 +254,15 @@ export function TimelineEditor({
   const [binDropIndicatorPx, setBinDropIndicatorPx] = useState<number | null>(
     null,
   );
+  /**
+   * When a drag (audio move / audio trim) snaps to a clip boundary or the
+   * playhead, this holds the timeline position of the snap target so we
+   * can render a thin guideline. Cleared on pointerup.
+   */
+  const [snapMarker, setSnapMarker] = useState<{
+    seconds: number;
+    kind: SnapTargetKind;
+  } | null>(null);
 
   const segmentLayout = useMemo(() => {
     const result: Array<{ startSeconds: number; durationSeconds: number }> = [];
@@ -300,42 +335,86 @@ export function TimelineEditor({
     }
   }, [playerRef]);
 
-  // Snap targets: every clip boundary plus the playhead, used both for video
-  // moves and audio drag/trim.
-  const snapTargets = useMemo(() => {
-    const targets = new Set<number>();
-    targets.add(0);
-    targets.add(playheadSeconds);
-    segmentLayout.forEach((layout) => {
-      targets.add(layout.startSeconds);
-      targets.add(layout.startSeconds + layout.durationSeconds);
+  // Snap targets: every video clip boundary, every other audio clip
+  // boundary, the playhead, and timeline 0. Used for audio move/trim so a
+  // music clip "clicks" onto a video boundary like in CapCut / Premiere.
+  const snapTargets = useMemo<SnapTarget[]>(() => {
+    const targets: SnapTarget[] = [];
+    const seen = new Set<string>();
+    const add = (seconds: number, kind: SnapTargetKind) => {
+      // Round to 4 decimals so two near-identical floats from different
+      // sources don't double-stack at the same px.
+      const key = `${kind}:${seconds.toFixed(4)}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      targets.push({ seconds, kind });
+    };
+    add(0, "origin");
+    add(playheadSeconds, "playhead");
+    segmentLayout.forEach((layout, index) => {
+      // First clip's start coincides with origin — keep both, the kind
+      // matters for the indicator color.
+      add(layout.startSeconds, index === 0 ? "video-start" : "video-boundary");
+      add(layout.startSeconds + layout.durationSeconds, "video-boundary");
     });
     audioClips.forEach((clip) => {
       const duration = Math.max(clip.outSeconds - clip.inSeconds, 0);
-      targets.add(clip.startOnTimelineSeconds);
-      targets.add(clip.startOnTimelineSeconds + duration);
+      add(clip.startOnTimelineSeconds, "audio-boundary");
+      add(clip.startOnTimelineSeconds + duration, "audio-boundary");
     });
-    return Array.from(targets);
+    return targets;
   }, [audioClips, playheadSeconds, segmentLayout]);
 
+  /**
+   * Try to snap a candidate timeline position (in seconds) to one of the
+   * known snap targets within {@link SNAP_TOLERANCE_PX}. Returns both the
+   * (possibly snapped) value and the target it landed on, so callers can
+   * render a guideline. `ignoreClipId` excludes a specific audio clip's
+   * boundaries from the targets — used while moving an audio clip so its
+   * own edges don't snap to themselves.
+   */
   const snap = useCallback(
-    (seconds: number, ignore?: number[]) => {
+    (
+      seconds: number,
+      options?: { ignoreClipId?: string },
+    ): { value: number; target: SnapTarget | null } => {
       const tolerance = SNAP_TOLERANCE_PX / pxPerSecond;
-      let best = seconds;
+      let bestTarget: SnapTarget | null = null;
       let bestDelta = tolerance;
+      const ignoredAudio = options?.ignoreClipId
+        ? audioClips.find((clip) => clip.id === options.ignoreClipId)
+        : undefined;
+      const ignoredAudioStarts = ignoredAudio
+        ? new Set([
+            ignoredAudio.startOnTimelineSeconds,
+            ignoredAudio.startOnTimelineSeconds +
+              Math.max(
+                ignoredAudio.outSeconds - ignoredAudio.inSeconds,
+                0,
+              ),
+          ])
+        : null;
       for (const target of snapTargets) {
-        if (ignore?.includes(target)) {
+        if (
+          target.kind === "audio-boundary" &&
+          ignoredAudioStarts?.has(target.seconds)
+        ) {
           continue;
         }
-        const delta = Math.abs(target - seconds);
+        const delta = Math.abs(target.seconds - seconds);
         if (delta < bestDelta) {
-          best = target;
           bestDelta = delta;
+          bestTarget = target;
         }
       }
-      return best;
+      return {
+        value: bestTarget ? bestTarget.seconds : seconds,
+        target: bestTarget,
+      };
     },
-    [pxPerSecond, snapTargets],
+    [audioClips, pxPerSecond, snapTargets],
   );
 
   const xToSeconds = useCallback(
@@ -550,32 +629,92 @@ export function TimelineEditor({
           translateX: deltaX,
         });
       } else if (drag.kind === "audio-move") {
-        const nextStart = Math.max(
-          snap(drag.initialStart + deltaSeconds, [drag.initialStart]),
-          0,
+        const clip = audioClips.find((c) => c.id === drag.clipId);
+        const duration = clip
+          ? Math.max(clip.outSeconds - clip.inSeconds, 0)
+          : 0;
+        const candidateStart = Math.max(drag.initialStart + deltaSeconds, 0);
+        // Snap both the leading edge AND the trailing edge to whichever
+        // target is closest, so dropping the audio with its END aligned to
+        // the end of a video clip "clicks" just like the start would.
+        const leadingSnap = snap(candidateStart, {
+          ignoreClipId: drag.clipId,
+        });
+        const trailingSnap = snap(candidateStart + duration, {
+          ignoreClipId: drag.clipId,
+        });
+        const leadingDelta = leadingSnap.target
+          ? Math.abs(leadingSnap.value - candidateStart)
+          : Infinity;
+        const trailingDelta = trailingSnap.target
+          ? Math.abs(trailingSnap.value - (candidateStart + duration))
+          : Infinity;
+        let nextStart = candidateStart;
+        let snappedTarget: SnapTarget | null = null;
+        if (leadingDelta <= trailingDelta && leadingSnap.target) {
+          nextStart = leadingSnap.value;
+          snappedTarget = leadingSnap.target;
+        } else if (trailingSnap.target) {
+          nextStart = trailingSnap.value - duration;
+          snappedTarget = trailingSnap.target;
+        }
+        nextStart = Math.max(nextStart, 0);
+        setPendingDrag({
+          kind: "audio-move",
+          clipId: drag.clipId,
+          nextStart,
+        });
+        setSnapMarker(
+          snappedTarget
+            ? { seconds: snappedTarget.seconds, kind: snappedTarget.kind }
+            : null,
         );
-        setPendingDrag({ kind: "audio-move", clipId: drag.clipId, nextStart });
       } else if (drag.kind === "audio-trim") {
         let nextInSeconds = drag.initialInSeconds;
         let nextOutSeconds = drag.initialOutSeconds;
         let nextStart = drag.initialStart;
+        let snappedTarget: SnapTarget | null = null;
         if (drag.side === "left") {
           // Trim left = pull or push the in-point AND shift the timeline
           // start by the same amount, like a typical NLE.
-          nextInSeconds = clamp(
+          const candidateIn = clamp(
             drag.initialInSeconds + deltaSeconds,
             0,
             drag.initialOutSeconds - MIN_CLIP_DURATION,
           );
-          nextStart = Math.max(
-            drag.initialStart + (nextInSeconds - drag.initialInSeconds),
+          const candidateStart = Math.max(
+            drag.initialStart + (candidateIn - drag.initialInSeconds),
             0,
           );
+          // Snap the trimmed edge's TIMELINE position to clip boundaries.
+          const snapResult = snap(candidateStart, {
+            ignoreClipId: drag.clipId,
+          });
+          nextStart = snapResult.value;
+          // Re-derive the in-point from the snapped start so the source
+          // window stays consistent with the visual edge on the timeline.
+          nextInSeconds = clamp(
+            drag.initialInSeconds + (nextStart - drag.initialStart),
+            0,
+            drag.initialOutSeconds - MIN_CLIP_DURATION,
+          );
+          snappedTarget = snapResult.target;
         } else {
-          nextOutSeconds = Math.max(
+          const candidateOut = Math.max(
             drag.initialOutSeconds + deltaSeconds,
             drag.initialInSeconds + MIN_CLIP_DURATION,
           );
+          // Right edge's TIMELINE position is start + (out - in).
+          const candidateRightOnTimeline =
+            drag.initialStart + (candidateOut - drag.initialInSeconds);
+          const snapResult = snap(candidateRightOnTimeline, {
+            ignoreClipId: drag.clipId,
+          });
+          nextOutSeconds = Math.max(
+            drag.initialInSeconds + (snapResult.value - drag.initialStart),
+            drag.initialInSeconds + MIN_CLIP_DURATION,
+          );
+          snappedTarget = snapResult.target;
         }
         setPendingDrag({
           kind: "audio-trim",
@@ -585,6 +724,11 @@ export function TimelineEditor({
           nextOutSeconds,
           nextStart,
         });
+        setSnapMarker(
+          snappedTarget
+            ? { seconds: snappedTarget.seconds, kind: snappedTarget.kind }
+            : null,
+        );
       } else if (drag.kind === "audio-fade") {
         const clip = audioClips.find((c) => c.id === drag.clipId);
         if (!clip) {
@@ -704,6 +848,7 @@ export function TimelineEditor({
           commitPendingDrag(current);
           return null;
         });
+        setSnapMarker(null);
       }
     },
     [commitPendingDrag],
@@ -1114,6 +1259,13 @@ export function TimelineEditor({
                 leftPx={binDropIndicatorPx}
               />
             ) : null}
+            {snapMarker !== null ? (
+              <SnapIndicator
+                heightPx={VIDEO_TRACK_HEIGHT + AUDIO_TRACK_HEIGHT + 8}
+                kind={snapMarker.kind}
+                leftPx={snapMarker.seconds * pxPerSecond}
+              />
+            ) : null}
           </div>
 
           <Playhead
@@ -1486,6 +1638,56 @@ function BinDropIndicator({
     >
       <div className="absolute -left-[6px] -top-[6px] h-3 w-3 rotate-45 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]" />
       <div className="h-full w-[3px] -translate-x-[1px] bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+    </div>
+  );
+}
+
+/**
+ * Thin vertical guideline rendered while a drag is snapped to a clip
+ * boundary or the playhead. Differs from {@link BinDropIndicator} by being
+ * narrower (snap is informational, not the drop target itself) and by
+ * colour-coding the kind of boundary the audio is sticking to.
+ */
+function SnapIndicator({
+  heightPx,
+  kind,
+  leftPx,
+}: {
+  heightPx: number;
+  kind: SnapTargetKind;
+  leftPx: number;
+}) {
+  // Yellow for video boundaries (the most useful case), cyan for other
+  // audio clip boundaries, magenta for the playhead, neutral for origin.
+  const color =
+    kind === "video-boundary" || kind === "video-start"
+      ? "rgb(234, 179, 8)" // amber-500
+      : kind === "audio-boundary"
+        ? "rgb(34, 211, 238)" // cyan-400
+        : kind === "playhead"
+          ? "rgb(244, 63, 94)" // rose-500
+          : "rgb(148, 163, 184)"; // slate-400
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute z-30"
+      style={{ height: heightPx, left: leftPx, top: 0 }}
+    >
+      <div
+        className="h-full w-px"
+        style={{
+          backgroundColor: color,
+          boxShadow: `0 0 6px ${color}`,
+        }}
+      />
+      <div
+        className="absolute -left-[3px] -top-[3px] h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: color }}
+      />
+      <div
+        className="absolute -left-[3px] -bottom-[3px] h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: color }}
+      />
     </div>
   );
 }
