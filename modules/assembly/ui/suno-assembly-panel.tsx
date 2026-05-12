@@ -24,8 +24,8 @@ import type { VideoProject } from "@/modules/videos/video.types";
 
 import type { Composition } from "../assembly.types";
 import { uploadSunoAudioAction } from "../actions";
-import { buildSunoPrompt } from "../suno-prompt";
-import { SunoPromptCopyCard } from "./suno-prompt-copy-card";
+import { resolveSunoAssemblyPromptView } from "../suno-assembly-prompt";
+import { SunoPromptPack } from "./suno-prompt-pack";
 
 export function SunoAssemblyPanel({
   composition,
@@ -44,7 +44,11 @@ export function SunoAssemblyPanel({
   sunoAudioAssets: MediaAsset[];
   videoId: string;
 }) {
-  const prompt = buildSunoPrompt({ project, logicalScenes, seedanceSegments });
+  const sunoView = resolveSunoAssemblyPromptView({
+    project,
+    logicalScenes,
+    seedanceSegments,
+  });
   const linkedAudio = getLinkedAudioAsset(composition, sunoAudioAssets);
 
   return (
@@ -74,7 +78,7 @@ export function SunoAssemblyPanel({
       </Alert>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-        <SunoPromptCopyCard prompt={prompt} />
+        <SunoPromptPack videoId={videoId} view={sunoView} />
         <div className="space-y-4">
           <SunoAudioUploadCard videoId={videoId} />
           <LinkedAudioCard linkedAudio={linkedAudio} />

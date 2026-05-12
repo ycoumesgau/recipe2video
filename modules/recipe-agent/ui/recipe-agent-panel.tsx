@@ -228,7 +228,7 @@ export function RecipeAgentPanel({
   const latestRun = runs[0];
 
   return (
-    <Card>
+    <Card id="recipe-agent">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

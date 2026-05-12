@@ -75,7 +75,7 @@ function buildInitialRecipeAgentMessage(
       : null,
     "",
     "Mandatory: produce or update recipe-analysis.json in all cases (with clarifyingQuestions if information is missing).",
-    "If enough information is available, also produce logical-scenes.json, seedance-segments.json, reference-plan.json, suno-prompt.md, decisions.md, and changelog.md.",
+    "If enough information is available, also produce logical-scenes.json, seedance-segments.json, reference-plan.json, suno-prompt.json, suno-prompt.md, decisions.md, and changelog.md.",
     "Do not launch Runway, Suno, Supabase, Mux, Remotion, or any paid generation. Recipe2Video will validate and execute later.",
   ]
     .filter(Boolean)
