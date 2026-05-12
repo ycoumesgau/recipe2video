@@ -11,6 +11,7 @@ import {
   DEFAULT_SFX_MODEL,
   DEFAULT_TTS_MODEL,
   DEFAULT_VIDEO_MODEL,
+  MAX_COMPLEMENTARY_AGENT_INSTRUCTIONS_LENGTH,
   MAX_RECIPE_SOURCE_FILE_SIZE_BYTES,
   MAX_VIDEO_TITLE_LENGTH,
 } from "@/modules/videos/video.constants";
@@ -42,6 +43,8 @@ export interface CreateVideoDraftInput {
   cursorAgentModel?: string;
   cursorAgentReasoning?: string;
   intent?: CreateVideoDraftIntent;
+  /** Optional notes appended to the first recipe agent message when analyzing on create. */
+  complementaryAgentInstructions?: string;
 }
 
 export interface CreateVideoDraftResult {
@@ -58,6 +61,9 @@ export async function createVideoDraft(
   const recipeUrl = normalizeOptionalText(input.recipeUrl);
   const pastedRecipeText = normalizeOptionalText(input.pastedRecipeText);
   const demoRecipeId = normalizeOptionalText(input.demoRecipeId);
+  const complementaryAgentInstructions = normalizeOptionalText(
+    input.complementaryAgentInstructions,
+  )?.slice(0, MAX_COMPLEMENTARY_AGENT_INSTRUCTIONS_LENGTH);
   const sourceFiles = input.sourceFiles.filter(isRealFile);
   const intent = input.intent ?? "analyze";
 
@@ -108,6 +114,9 @@ export async function createVideoDraft(
       recipeExtractionRequested: false,
       agentPlanningRequested: intent === "analyze" && sourceSummary.type !== "demo",
       planningSource: "cursor_recipe_agent",
+      ...(complementaryAgentInstructions
+        ? { complementaryAgentInstructions }
+        : {}),
     },
     selectedVideoModel: productionDefaults.videoModel,
     selectedImageModel: productionDefaults.imageModel,
@@ -140,6 +149,7 @@ export async function createVideoDraft(
     productionDefaults,
     pastedRecipeText,
     intent,
+    complementaryAgentInstructions,
   });
   if (agentPayload) {
     await inngest.send({

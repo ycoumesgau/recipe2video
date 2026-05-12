@@ -14,6 +14,8 @@ export interface BuildRecipeAgentMessagePayloadInput {
   productionDefaults: VideoProductionDefaults;
   intent: CreateVideoDraftIntent;
   pastedRecipeText?: string;
+  /** Optional creator notes included verbatim in the first agent turn. */
+  complementaryAgentInstructions?: string;
 }
 
 export function buildRecipeAgentMessagePayload(
@@ -54,6 +56,13 @@ function buildInitialRecipeAgentMessage(
     input.sourceSummary.uploadedFileNames?.length
       ? `Uploaded recipe/source files:\n${input.sourceSummary.uploadedFileNames.map((name) => `- ${name}`).join("\n")}`
       : null,
+    ...(input.complementaryAgentInstructions
+      ? [
+          "",
+          "Complementary instructions from the creator (explicit; honor in recipe analysis, logical scenes, segment prompts, and reference plans where relevant):",
+          input.complementaryAgentInstructions,
+        ]
+      : []),
     "",
     "Production defaults:",
     input.productionDefaults.targetDurationSeconds
