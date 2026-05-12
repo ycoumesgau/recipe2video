@@ -5,6 +5,10 @@ import {
   RUNWAY_DEFAULT_VIDEO_RATIO,
   RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
 } from "@/modules/generation/runway.constants";
+import {
+  ASSEMBLY_CANVAS_HEIGHT,
+  ASSEMBLY_CANVAS_WIDTH,
+} from "@/modules/assembly/assembly.constants";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import {
   buildFixturePromptQa,
@@ -344,8 +348,8 @@ function buildDemoGenerations(
         mimeType: "video/mp4",
         fileSizeBytes: 184000,
         durationSeconds: segment.durationTarget,
-        width: 720,
-        height: 1280,
+        width: ASSEMBLY_CANVAS_WIDTH,
+        height: ASSEMBLY_CANVAS_HEIGHT,
         status: "uploaded_to_mux",
         metadata: {
           fixture: true,
