@@ -143,8 +143,9 @@ export function readPlacementsState(
     segmentOrderJson.schema === PLACEMENTS_SCHEMA &&
     Array.isArray(segmentOrderJson.placements)
   ) {
-    return segmentOrderJson.placements.flatMap((raw, index): SegmentPlacement[] =>
-      buildPlacementFromRecord(raw, availableSegmentDurations, index),
+    return segmentOrderJson.placements.flatMap(
+      (raw, index): SegmentPlacement[] =>
+        buildPlacementFromRecord(raw, availableSegmentDurations, index),
     );
   }
 
@@ -182,6 +183,7 @@ export function readPlacementsState(
           segmentId: raw,
           inSeconds,
           outSeconds,
+          volume: 1,
         },
       ];
     });
@@ -198,7 +200,13 @@ export function readPlacementsState(
  */
 export function buildClipsFromPlacements(
   placements: SegmentPlacement[],
-  availableBySegmentId: Map<string, Omit<AssemblySegmentClip, "placementId" | "position" | "inSeconds" | "outSeconds">>,
+  availableBySegmentId: Map<
+    string,
+    Omit<
+      AssemblySegmentClip,
+      "placementId" | "position" | "inSeconds" | "outSeconds" | "volume"
+    >
+  >,
 ): AssemblySegmentClip[] {
   const clips: AssemblySegmentClip[] = [];
   placements.forEach((placement, index) => {
@@ -219,6 +227,7 @@ export function buildClipsFromPlacements(
       position: index,
       inSeconds,
       outSeconds,
+      volume: clamp(placement.volume, 0, 2),
     });
   });
   return clips;
@@ -237,6 +246,7 @@ export function defaultPlacementsForSegments(
     segmentId: segment.segmentId,
     inSeconds: 0,
     outSeconds: Math.max(segment.durationSeconds, MIN_TRIM_WINDOW),
+    volume: 1,
   }));
 }
 
@@ -336,6 +346,79 @@ export function computeDropInsertIndex(
 }
 
 /**
+ * Compute where a clip-being-reordered would land if released, and the
+ * corresponding insertion-line X position in pixels.
+ *
+ * The algorithm is cursor-driven: scan the OTHERS array (the layout we'd
+ * get by removing the dragged clip from its current slot) and pick the
+ * insertion gap whose surrounding centres straddle the cursor position.
+ * This matches the CapCut / Premiere feel where "where the cursor is, that's
+ * where the clip lands" — no need to drag the clip's full body past a
+ * neighbour to trigger a swap.
+ *
+ * Returns:
+ *   - `newIndex`: the index, in the array AFTER the dragged clip is
+ *     spliced out, where it should be reinserted on commit. Always within
+ *     `[0, layouts.length - 1]`.
+ *   - `indicatorSeconds`: the timeline position (in seconds) where the
+ *     visual insertion line should be drawn — the start of the slot where
+ *     the dragged clip will land.
+ */
+export function computeReorderInsertIndex(
+  layouts: Array<{ startSeconds: number; durationSeconds: number }>,
+  draggedIdx: number,
+  cursorSeconds: number,
+): { newIndex: number; indicatorSeconds: number } {
+  if (
+    draggedIdx < 0 ||
+    draggedIdx >= layouts.length ||
+    layouts.length === 0
+  ) {
+    return { newIndex: 0, indicatorSeconds: 0 };
+  }
+  // Cumulative starts and centres of the OTHERS array (the array we'd
+  // get by removing the dragged clip), in their post-splice coordinate
+  // system, plus a final "append at the end" entry.
+  type Slot = { start: number; center: number; duration: number };
+  const others: Slot[] = [];
+  let cumulative = 0;
+  for (let i = 0; i < layouts.length; i += 1) {
+    const layout = layouts[i];
+    if (!layout || i === draggedIdx) {
+      continue;
+    }
+    others.push({
+      start: cumulative,
+      center: cumulative + layout.durationSeconds / 2,
+      duration: layout.durationSeconds,
+    });
+    cumulative += layout.durationSeconds;
+  }
+  // Insertion slots: index 0 is "before the first other", index k is
+  // "between others[k-1] and others[k]", final index is "after the last".
+  // newIndex == k means the dragged clip ends up at index k in the
+  // post-splice array.
+  let newIndex = 0;
+  for (let k = 0; k < others.length; k += 1) {
+    const other = others[k];
+    if (!other) {
+      continue;
+    }
+    if (cursorSeconds >= other.center) {
+      newIndex = k + 1;
+    } else {
+      break;
+    }
+  }
+  const indicatorSeconds =
+    newIndex < others.length
+      ? (others[newIndex]?.start ?? 0)
+      : (others[others.length - 1]?.start ?? 0) +
+        (others[others.length - 1]?.duration ?? 0);
+  return { newIndex, indicatorSeconds };
+}
+
+/**
  * Generate a fresh placementId. UUID-flavoured but readable, used both by
  * split (right half) and bin drop (new placement).
  */
@@ -406,6 +489,7 @@ export function serializePlacements(placements: SegmentPlacement[]) {
       segmentId: placement.segmentId,
       inSeconds: placement.inSeconds,
       outSeconds: placement.outSeconds,
+      volume: placement.volume,
     })),
   };
 }
@@ -449,6 +533,7 @@ function buildPlacementFromRecord(
       segmentId,
       inSeconds,
       outSeconds,
+      volume: clamp(readNumber(raw.volume, 1), 0, 2),
     },
   ];
 }

@@ -39,10 +39,13 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60;
  * Lookup table the editor uses on the available-segments side. The fields
  * mirror {@link AssemblySegmentClip} minus the per-placement fields, so we
  * can hydrate any number of placements from a single segment entry.
+ *
+ * `volume` is also a per-placement field (mixing decision lives on the
+ * timeline, not on the source segment), so it is excluded here too.
  */
 type SegmentCatalogueEntry = Omit<
   AssemblySegmentClip,
-  "placementId" | "position" | "inSeconds" | "outSeconds"
+  "placementId" | "position" | "inSeconds" | "outSeconds" | "volume"
 >;
 
 export interface AssemblyPageData {
@@ -149,6 +152,9 @@ export async function getAssemblyPageData(
       position: index,
       inSeconds: 0,
       outSeconds: entry.durationSeconds,
+      // Bin entries are not on the timeline; the value here is only used as
+      // the default volume for placements materialised from this entry.
+      volume: 1,
     }),
   );
 
@@ -232,7 +238,12 @@ async function buildSegmentCatalogue(
       segmentId: segment.id,
       mediaAssetId: mediaAsset.id,
       generationId: mediaAsset.generationId,
-      title: segment.title,
+      // Match the rest of the app (segment-review, storyboard, etc.) that
+      // formats segment names as "S{position}. {title}" so the user can
+      // tell at a glance which storyboard slot a clip came from. The
+      // `position` we read here is the storyboard position (1-indexed),
+      // not the timeline position which can change with reorders.
+      title: `S${segment.position}. ${segment.title}`,
       durationSeconds,
       sourceUrl: await createStorageSignedUrlForAsset(mediaAsset),
       storageBucket: mediaAsset.storageBucket,

@@ -30,6 +30,14 @@ export interface SegmentPlacement {
   /** Trim window inside the source media, in seconds. */
   inSeconds: number;
   outSeconds: number;
+  /**
+   * Linear gain applied to the source video's audio track, in `[0, 2]`.
+   * Default `1`. To mute the diegetic audio of a clip while keeping the
+   * music, set to `0`. To raise an ASMR sound effect above the music for
+   * a specific zone, split the placement and set a higher volume on the
+   * sub-placement.
+   */
+  volume: number;
 }
 
 /**
@@ -60,6 +68,11 @@ export interface AssemblySegmentClip {
    * Always satisfies `inSeconds < outSeconds <= durationSeconds`.
    */
   outSeconds: number;
+  /**
+   * Linear gain applied to the source video's audio track, in `[0, 2]`.
+   * See {@link SegmentPlacement.volume} for the mixing semantics.
+   */
+  volume: number;
   sourceUrl: string;
   storageBucket: string;
   storagePath: string;

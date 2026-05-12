@@ -30,6 +30,7 @@ import type {
 
 import {
   computeDropInsertIndex,
+  computeReorderInsertIndex,
   generatePlacementId,
   splitPlacementAtSourceSeconds,
 } from "@/modules/assembly/timeline-state";
@@ -122,6 +123,26 @@ type DragMode =
  */
 type PendingDrag =
   | null
+  | {
+      kind: "segment-move";
+      placementId: string;
+      /**
+       * Index this clip will end up at when the drag is committed. This
+       * index is interpreted in the array AFTER the dragged clip has been
+       * removed (so it is in `[0, segments.length - 1]`).
+       */
+      newIndex: number;
+      /**
+       * Px position of the green insertion line, relative to the tracks
+       * container. Same coordinate system as {@link Playhead.leftPx}.
+       */
+      indicatorX: number;
+      /**
+       * Px translation of the dragged clip while the drag is in progress,
+       * so the user sees the clip follow the cursor. Reset to 0 on commit.
+       */
+      translateX: number;
+    }
   | {
       kind: "segment-trim";
       placementId: string;
@@ -494,6 +515,9 @@ export function TimelineEditor({
           nextOutSeconds,
         });
       } else if (drag.kind === "segment-move") {
+        // Deferred commit: never mutate the segments array during the drag.
+        // We only update a 'pendingDrag' state used to draw a green
+        // insertion line and translate the dragged clip with the cursor.
         const draggedIdx = segments.findIndex(
           (s) => s.placementId === drag.placementId,
         );
@@ -504,37 +528,27 @@ export function TimelineEditor({
         if (!draggedLayout) {
           return;
         }
-        const visualCenter =
-          draggedLayout.startSeconds +
-          draggedLayout.durationSeconds / 2 +
-          deltaSeconds;
-
-        // Find the new index by checking which slot the visual center falls
-        // into, treating each segment as occupying [start, start+duration).
-        let newIndex = segmentLayout.findIndex((layout, idx) => {
-          if (idx === draggedIdx) {
-            return false;
-          }
-          const center = layout.startSeconds + layout.durationSeconds / 2;
-          return visualCenter < center;
+        // The cursor is the source of truth for "where the user wants the
+        // clip to land", not the clip's leading edge. Convert client-X to
+        // a position in seconds relative to the tracks container.
+        const tracks = tracksRef.current;
+        const tracksLeft = tracks ? tracks.getBoundingClientRect().left : 0;
+        const cursorSeconds = Math.max(
+          (event.clientX - tracksLeft) / pxPerSecond,
+          0,
+        );
+        const { newIndex, indicatorSeconds } = computeReorderInsertIndex(
+          segmentLayout,
+          draggedIdx,
+          cursorSeconds,
+        );
+        setPendingDrag({
+          kind: "segment-move",
+          placementId: drag.placementId,
+          newIndex,
+          indicatorX: indicatorSeconds * pxPerSecond,
+          translateX: deltaX,
         });
-        if (newIndex === -1) {
-          newIndex = segments.length - 1;
-        }
-
-        if (newIndex !== draggedIdx) {
-          const next = [...segments];
-          const [moved] = next.splice(draggedIdx, 1);
-          if (moved) {
-            next.splice(newIndex, 0, moved);
-            onSegmentsChange(next);
-          }
-          dragModeRef.current = {
-            ...drag,
-            startX: event.clientX,
-            originalIndex: newIndex,
-          };
-        }
       } else if (drag.kind === "audio-move") {
         const nextStart = Math.max(
           snap(drag.initialStart + deltaSeconds, [drag.initialStart]),
@@ -603,7 +617,7 @@ export function TimelineEditor({
         });
       }
     },
-    [audioClips, onSegmentsChange, pxPerSecond, segmentLayout, segments, snap],
+    [audioClips, pxPerSecond, segmentLayout, segments, snap],
   );
 
   const commitPendingDrag = useCallback(
@@ -611,7 +625,26 @@ export function TimelineEditor({
       if (!pending) {
         return;
       }
-      if (pending.kind === "segment-trim") {
+      if (pending.kind === "segment-move") {
+        const draggedIdx = segments.findIndex(
+          (segment) => segment.placementId === pending.placementId,
+        );
+        if (draggedIdx === -1) {
+          return;
+        }
+        // pending.newIndex is in the post-splice (length n-1) array; if it
+        // equals draggedIdx it would be a no-op so don't churn React.
+        if (pending.newIndex === draggedIdx) {
+          return;
+        }
+        const next = [...segments];
+        const [moved] = next.splice(draggedIdx, 1);
+        if (!moved) {
+          return;
+        }
+        next.splice(pending.newIndex, 0, moved);
+        onSegmentsChange(next);
+      } else if (pending.kind === "segment-trim") {
         onSegmentsChange(
           segments.map((segment) =>
             segment.placementId === pending.placementId
@@ -998,8 +1031,15 @@ export function TimelineEditor({
                 const isSelected =
                   selection?.kind === "segment" &&
                   selection.placementId === segment.placementId;
+                const isBeingReordered =
+                  pendingDrag?.kind === "segment-move" &&
+                  pendingDrag.placementId === segment.placementId;
+                const translateX = isBeingReordered
+                  ? (pendingDrag.translateX ?? 0)
+                  : 0;
                 return (
                   <SegmentClipBox
+                    isBeingReordered={isBeingReordered}
                     isSelected={isSelected}
                     key={segment.placementId}
                     leftPx={leftPx}
@@ -1011,6 +1051,7 @@ export function TimelineEditor({
                       )
                     }
                     segment={segment}
+                    translateX={translateX}
                     widthPx={widthPx}
                   />
                 );
@@ -1197,12 +1238,15 @@ function TrackLane({
 }
 
 function SegmentClipBox({
+  isBeingReordered,
   isSelected,
   leftPx,
   onPointerDown,
   segment,
+  translateX,
   widthPx,
 }: {
+  isBeingReordered: boolean;
   isSelected: boolean;
   leftPx: number;
   onPointerDown: (
@@ -1210,18 +1254,38 @@ function SegmentClipBox({
     mode: "move" | "trim-left" | "trim-right",
   ) => void;
   segment: AssemblySegmentClip;
+  /**
+   * Px translation applied while a reorder drag is in progress, so the
+   * dragged clip visually follows the cursor.
+   */
+  translateX: number;
   widthPx: number;
 }) {
   const trimmedDuration = Math.max(segment.outSeconds - segment.inSeconds, 0);
   return (
     <div
       className={cn(
-        "absolute top-1 flex h-[calc(100%-8px)] cursor-grab items-stretch rounded-md border border-blue-500/40 bg-blue-500/30 transition-shadow",
+        "absolute top-1 flex h-[calc(100%-8px)] cursor-grab select-none items-stretch rounded-md border border-blue-500/40 bg-blue-500/30 transition-shadow",
         isSelected &&
           "border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.55)]",
+        isBeingReordered &&
+          "z-30 opacity-80 shadow-[0_0_0_2px_rgba(34,197,94,0.55),0_8px_16px_rgba(0,0,0,0.25)]",
       )}
+      // Explicitly disable HTML5 drag-and-drop on the clip body — the
+      // video lane's TrackLane sets `onDragOver` / `onDrop` for the bin
+      // drop target, which on Chrome can otherwise hijack pointer drags
+      // that originate from a child with selectable text and turn them
+      // into a text-selection drag instead of a pointermove sequence.
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
       onPointerDown={(event) => onPointerDown(event, "move")}
-      style={{ left: leftPx, width: widthPx } satisfies CSSProperties}
+      style={
+        {
+          left: leftPx,
+          transform: translateX !== 0 ? `translateX(${translateX}px)` : undefined,
+          width: widthPx,
+        } satisfies CSSProperties
+      }
     >
       <TrimHandle
         onPointerDown={(event) => onPointerDown(event, "trim-left")}
@@ -1417,11 +1481,11 @@ function BinDropIndicator({
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute z-30"
+      className="pointer-events-none absolute z-40"
       style={{ height: heightPx, left: leftPx, top: 0 }}
     >
-      <div className="absolute -left-[5px] -top-[5px] h-2.5 w-2.5 rotate-45 bg-emerald-500" />
-      <div className="h-full w-0.5 bg-emerald-500" />
+      <div className="absolute -left-[6px] -top-[6px] h-3 w-3 rotate-45 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]" />
+      <div className="h-full w-[3px] -translate-x-[1px] bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
     </div>
   );
 }
@@ -1453,6 +1517,18 @@ function DragGhost({
 }) {
   if (!pendingDrag) {
     return null;
+  }
+
+  if (pendingDrag.kind === "segment-move") {
+    // Mirror the bin-drop indicator: a green vertical line at the proposed
+    // insertion position. The dragged clip itself stays at its committed
+    // geometry until pointerup.
+    return (
+      <BinDropIndicator
+        heightPx={videoTrackHeight}
+        leftPx={pendingDrag.indicatorX}
+      />
+    );
   }
 
   if (pendingDrag.kind === "segment-trim") {
