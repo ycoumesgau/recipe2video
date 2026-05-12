@@ -8,12 +8,14 @@ import { Sandbox } from "@vercel/sandbox";
 import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
 
 import { copyLocalDirToSandbox } from "./copy-local-dir-to-sandbox";
+import { REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES } from "./remotion-headless-shell-al2023-packages";
 
 const WORK_ROOT = "/vercel/sandbox/recipe2video-export";
 
 /**
  * Runs the pre-built Remotion bundle (`remotion-export/serve` from `npm run
- * build`) inside a Vercel Sandbox: `npm install` for renderer deps, then
+ * build`) inside a Vercel Sandbox: `dnf install` for Chrome Headless Shell
+ * libs (Amazon Linux 2023), `npm install` for renderer deps, then
  * `render.mjs`. Returns the rendered MP4 as a buffer on the **orchestrator**
  * side (no Supabase service key inside the sandbox).
  */
@@ -51,6 +53,22 @@ export async function renderAssemblyMp4InSandbox(
       { path: `${WORK_ROOT}/package.json`, content: pkg },
       { path: `${WORK_ROOT}/render.mjs`, content: renderScript },
     ]);
+
+    const systemDeps = await sandbox.runCommand({
+      cmd: "dnf",
+      args: [
+        "install",
+        "-y",
+        ...REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES,
+      ],
+      sudo: true,
+    });
+    if (systemDeps.exitCode !== 0) {
+      const err = await systemDeps.stderr();
+      throw new Error(
+        `Sandbox dnf install (Remotion / Chrome libs) failed (exit ${systemDeps.exitCode}): ${err}`,
+      );
+    }
 
     const install = await sandbox.runCommand("npm", [
       "install",
