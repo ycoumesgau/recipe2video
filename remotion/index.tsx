@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import { Composition, registerRoot } from "remotion";
 
 import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
@@ -21,14 +22,18 @@ const defaultAssemblyProps: AssemblyRemotionProps = {
   audioClips: [],
 };
 
-const RemotionRoot: React.FC = () => {
+function RemotionRoot() {
   return (
     <Composition
       id="RecipeAssembly"
-      component={RecipeAssemblyComposition}
-      defaultProps={defaultAssemblyProps}
+      component={
+        RecipeAssemblyComposition as unknown as ComponentType<
+          Record<string, unknown>
+        >
+      }
+      defaultProps={defaultAssemblyProps as unknown as Record<string, unknown>}
       calculateMetadata={async ({ props }) => {
-        const p = props as AssemblyRemotionProps;
+        const p = props as unknown as AssemblyRemotionProps;
         return {
           durationInFrames: Math.max(
             getAssemblyDurationInFrames({

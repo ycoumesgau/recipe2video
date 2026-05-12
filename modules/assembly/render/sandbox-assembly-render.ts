@@ -71,7 +71,9 @@ export async function renderAssemblyMp4InSandbox(
       "utf8",
     );
 
-    const render = await sandbox.runCommand("node", [`${WORK_ROOT}/render.mjs`], {
+    const render = await sandbox.runCommand({
+      cmd: "node",
+      args: [`${WORK_ROOT}/render.mjs`],
       cwd: WORK_ROOT,
     });
     if (render.exitCode !== 0) {

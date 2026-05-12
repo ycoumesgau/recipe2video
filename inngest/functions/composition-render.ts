@@ -14,6 +14,7 @@ import {
 import { buildRemotionPropsForCompositionRow } from "@/modules/assembly/use-cases/get-assembly-data";
 import { persistFinalExportFromBuffer } from "@/modules/assembly/use-cases/persist-final-export-from-buffer";
 
+import { inngest } from "../client";
 import { INNGEST_EVENTS } from "../events";
 import type { CompositionRenderRequestedData } from "../events";
 
@@ -28,8 +29,8 @@ export const renderCompositionExport = inngest.createFunction(
     id: "composition-render-export",
     retries: 0,
     concurrency: { limit: 2 },
+    triggers: [{ event: INNGEST_EVENTS.compositionRenderRequested }],
   },
-  { event: INNGEST_EVENTS.compositionRenderRequested },
   async ({ event }) => {
     const supabase = createSupabaseAdminClient();
     const data = event.data as CompositionRenderRequestedData;

@@ -437,8 +437,20 @@ test("buildClipsFromPlacements joins placements with segment metadata", () => {
   ]);
   const clips = buildClipsFromPlacements(
     [
-      { placementId: "p_1", segmentId: "seg_a", inSeconds: 0, outSeconds: 4 },
-      { placementId: "p_2", segmentId: "seg_a", inSeconds: 4, outSeconds: 8 },
+      {
+        placementId: "p_1",
+        segmentId: "seg_a",
+        inSeconds: 0,
+        outSeconds: 4,
+        volume: 1,
+      },
+      {
+        placementId: "p_2",
+        segmentId: "seg_a",
+        inSeconds: 4,
+        outSeconds: 8,
+        volume: 1,
+      },
     ],
     meta,
   );
@@ -455,8 +467,20 @@ test("buildClipsFromPlacements drops placements whose segment metadata is missin
   ]);
   const clips = buildClipsFromPlacements(
     [
-      { placementId: "p_1", segmentId: "seg_a", inSeconds: 0, outSeconds: 5 },
-      { placementId: "p_orphan", segmentId: "seg_x", inSeconds: 0, outSeconds: 5 },
+      {
+        placementId: "p_1",
+        segmentId: "seg_a",
+        inSeconds: 0,
+        outSeconds: 5,
+        volume: 1,
+      },
+      {
+        placementId: "p_orphan",
+        segmentId: "seg_x",
+        inSeconds: 0,
+        outSeconds: 5,
+        volume: 1,
+      },
     ],
     meta,
   );
@@ -475,6 +499,7 @@ test("buildClipsFromPlacements clamps trims that overflow the source", () => {
         segmentId: "seg_a",
         inSeconds: -1,
         outSeconds: 99,
+        volume: 1,
       },
     ],
     meta,
@@ -502,7 +527,13 @@ test("defaultPlacementsForSegments creates 1:1 placements covering full duration
 
 test("serializePlacements emits the placements_v1 wrapper", () => {
   const json = serializePlacements([
-    { placementId: "p_1", segmentId: "seg_a", inSeconds: 0, outSeconds: 4 },
+    {
+      placementId: "p_1",
+      segmentId: "seg_a",
+      inSeconds: 0,
+      outSeconds: 4,
+      volume: 1,
+    },
   ]);
   assert.equal(json.schema, "placements_v1");
   assert.equal(json.placements.length, 1);
