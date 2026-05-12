@@ -9,6 +9,7 @@ import {
   syncRecipeAgentArtifactsWorkflow,
 } from "./recipe-agent";
 import { generateReferencesWorkflow } from "./references-generation";
+import { renderCompositionExport } from "./composition-render";
 import {
   applySegmentFeedbackRegeneration,
   persistSegmentOutput,
@@ -26,6 +27,7 @@ export const functions = [
   pollSegmentGeneration,
   persistSegmentOutput,
   uploadSegmentMux,
+  renderCompositionExport,
   logCostWorkflow,
   createRecipeAgentWorkflow,
   sendRecipeAgentMessageWorkflow,

@@ -5,3 +5,6 @@
  */
 export const ASSEMBLY_CANVAS_WIDTH = 1080;
 export const ASSEMBLY_CANVAS_HEIGHT = 1920;
+
+/** Signed URLs for segment / audio originals during cloud export (Remotion + Sandbox). */
+export const ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS = 4 * 60 * 60;

@@ -13,6 +13,7 @@ import { Player, type PlayerRef } from "@remotion/player";
 import {
   AlertCircle,
   CheckCircle2,
+  Film,
   Loader2,
   Music2,
   Save,
@@ -29,6 +30,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type {
@@ -38,10 +40,12 @@ import type {
   AssemblyTimelineState,
 } from "@/modules/assembly/assembly.types";
 import {
+  requestAssemblyRenderAction,
   saveAssemblySettingsAction,
   uploadFinalExportAction,
   type AssemblyActionState,
 } from "@/modules/assembly/actions";
+import type { ExportStatus } from "@/modules/assembly/export-status";
 import { generatePlacementId } from "@/modules/assembly/timeline-state";
 import { VideoClipMixSection } from "@/modules/assembly/ui/audio-mix-panel";
 import { SegmentBin } from "@/modules/assembly/ui/segment-bin";
@@ -61,6 +65,7 @@ const initialActionState: AssemblyActionState = {};
 
 export function AssemblyWorkspace({
   availableSegments,
+  compositionExportStatus = "pending",
   compositionId,
   finalExports,
   initialRemotionProps,
@@ -78,6 +83,7 @@ export function AssemblyWorkspace({
    */
   availableSegments: AssemblySegmentClip[];
   compositionId?: string | null;
+  compositionExportStatus?: ExportStatus;
   finalExports: MediaAsset[];
   initialRemotionProps: AssemblyRemotionProps;
   initialTimelineState: AssemblyTimelineState;
@@ -98,6 +104,10 @@ export function AssemblyWorkspace({
   );
   const [exportState, exportAction] = useActionState(
     uploadFinalExportAction,
+    initialActionState,
+  );
+  const [renderState, renderAction] = useActionState(
+    requestAssemblyRenderAction,
     initialActionState,
   );
   const playerRef = useRef<PlayerRef | null>(null);
@@ -208,6 +218,12 @@ export function AssemblyWorkspace({
 
       <ActionNotice state={saveState} title="Assembly settings" />
       <ActionNotice state={exportState} title="Final export" />
+      <ActionNotice state={renderState} title="Cloud render" />
+
+      <GenerationRscSync
+        enabled={compositionExportStatus === "rendering"}
+        pollMs={5000}
+      />
 
       {missingAcceptedSegments.length > 0 ? (
         <Alert>
@@ -360,8 +376,9 @@ export function AssemblyWorkspace({
           <CardHeader>
             <CardTitle>Export panel</CardTitle>
             <CardDescription>
-              Save the current timeline and upload the final rendered MP4
-              for durable storage plus Mux playback.
+              Save the timeline, render an MP4 in a Vercel Sandbox (no extra
+              click to save before render), or upload a file you rendered
+              locally.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -376,10 +393,50 @@ export function AssemblyWorkspace({
             </form>
 
             <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-              Client-side Remotion rendering is not wired in this repo yet.
-              For the hackathon path, render the preview externally or
-              locally, then upload the final MP4 here so Supabase remains
-              the durable source of truth and Mux remains playback only.
+              <p className="font-medium text-foreground">Cloud render</p>
+              <p className="mt-1">
+                Uses the pre-built Remotion bundle from this deployment plus
+                signed read URLs for your Supabase originals. The MP4 is
+                produced inside an isolated sandbox, then uploaded to Storage
+                and Mux from the app — no Supabase service key is passed into
+                the sandbox.
+              </p>
+              {compositionExportStatus === "rendering" ? (
+                <p className="mt-2 font-medium text-foreground">
+                  Render in progress… this section refreshes every few seconds.
+                </p>
+              ) : null}
+              {compositionExportStatus === "failed" ? (
+                <p className="mt-2 font-medium text-destructive">
+                  Last cloud render failed. Fix any issues, adjust the timeline,
+                  then try again.
+                </p>
+              ) : null}
+            </div>
+
+            <form action={renderAction} className="space-y-3">
+              <HiddenAssemblyFields
+                audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
+                placements={placementsJson}
+                timelineState={timelineStateJson}
+                videoId={videoId}
+              />
+              <RenderCloudButton
+                disabled={
+                  segments.length === 0 ||
+                  compositionExportStatus === "rendering"
+                }
+              />
+            </form>
+
+            <div className="relative py-2 text-center text-xs text-muted-foreground">
+              <span className="bg-background px-2">Or manual upload</span>
+            </div>
+
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+              If you prefer to render with Remotion CLI on your machine, upload
+              the MP4 below. Supabase remains the durable master; Mux is
+              playback only.
             </div>
 
             <form action={exportAction} className="space-y-3">
@@ -643,6 +700,21 @@ function NumberField({
         <span className="w-3 text-[10px] text-muted-foreground">{suffix}</span>
       </div>
     </label>
+  );
+}
+
+function RenderCloudButton({ disabled }: { disabled: boolean }) {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button disabled={disabled || pending} type="submit" variant="secondary">
+      {pending ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Film className="h-4 w-4" />
+      )}
+      Render in cloud (MP4)
+    </Button>
   );
 }
 
