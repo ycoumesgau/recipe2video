@@ -1,26 +1,20 @@
+import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
-import { getLatestCompositionByVideoId } from "@/modules/assembly/repositories/assembly.repository";
-import { SunoAssemblyPanel } from "@/modules/assembly/ui/suno-assembly-panel";
 import { AssemblyWorkspace } from "@/modules/assembly/ui/assembly-workspace";
 import { getAssemblyPageData } from "@/modules/assembly/use-cases/get-assembly-data";
-import { listMediaAssetsByVideoId } from "@/modules/media-assets/repositories/media-asset.repository";
-import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import { VIDEO_STATUS_LABELS } from "@/modules/videos/video-status";
 
 export default async function AssemblyPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ videoId: string }>;
-  searchParams: Promise<{ notice?: string; message?: string }>;
 }) {
   const { videoId } = await params;
-  const { notice, message } = await searchParams;
   const data = await loadAssemblyPageData(videoId);
 
   if (data.error || !data.assemblyData) {
@@ -32,9 +26,8 @@ export default async function AssemblyPage({
           </Badge>
           <h2 className="licorn-page-title">Assembly</h2>
           <p className="max-w-3xl text-muted-foreground">
-            Generate the manual Suno prompt, upload the track, preview accepted
-            Supabase originals in Remotion, and preserve final exports through
-            Supabase Storage before Mux playback.
+            Trim accepted clips on the timeline, balance audio, and upload the
+            final MP4 to Supabase Storage with Mux playback.
           </p>
         </div>
         <Alert variant="destructive">
@@ -66,21 +59,14 @@ export default async function AssemblyPage({
         </div>
         <h2 className="licorn-page-title">{assemblyTitle}</h2>
         <p className="max-w-3xl text-muted-foreground">
-          Generate the manual Suno prompt, upload the track, preview accepted
-          Supabase originals in Remotion, and preserve final exports through
-          Supabase Storage before Mux playback.
+          Build the vertical edit in Remotion: timeline, clip audio mix, and
+          optional Suno music. Upload prompts and audio on the{" "}
+          <Link className="font-medium text-foreground underline" href={`/videos/${videoId}/music`}>
+            Music
+          </Link>{" "}
+          page first when you need a custom track.
         </p>
       </div>
-
-      <SunoAssemblyPanel
-        composition={data.composition}
-        logicalScenes={data.logicalScenes}
-        notice={buildNotice(notice, message)}
-        project={data.project}
-        seedanceSegments={data.seedanceSegments}
-        sunoAudioAssets={data.sunoAudioAssets}
-        videoId={videoId}
-      />
 
       <AssemblyWorkspace
         availableSegments={data.assemblyData.availableSegments}
@@ -100,31 +86,19 @@ export default async function AssemblyPage({
 async function loadAssemblyPageData(videoId: string) {
   try {
     const supabase = createSupabaseAdminClient();
-    const [project, storyboardData, mediaAssets, composition, assemblyData] =
-      await Promise.all([
-        getVideoProjectById(supabase, videoId),
-        getStoryboardReviewData(videoId),
-        listMediaAssetsByVideoId(supabase, videoId),
-        getLatestCompositionByVideoId(supabase, videoId),
-        getAssemblyPageData(videoId),
-      ]);
+    const [project, assemblyData] = await Promise.all([
+      getVideoProjectById(supabase, videoId),
+      getAssemblyPageData(videoId),
+    ]);
 
     return {
       project,
-      logicalScenes: storyboardData.logicalScenes,
-      seedanceSegments: storyboardData.seedanceSegments,
-      sunoAudioAssets: mediaAssets.filter((asset) => asset.type === "suno_audio"),
-      composition,
       assemblyData,
       error: null,
     };
   } catch (error) {
     return {
       project: null,
-      logicalScenes: [],
-      seedanceSegments: [],
-      sunoAudioAssets: [],
-      composition: null,
       assemblyData: null,
       error:
         error instanceof Error
@@ -132,18 +106,4 @@ async function loadAssemblyPageData(videoId: string) {
           : "Unable to load assembly data.",
     };
   }
-}
-
-function buildNotice(
-  notice?: string,
-  message?: string,
-): { type: "success" | "error"; message: string } | null {
-  if ((notice !== "success" && notice !== "error") || !message) {
-    return null;
-  }
-
-  return {
-    type: notice,
-    message,
-  };
 }

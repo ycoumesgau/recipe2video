@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   FileAudio,
   Music2,
   Upload,
@@ -16,6 +17,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
@@ -67,17 +73,38 @@ export function SunoAssemblyPanel({
         </Alert>
       ) : null}
 
-      <Alert>
-        <Music2 className="h-4 w-4" />
-        <AlertTitle>Manual Suno workflow</AlertTitle>
-        <AlertDescription>
-          Recipe2Video does not call a Suno API. Generate the prompt here, paste
-          it into Suno manually, then upload the resulting audio as the durable
-          project track.
-        </AlertDescription>
-      </Alert>
+      <Collapsible defaultOpen={false}>
+        <Alert className="border-none bg-muted/50 p-0">
+          <div className="flex items-start gap-3 p-4">
+            <Music2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex items-start justify-between gap-2">
+                <AlertTitle className="mb-0">Manual Suno workflow</AlertTitle>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    aria-label="Show or hide workflow details"
+                    className="shrink-0 [&[data-state=open]>svg]:rotate-180"
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <ChevronDown className="h-4 w-4 transition-transform duration-200" />
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+              <CollapsibleContent>
+                <AlertDescription className="mt-2">
+                  Recipe2Video does not call a Suno API. Generate the prompt here, paste
+                  it into Suno manually, then upload the resulting audio as the durable
+                  project track.
+                </AlertDescription>
+              </CollapsibleContent>
+            </div>
+          </div>
+        </Alert>
+      </Collapsible>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
         <SunoPromptPack videoId={videoId} view={sunoView} />
         <div className="space-y-4">
           <SunoAudioUploadCard videoId={videoId} />
@@ -151,21 +178,40 @@ function LinkedAudioCard({ linkedAudio }: { linkedAudio: MediaAsset | null }) {
 function UploadedAudioList({ assets }: { assets: MediaAsset[] }) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Uploaded Suno files</CardTitle>
-        <CardDescription>
-          Stored originals remain in the `suno-audio` bucket.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {assets.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            Upload a sample MP3 to verify it appears here.
+      <Collapsible defaultOpen={false}>
+        <CardHeader className="space-y-0 pb-3">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <CardTitle>Uploaded Suno files</CardTitle>
+              <CardDescription>
+                Stored originals remain in the `suno-audio` bucket.
+              </CardDescription>
+            </div>
+            <CollapsibleTrigger asChild>
+              <Button
+                aria-label="Show or hide uploaded files list"
+                className="shrink-0 [&[data-state=open]>svg]:rotate-180"
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <ChevronDown className="h-4 w-4 transition-transform duration-200" />
+              </Button>
+            </CollapsibleTrigger>
           </div>
-        ) : (
-          assets.map((asset) => <AudioAssetSummary asset={asset} key={asset.id} />)
-        )}
-      </CardContent>
+        </CardHeader>
+        <CollapsibleContent>
+          <CardContent className="space-y-3 pt-0">
+            {assets.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                Upload a sample MP3 to verify it appears here.
+              </div>
+            ) : (
+              assets.map((asset) => <AudioAssetSummary asset={asset} key={asset.id} />)
+            )}
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   );
 }

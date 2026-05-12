@@ -308,6 +308,7 @@ export async function uploadFinalExportAction(
 function revalidateAssemblyPaths(videoId: string) {
   revalidatePath(`/videos/${videoId}`);
   revalidatePath(`/videos/${videoId}/assembly`);
+  revalidatePath(`/videos/${videoId}/music`);
 }
 
 function redirectWithNotice(
@@ -316,7 +317,7 @@ function redirectWithNotice(
   message: string,
 ): never {
   redirect(
-    `/videos/${videoId}/assembly?notice=${type}&message=${encodeURIComponent(
+    `/videos/${videoId}/music?notice=${type}&message=${encodeURIComponent(
       message,
     )}`,
   );

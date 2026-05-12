@@ -115,6 +115,7 @@ function revalidateProjectPaths(videoId: string) {
   revalidatePath(`/videos/${videoId}`);
   revalidatePath(`/videos/${videoId}/storyboard`);
   revalidatePath(`/videos/${videoId}/references`);
+  revalidatePath(`/videos/${videoId}/music`);
   revalidatePath(`/videos/${videoId}/assembly`);
 }
 
