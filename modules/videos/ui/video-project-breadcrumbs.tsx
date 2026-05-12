@@ -125,6 +125,15 @@ export function VideoProjectBreadcrumbs({
           </>
         ) : null}
 
+        {section.kind === "music" ? (
+          <>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Music</BreadcrumbPage>
+            </BreadcrumbItem>
+          </>
+        ) : null}
+
         {section.kind === "assembly" ? (
           <>
             <BreadcrumbSeparator />
@@ -185,6 +194,7 @@ function resolveSection(
     | "overview"
     | "storyboard"
     | "references"
+    | "music"
     | "assembly"
     | "costs"
     | "segments_list"
@@ -198,6 +208,9 @@ function resolveSection(
   }
   if (pathname === `${prefix}/references`) {
     return { kind: "references" };
+  }
+  if (pathname === `${prefix}/music` || pathname === `${prefix}/music/`) {
+    return { kind: "music" };
   }
   if (pathname === `${prefix}/assembly`) {
     return { kind: "assembly" };

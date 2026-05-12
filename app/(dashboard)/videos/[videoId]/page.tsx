@@ -453,14 +453,16 @@ function computeNextAction(input: {
   }
   if (project.status === "assembling") {
     return {
-      detail: "Assemble accepted clips with Suno music and prepare the final export.",
+      detail:
+        "Upload and link Suno audio on Music, then trim clips and export the master on Assembly.",
       cta: "Open assembly",
       href: `/videos/${project.id}/assembly`,
     };
   }
   if (project.status === "exported") {
     return {
-      detail: "Final export delivered. Re-open the assembly to download the master.",
+      detail:
+        "Final export delivered. Open Assembly for the timeline, or Music to replace the track.",
       cta: "Open assembly",
       href: `/videos/${project.id}/assembly`,
     };

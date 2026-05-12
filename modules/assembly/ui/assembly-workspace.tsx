@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { useFormStatus } from "react-dom";
+import Link from "next/link";
 import { Player, type PlayerRef } from "@remotion/player";
 import {
   AlertCircle,
@@ -220,41 +221,86 @@ export function AssemblyWorkspace({
         </Alert>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.4fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Remotion preview</CardTitle>
-            <CardDescription>
-              Player source files are signed Supabase Storage originals, not
-              Mux HLS streams. The timeline below drives the player.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {segments.length > 0 ? (
-              <div className="overflow-hidden rounded-xl border bg-black">
-                <Player
-                  component={RecipeAssemblyComposition}
-                  compositionHeight={initialRemotionProps.height}
-                  compositionWidth={initialRemotionProps.width}
-                  controls
-                  durationInFrames={durationInFrames}
-                  fps={initialRemotionProps.fps}
-                  inputProps={remotionProps}
-                  ref={playerRef}
-                  style={{
-                    aspectRatio: `${initialRemotionProps.width} / ${initialRemotionProps.height}`,
-                    maxHeight: 720,
-                    width: "100%",
-                  }}
-                />
-              </div>
-            ) : (
-              <EmptyPreview />
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.38fr)]">
+        <div className="min-w-0 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Remotion preview</CardTitle>
+              <CardDescription>
+                Player source files are signed Supabase Storage originals, not
+                Mux HLS streams. The timeline in the next card drives the player.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {segments.length > 0 ? (
+                <div className="overflow-hidden rounded-xl border bg-black">
+                  <Player
+                    component={RecipeAssemblyComposition}
+                    compositionHeight={initialRemotionProps.height}
+                    compositionWidth={initialRemotionProps.width}
+                    controls
+                    durationInFrames={durationInFrames}
+                    fps={initialRemotionProps.fps}
+                    inputProps={remotionProps}
+                    ref={playerRef}
+                    style={{
+                      aspectRatio: `${initialRemotionProps.width} / ${initialRemotionProps.height}`,
+                      maxHeight: 720,
+                      width: "100%",
+                    }}
+                  />
+                </div>
+              ) : (
+                <EmptyPreview />
+              )}
+            </CardContent>
+          </Card>
 
-        <aside className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Timeline editor</CardTitle>
+              <CardDescription>
+                Drag clips to reorder, drag clip edges to trim (the change commits
+                on release so you can read the magnitude before letting go), drag
+                audio anywhere on the timeline, and pull the corner to fade. Drag
+                a card from the bin onto the video lane to add a placement; press
+                <kbd className="mx-1 rounded border bg-muted px-1">S</kbd>
+                to split a selected clip at the playhead and
+                <kbd className="mx-1 rounded border bg-muted px-1">Del</kbd>
+                to remove it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <SegmentBin
+                availableSegments={availableSegments}
+                onAppend={handleAppendSegmentFromBin}
+              />
+              {segments.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Drag a card from the bin onto the video lane below to start the
+                  timeline. Drops snap to the closest clip boundary.
+                </p>
+              ) : null}
+              <TimelineEditor
+                audioClips={audioClips}
+                audioTrack={initialRemotionProps.audio ?? null}
+                fps={initialRemotionProps.fps}
+                onAudioClipsChange={handleAudioClipsChange}
+                onSegmentDroppedFromBin={handleSegmentDroppedFromBin}
+                onSegmentsChange={handleSegmentsChange}
+                playerRef={playerRef}
+                segments={segments}
+              />
+              <AddAudioClipButton
+                audioClips={audioClips}
+                audioTrack={initialRemotionProps.audio ?? null}
+                onChange={handleAudioClipsChange}
+              />
+            </CardContent>
+          </Card>
+        </div>
+
+        <aside className="min-w-0 space-y-6 xl:sticky xl:top-20 xl:max-h-[calc(100dvh-6rem)] xl:overflow-y-auto xl:pr-1">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -286,9 +332,14 @@ export function AssemblyWorkspace({
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>No music uploaded</AlertTitle>
-                  <AlertDescription>
-                    Upload a Suno audio asset through the Suno workflow to
-                    enable music mixing.
+                  <AlertDescription className="space-y-2">
+                    <p>
+                      Upload a Suno audio asset on the Music page to enable
+                      music mixing here.
+                    </p>
+                    <Button asChild size="sm" variant="secondary">
+                      <Link href={`/videos/${videoId}/music`}>Open Music</Link>
+                    </Button>
                   </AlertDescription>
                 </Alert>
               )}
@@ -301,132 +352,91 @@ export function AssemblyWorkspace({
               ) : null}
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Export panel</CardTitle>
-              <CardDescription>
-                Save the current timeline and upload the final rendered MP4
-                for durable storage plus Mux playback.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <form action={saveAction} className="space-y-3">
-                <HiddenAssemblyFields
-                  audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
-                  placements={placementsJson}
-                  timelineState={timelineStateJson}
-                  videoId={videoId}
-                />
-                <SaveButton disabled={segments.length === 0} />
-              </form>
-
-              <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-                Client-side Remotion rendering is not wired in this repo yet.
-                For the hackathon path, render the preview externally or
-                locally, then upload the final MP4 here so Supabase remains
-                the durable source of truth and Mux remains playback only.
-              </div>
-
-              <form action={exportAction} className="space-y-3">
-                <HiddenAssemblyFields
-                  audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
-                  placements={placementsJson}
-                  timelineState={timelineStateJson}
-                  videoId={videoId}
-                />
-                <input
-                  name="compositionId"
-                  type="hidden"
-                  value={saveState.compositionId ?? compositionId ?? ""}
-                />
-                <div className="space-y-2">
-                  <Label htmlFor="finalExport">Final MP4 export</Label>
-                  <Input
-                    accept="video/mp4,.mp4"
-                    id="finalExport"
-                    name="finalExport"
-                    type="file"
-                  />
-                </div>
-                <ExportButton disabled={segments.length === 0} />
-              </form>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Final playback</CardTitle>
-              <CardDescription>
-                Completed exports appear here once Mux returns a playback ID.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {finalExports.length > 0 ? (
-                finalExports.map((asset) => (
-                  <div className="space-y-2" key={asset.id}>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">{asset.status}</Badge>
-                      <Badge variant="outline">final_export</Badge>
-                    </div>
-                    <RecipeMuxPlayer
-                      playbackId={asset.muxPlaybackId}
-                      title={asset.originalFilename ?? "Final export"}
-                    />
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No final export has been stored yet.
-                </p>
-              )}
-            </CardContent>
-          </Card>
         </aside>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Timeline editor</CardTitle>
-          <CardDescription>
-            Drag clips to reorder, drag clip edges to trim (the change commits
-            on release so you can read the magnitude before letting go), drag
-            audio anywhere on the timeline, and pull the corner to fade. Drag
-            a card from the bin onto the video lane to add a placement; press
-            <kbd className="mx-1 rounded border bg-muted px-1">S</kbd>
-            to split a selected clip at the playhead and
-            <kbd className="mx-1 rounded border bg-muted px-1">Del</kbd>
-            to remove it.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <SegmentBin
-            availableSegments={availableSegments}
-            onAppend={handleAppendSegmentFromBin}
-          />
-          {segments.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              Drag a card from the bin onto the video lane below to start the
-              timeline. Drops snap to the closest clip boundary.
-            </p>
-          ) : null}
-          <TimelineEditor
-            audioClips={audioClips}
-            audioTrack={initialRemotionProps.audio ?? null}
-            fps={initialRemotionProps.fps}
-            onAudioClipsChange={handleAudioClipsChange}
-            onSegmentDroppedFromBin={handleSegmentDroppedFromBin}
-            onSegmentsChange={handleSegmentsChange}
-            playerRef={playerRef}
-            segments={segments}
-          />
-          <AddAudioClipButton
-            audioClips={audioClips}
-            audioTrack={initialRemotionProps.audio ?? null}
-            onChange={handleAudioClipsChange}
-          />
-        </CardContent>
-      </Card>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Export panel</CardTitle>
+            <CardDescription>
+              Save the current timeline and upload the final rendered MP4
+              for durable storage plus Mux playback.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <form action={saveAction} className="space-y-3">
+              <HiddenAssemblyFields
+                audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
+                placements={placementsJson}
+                timelineState={timelineStateJson}
+                videoId={videoId}
+              />
+              <SaveButton disabled={segments.length === 0} />
+            </form>
+
+            <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+              Client-side Remotion rendering is not wired in this repo yet.
+              For the hackathon path, render the preview externally or
+              locally, then upload the final MP4 here so Supabase remains
+              the durable source of truth and Mux remains playback only.
+            </div>
+
+            <form action={exportAction} className="space-y-3">
+              <HiddenAssemblyFields
+                audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
+                placements={placementsJson}
+                timelineState={timelineStateJson}
+                videoId={videoId}
+              />
+              <input
+                name="compositionId"
+                type="hidden"
+                value={saveState.compositionId ?? compositionId ?? ""}
+              />
+              <div className="space-y-2">
+                <Label htmlFor="finalExport">Final MP4 export</Label>
+                <Input
+                  accept="video/mp4,.mp4"
+                  id="finalExport"
+                  name="finalExport"
+                  type="file"
+                />
+              </div>
+              <ExportButton disabled={segments.length === 0} />
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Final playback</CardTitle>
+            <CardDescription>
+              Completed exports appear here once Mux returns a playback ID.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {finalExports.length > 0 ? (
+              finalExports.map((asset) => (
+                <div className="space-y-2" key={asset.id}>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="secondary">{asset.status}</Badge>
+                    <Badge variant="outline">final_export</Badge>
+                  </div>
+                  <RecipeMuxPlayer
+                    playbackId={asset.muxPlaybackId}
+                    title={asset.originalFilename ?? "Final export"}
+                  />
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No final export has been stored yet.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

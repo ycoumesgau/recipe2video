@@ -23,6 +23,7 @@ export function VideoProjectSubnav({ videoId }: { videoId: string }) {
     pathname === `${base}/segments` ||
     pathname === `${base}/segments/` ||
     pathname.startsWith(`${base}/segments/`);
+  const isMusic = pathname.startsWith(`${base}/music`);
   const isAssembly = pathname.startsWith(`${base}/assembly`);
   const isCosts = pathname.startsWith(`${base}/costs`);
 
@@ -31,6 +32,7 @@ export function VideoProjectSubnav({ videoId }: { videoId: string }) {
     { href: `${base}/storyboard`, label: "Storyboard", active: isStoryboard },
     { href: `${base}/references`, label: "References", active: isReferences },
     { href: `${base}/segments`, label: "Segments", active: isSegments },
+    { href: `${base}/music`, label: "Music", active: isMusic },
     { href: `${base}/assembly`, label: "Assembly", active: isAssembly },
     { href: `${base}/costs`, label: "Costs & logs", active: isCosts },
   ];

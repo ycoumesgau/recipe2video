@@ -30,7 +30,7 @@ export default async function ProjectSegmentsPage({
         </h2>
         <p className="max-w-3xl text-muted-foreground">
           Review each Seedance segment, compare variants, and accept takes before
-          assembly.
+          Music and Assembly.
         </p>
       </div>
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Copy } from "lucide-react";
+import { CheckCircle2, ChevronDown, Copy } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -14,11 +14,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
 
-import type { SunoAssemblyPromptView } from "../suno-assembly-prompt";
 import type { SunoPromptV2 } from "@/modules/recipe-agent/suno-prompt-v2.schema";
 import { buildMarkdownPackFromV2 } from "@/modules/recipe-agent/suno-prompt-v2.schema";
+
+import type { SunoAssemblyPromptView } from "../suno-assembly-prompt";
 import { buildNormalizedMarkdownPack } from "../suno-prompt-format";
 
 export function SunoPromptPack({
@@ -58,29 +64,59 @@ export function SunoPromptPack({
           </AlertDescription>
         </Alert>
         <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle>Fallback context</CardTitle>
-              <Badge variant="outline">Fallback</Badge>
-            </div>
-            <CardDescription>
-              Song target remains <span className="font-medium">about 2–3 minutes</span> for streaming; trim an
-              excerpt (often 45–90 seconds) for the vertical edit — not the other way around.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Textarea
-              aria-label="Fallback Suno context"
-              className="min-h-56 font-mono text-xs"
-              readOnly
-              value={view.prompt}
-            />
-            <CopyFieldButton
-              copied={lastCopied === "fallback"}
-              label="Copy fallback notes"
-              onCopy={() => copyLabel("fallback", view.prompt)}
-            />
-          </CardContent>
+          <Collapsible defaultOpen={false}>
+            <CardHeader className="space-y-1 pb-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CardTitle>Fallback context</CardTitle>
+                    <Badge variant="outline">Fallback</Badge>
+                  </div>
+                  <CardDescription>
+                    Song target remains <span className="font-medium">about 2–3 minutes</span> for streaming;
+                    trim an excerpt (often 45–90 seconds) for the vertical edit — not the other way around.
+                  </CardDescription>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    disabled={!view.prompt.trim()}
+                    onClick={() => copyLabel("fallback", view.prompt)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {lastCopied === "fallback" ? (
+                      <CheckCircle2 className="h-4 w-4" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                    {lastCopied === "fallback" ? "Copied" : "Copy"}
+                  </Button>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      aria-label="Show or hide fallback preview"
+                      className="shrink-0 [&[data-state=open]>svg]:rotate-180"
+                      size="icon"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <ChevronDown className="h-4 w-4 transition-transform duration-200" />
+                    </Button>
+                  </CollapsibleTrigger>
+                </div>
+              </div>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="space-y-4 pt-0">
+                <Textarea
+                  aria-label="Fallback Suno context"
+                  className="min-h-40 font-mono text-xs"
+                  readOnly
+                  value={view.prompt}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
         </Card>
       </div>
     );
@@ -91,7 +127,7 @@ export function SunoPromptPack({
     const fullPack = buildMarkdownPackFromV2(view.v2);
     return (
       <div className="space-y-4">
-        <SunoHowToAlert />
+        <SunoHowToCollapsible />
         <div className="flex flex-wrap items-center gap-2">
           <Badge>Structured v2</Badge>
           <Badge variant="outline">Agent JSON</Badge>
@@ -104,42 +140,54 @@ export function SunoPromptPack({
           excludeText={f.excludeStyles}
           lyricsText={f.autoLyricsPrompt}
         />
-        <SunoFieldCard
-          copied={lastCopied === "title"}
-          description="Suno → Title (set first — names the project in Suno)"
-          label="Title"
-          onCopy={() => copyLabel("title", f.title)}
-          value={f.title}
-        />
-        <SunoFieldCard
-          copied={lastCopied === "style"}
-          description="Suno → Custom Mode → Style of Music"
-          label="Style of Music"
-          onCopy={() => copyLabel("style", f.styleOfMusic)}
-          value={f.styleOfMusic}
-        />
-        <SunoFieldCard
-          copied={lastCopied === "exclude"}
-          description="Suno → Custom Mode → Exclude styles"
-          label="Exclude styles"
-          onCopy={() => copyLabel("exclude", f.excludeStyles)}
-          value={f.excludeStyles}
-        />
-        <SunoFieldCard
-          copied={lastCopied === "lyrics"}
-          className="min-h-80"
-          description="Suno → Custom Mode → Lyrics prompt (auto)"
-          label="Auto lyrics prompt"
-          onCopy={() => copyLabel("lyrics", f.autoLyricsPrompt)}
-          value={f.autoLyricsPrompt}
-        />
-        <SunoFieldCard
-          copied={lastCopied === "short"}
-          description="Keep for your editor / short-form cut"
-          label="Short version plan"
-          onCopy={() => copyLabel("short", f.shortVersionPlan)}
-          value={f.shortVersionPlan}
-        />
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <SunoFieldCard
+              copied={lastCopied === "title"}
+              description="Suno → Title (set first — names the project in Suno)"
+              label="Title"
+              onCopy={() => copyLabel("title", f.title)}
+              textareaClassName="min-h-24"
+              value={f.title}
+            />
+          </div>
+          <SunoFieldCard
+            copied={lastCopied === "style"}
+            description="Suno → Custom Mode → Style of Music"
+            label="Style of Music"
+            onCopy={() => copyLabel("style", f.styleOfMusic)}
+            textareaClassName="min-h-28"
+            value={f.styleOfMusic}
+          />
+          <SunoFieldCard
+            copied={lastCopied === "exclude"}
+            description="Suno → Custom Mode → Exclude styles"
+            label="Exclude styles"
+            onCopy={() => copyLabel("exclude", f.excludeStyles)}
+            textareaClassName="min-h-28"
+            value={f.excludeStyles}
+          />
+          <div className="md:col-span-2">
+            <SunoFieldCard
+              copied={lastCopied === "lyrics"}
+              description="Suno → Custom Mode → Lyrics prompt (auto)"
+              label="Auto lyrics prompt"
+              onCopy={() => copyLabel("lyrics", f.autoLyricsPrompt)}
+              textareaClassName="min-h-48"
+              value={f.autoLyricsPrompt}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <SunoFieldCard
+              copied={lastCopied === "short"}
+              description="Keep for your editor / short-form cut"
+              label="Short version plan"
+              onCopy={() => copyLabel("short", f.shortVersionPlan)}
+              textareaClassName="min-h-24"
+              value={f.shortVersionPlan}
+            />
+          </div>
+        </div>
         <SessionMetaCard
           copied={lastCopied}
           onCopySession={copyLabel}
@@ -161,7 +209,7 @@ export function SunoPromptPack({
   if (!parsed.useSectionCards) {
     return (
       <div className="space-y-4">
-        <SunoHowToAlert />
+        <SunoHowToCollapsible />
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">Legacy markdown</Badge>
           <Badge variant="outline">Unparsed body</Badge>
@@ -176,25 +224,51 @@ export function SunoPromptPack({
           </AlertDescription>
         </Alert>
         <Card>
-          <CardHeader>
-            <CardTitle>Raw Suno markdown</CardTitle>
-            <CardDescription>
-              Full <code className="text-xs">suno-prompt.md</code> body from the agent workspace.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Textarea
-              aria-label="Raw Suno markdown"
-              className="min-h-96 font-mono text-xs"
-              readOnly
-              value={view.parsed.rawMarkdown}
-            />
-            <CopyFieldButton
-              copied={lastCopied === "raw"}
-              label="Copy raw markdown"
-              onCopy={() => copyLabel("raw", view.parsed.rawMarkdown)}
-            />
-          </CardContent>
+          <Collapsible defaultOpen={false}>
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <CardTitle>Raw Suno markdown</CardTitle>
+                  <CardDescription>
+                    Full <code className="text-xs">suno-prompt.md</code> body from the agent workspace.
+                  </CardDescription>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    disabled={!view.parsed.rawMarkdown.trim()}
+                    onClick={() => copyLabel("raw", view.parsed.rawMarkdown)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {lastCopied === "raw" ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    {lastCopied === "raw" ? "Copied" : "Copy"}
+                  </Button>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      aria-label="Show or hide raw markdown preview"
+                      className="shrink-0 [&[data-state=open]>svg]:rotate-180"
+                      size="icon"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <ChevronDown className="h-4 w-4 transition-transform duration-200" />
+                    </Button>
+                  </CollapsibleTrigger>
+                </div>
+              </div>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="pt-0">
+                <Textarea
+                  aria-label="Raw Suno markdown"
+                  className="min-h-48 font-mono text-xs"
+                  readOnly
+                  value={view.parsed.rawMarkdown}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
         </Card>
       </div>
     );
@@ -202,7 +276,7 @@ export function SunoPromptPack({
 
   return (
     <div className="space-y-4">
-      <SunoHowToAlert />
+      <SunoHowToCollapsible />
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary">Legacy markdown</Badge>
         <Badge variant="outline">Parsed sections</Badge>
@@ -215,51 +289,66 @@ export function SunoPromptPack({
         excludeText={s.excludeStyles}
         lyricsText={s.autoLyricsPrompt}
       />
-      {s.preamble.trim() ? (
+      <div className="grid gap-4 md:grid-cols-2">
+        {s.preamble.trim() ? (
+          <div className="md:col-span-2">
+            <SunoFieldCard
+              copied={lastCopied === "preamble"}
+              description="Intro / notes from the agent (optional in Suno)"
+              label="Preamble"
+              onCopy={() => copyLabel("preamble", s.preamble)}
+              textareaClassName="min-h-24"
+              value={s.preamble}
+            />
+          </div>
+        ) : null}
+        <div className="md:col-span-2">
+          <SunoFieldCard
+            copied={lastCopied === "title"}
+            description="Suno → Title (set first — names the project in Suno)"
+            label="Title"
+            onCopy={() => copyLabel("title", s.title)}
+            textareaClassName="min-h-24"
+            value={s.title}
+          />
+        </div>
         <SunoFieldCard
-          copied={lastCopied === "preamble"}
-          description="Intro / notes from the agent (optional in Suno)"
-          label="Preamble"
-          onCopy={() => copyLabel("preamble", s.preamble)}
-          value={s.preamble}
+          copied={lastCopied === "style"}
+          description="Suno → Custom Mode → Style of Music"
+          label="Style of Music"
+          onCopy={() => copyLabel("style", s.styleOfMusic)}
+          textareaClassName="min-h-28"
+          value={s.styleOfMusic}
         />
-      ) : null}
-      <SunoFieldCard
-        copied={lastCopied === "title"}
-        description="Suno → Title (set first — names the project in Suno)"
-        label="Title"
-        onCopy={() => copyLabel("title", s.title)}
-        value={s.title}
-      />
-      <SunoFieldCard
-        copied={lastCopied === "style"}
-        description="Suno → Custom Mode → Style of Music"
-        label="Style of Music"
-        onCopy={() => copyLabel("style", s.styleOfMusic)}
-        value={s.styleOfMusic}
-      />
-      <SunoFieldCard
-        copied={lastCopied === "exclude"}
-        description="Suno → Custom Mode → Exclude styles"
-        label="Exclude styles"
-        onCopy={() => copyLabel("exclude", s.excludeStyles)}
-        value={s.excludeStyles}
-      />
-      <SunoFieldCard
-        copied={lastCopied === "lyrics"}
-        className="min-h-80"
-        description="Suno → Custom Mode → Lyrics prompt (auto)"
-        label="Auto lyrics prompt"
-        onCopy={() => copyLabel("lyrics", s.autoLyricsPrompt)}
-        value={s.autoLyricsPrompt}
-      />
-      <SunoFieldCard
-        copied={lastCopied === "short"}
-        description="Keep for your editor / short-form cut"
-        label="Short version plan"
-        onCopy={() => copyLabel("short", s.shortVersionPlan)}
-        value={s.shortVersionPlan}
-      />
+        <SunoFieldCard
+          copied={lastCopied === "exclude"}
+          description="Suno → Custom Mode → Exclude styles"
+          label="Exclude styles"
+          onCopy={() => copyLabel("exclude", s.excludeStyles)}
+          textareaClassName="min-h-28"
+          value={s.excludeStyles}
+        />
+        <div className="md:col-span-2">
+          <SunoFieldCard
+            copied={lastCopied === "lyrics"}
+            description="Suno → Custom Mode → Lyrics prompt (auto)"
+            label="Auto lyrics prompt"
+            onCopy={() => copyLabel("lyrics", s.autoLyricsPrompt)}
+            textareaClassName="min-h-48"
+            value={s.autoLyricsPrompt}
+          />
+        </div>
+        <div className="md:col-span-2">
+          <SunoFieldCard
+            copied={lastCopied === "short"}
+            description="Keep for your editor / short-form cut"
+            label="Short version plan"
+            onCopy={() => copyLabel("short", s.shortVersionPlan)}
+            textareaClassName="min-h-24"
+            value={s.shortVersionPlan}
+          />
+        </div>
+      </div>
       <CopyFieldButton
         copied={lastCopied === "full"}
         label="Copy full Suno pack"
@@ -269,26 +358,45 @@ export function SunoPromptPack({
   );
 }
 
-function SunoHowToAlert() {
+function SunoHowToCollapsible() {
   return (
-    <Alert>
-      <AlertTitle>How to use with Suno (Custom Mode)</AlertTitle>
-      <AlertDescription>
-        <ol className="mt-2 list-decimal space-y-1 pl-4 text-sm">
-          <li>
-            Generate a <span className="font-medium">full song</span> of about{" "}
-            <span className="font-medium">2–3 minutes</span> for streaming; the short video uses a trimmed excerpt,
-            not a 30-second “whole song”.
-          </li>
-          <li>
-            In Suno, set the <span className="font-medium">Title</span> first, then paste{" "}
-            <span className="font-medium">Style</span>, <span className="font-medium">Excludes</span>, and the{" "}
-            <span className="font-medium">auto lyrics</span> prompt into the matching Custom Mode fields.
-          </li>
-          <li>Use the short-version plan when editing the vertical cut.</li>
-        </ol>
-      </AlertDescription>
-    </Alert>
+    <Collapsible defaultOpen={false}>
+      <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+        <p className="text-sm font-medium leading-snug">
+          How to use with Suno (Custom Mode)
+        </p>
+        <CollapsibleTrigger asChild>
+          <Button
+            aria-label="Show or hide Suno instructions"
+            className="shrink-0 [&[data-state=open]>svg]:rotate-180"
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronDown className="h-4 w-4 transition-transform duration-200" />
+          </Button>
+        </CollapsibleTrigger>
+      </div>
+      <CollapsibleContent>
+        <div className="mt-2 rounded-lg border bg-background px-3 py-3 text-sm text-muted-foreground">
+          <ol className="list-decimal space-y-1 pl-4">
+            <li>
+              Generate a <span className="font-medium text-foreground">full song</span> of about{" "}
+              <span className="font-medium text-foreground">2–3 minutes</span> for streaming; the short video uses a
+              trimmed excerpt, not a 30-second “whole song”.
+            </li>
+            <li>
+              In Suno, set the <span className="font-medium text-foreground">Title</span> first, then paste{" "}
+              <span className="font-medium text-foreground">Style</span>,{" "}
+              <span className="font-medium text-foreground">Excludes</span>, and the{" "}
+              <span className="font-medium text-foreground">auto lyrics</span> prompt into the matching Custom Mode
+              fields.
+            </li>
+            <li>Use the short-version plan when editing the vertical cut.</li>
+          </ol>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -387,6 +495,7 @@ function SessionMetaCard({
       description="Session notes (optional reference — not always pasted into Suno)"
       label="Full session notes"
       onCopy={() => onCopySession("session", text)}
+      textareaClassName="min-h-32"
       value={text}
     />
   );
@@ -398,37 +507,54 @@ function SunoFieldCard({
   value,
   onCopy,
   copied,
-  className,
+  textareaClassName,
 }: {
   label: string;
   description: string;
   value: string;
   onCopy: () => void;
   copied: boolean;
-  className?: string;
+  textareaClassName?: string;
 }) {
   return (
     <Card>
-      <CardHeader className="space-y-1">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">{label}</CardTitle>
-            <CardDescription>{description}</CardDescription>
+      <Collapsible defaultOpen={false}>
+        <CardHeader className="space-y-1 pb-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <CardTitle className="text-base">{label}</CardTitle>
+              <CardDescription>{description}</CardDescription>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <Button disabled={!value.trim()} onClick={onCopy} size="sm" type="button" variant="outline">
+                {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+              <CollapsibleTrigger asChild>
+                <Button
+                  aria-label="Show or hide field preview"
+                  className="shrink-0 [&[data-state=open]>svg]:rotate-180"
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <ChevronDown className="h-4 w-4 transition-transform duration-200" />
+                </Button>
+              </CollapsibleTrigger>
+            </div>
           </div>
-          <Button disabled={!value.trim()} onClick={onCopy} size="sm" type="button" variant="outline">
-            {copied ? <CheckCircle2 className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <Textarea
-          aria-label={label}
-          className={`min-h-32 font-mono text-xs ${className ?? ""}`}
-          readOnly
-          value={value}
-        />
-      </CardContent>
+        </CardHeader>
+        <CollapsibleContent>
+          <CardContent className="pt-0">
+            <Textarea
+              aria-label={label}
+              className={`font-mono text-xs ${textareaClassName ?? "min-h-28"}`}
+              readOnly
+              value={value}
+            />
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   );
 }
