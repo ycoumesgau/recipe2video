@@ -9,14 +9,14 @@ import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
 import { REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES } from "./remotion-headless-shell-al2023-packages";
 
 /**
- * Repo cloned by the sandbox to render the Remotion composition. The repo is
- * public, so no credentials are required: the sandbox just does a shallow git
- * clone over HTTPS.
+ * Repo cloned by the sandbox to render the Remotion composition. When the
+ * repo is public a shallow HTTPS clone is enough; when it goes private (post
+ * hackathon), the sandbox uses HTTP basic auth with a PAT — see
+ * {@link resolveSandboxGitAuth}.
  *
- * See `resolveSandboxGitRevision()` for how the orchestrator picks which
- * branch / commit to clone.
+ * Override with `COMPOSITION_RENDER_GIT_URL` if the repo ever moves.
  */
-const REPO_URL = "https://github.com/ycoumesgau/recipe2video.git";
+const DEFAULT_REPO_URL = "https://github.com/ycoumesgau/recipe2video.git";
 
 /** Where {@link Sandbox} clones the source — also the working dir we use. */
 const WORK_ROOT = "/vercel/sandbox";
@@ -45,6 +45,36 @@ function resolveSandboxGitRevision(): string {
     if (trimmed) return trimmed;
   }
   return "main";
+}
+
+interface SandboxGitAuth {
+  username: string;
+  password: string;
+}
+
+/**
+ * Resolve credentials for cloning a private repo from inside the sandbox.
+ *
+ * When `COMPOSITION_RENDER_GIT_TOKEN` is set we return `{ username, password
+ * }` — the token is sent as the HTTP basic-auth password (the GitHub
+ * convention for fine-grained PATs). Username defaults to `x-access-token`
+ * (works with both classic and fine-grained PATs and with GitHub App tokens),
+ * but can be overridden with `COMPOSITION_RENDER_GIT_USERNAME`.
+ *
+ * Returns `null` when no token is configured, in which case the sandbox falls
+ * back to an unauthenticated public clone — which is what we want as long as
+ * the repo is public (current hackathon setup).
+ */
+function resolveSandboxGitAuth(): SandboxGitAuth | null {
+  const token = process.env.COMPOSITION_RENDER_GIT_TOKEN?.trim();
+  if (!token) return null;
+  const username =
+    process.env.COMPOSITION_RENDER_GIT_USERNAME?.trim() || "x-access-token";
+  return { username, password: token };
+}
+
+function resolveRepoUrl(): string {
+  return process.env.COMPOSITION_RENDER_GIT_URL?.trim() || DEFAULT_REPO_URL;
 }
 
 /**
@@ -116,18 +146,25 @@ async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
 export async function renderAssemblyMp4InSandbox(
   props: AssemblyRemotionProps,
 ): Promise<Buffer> {
+  const repoUrl = resolveRepoUrl();
   const revision = resolveSandboxGitRevision();
+  const auth = resolveSandboxGitAuth();
   console.log(
-    `[renderAssemblyMp4InSandbox] creating sandbox source=${REPO_URL} revision=${revision}`,
+    `[renderAssemblyMp4InSandbox] creating sandbox source=${repoUrl} revision=${revision} auth=${auth ? "pat" : "public"}`,
   );
 
+  const baseSource = {
+    type: "git" as const,
+    url: repoUrl,
+    revision,
+    depth: 1,
+  };
+  const gitSource = auth
+    ? { ...baseSource, username: auth.username, password: auth.password }
+    : baseSource;
+
   const sandbox = await Sandbox.create({
-    source: {
-      type: "git",
-      url: REPO_URL,
-      revision,
-      depth: 1,
-    },
+    source: gitSource,
     runtime: "node24",
     resources: { vcpus: 4 },
     timeout: SANDBOX_TIMEOUT_MS,
