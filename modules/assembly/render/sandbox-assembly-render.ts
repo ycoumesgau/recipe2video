@@ -9,15 +9,22 @@ import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
 
 import { copyLocalDirToSandbox } from "./copy-local-dir-to-sandbox";
 import { REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES } from "./remotion-headless-shell-al2023-packages";
+import { waitForDetachedSandboxCommandUntil } from "./wait-for-detached-sandbox-command";
 
 const WORK_ROOT = "/vercel/sandbox/recipe2video-export";
+
+/** Shared orchestrator deadline (slightly under the VM `Sandbox.create` timeout). */
+const ORCHESTRATOR_DEADLINE_BUFFER_MS = 24 * 60 * 1000;
 
 /**
  * Runs the pre-built Remotion bundle (`remotion-export/serve` from `npm run
  * build`) inside a Vercel Sandbox: `dnf install` for Chrome Headless Shell
  * libs (Amazon Linux 2023), `npm install` for renderer deps, then
- * `render.mjs`. Returns the rendered MP4 as a buffer on the **orchestrator**
- * side (no Supabase service key inside the sandbox).
+ * `render.mjs`. Long commands use **detached** execution plus polling so the
+ * Sandbox API is not held on one long NDJSON stream (avoids TLS / idle
+ * disconnects during long Remotion renders). Returns the rendered MP4 as a
+ * buffer on the **orchestrator** side (no Supabase service key inside the
+ * sandbox).
  */
 export async function renderAssemblyMp4InSandbox(
   props: AssemblyRemotionProps,
@@ -39,6 +46,8 @@ export async function renderAssemblyMp4InSandbox(
   });
 
   try {
+    const orchestratorDeadlineAt = Date.now() + ORCHESTRATOR_DEADLINE_BUFFER_MS;
+
     await sandbox.fs.mkdir(WORK_ROOT, { recursive: true });
     await sandbox.fs.mkdir(`${WORK_ROOT}/serve`, { recursive: true });
 
@@ -54,7 +63,7 @@ export async function renderAssemblyMp4InSandbox(
       { path: `${WORK_ROOT}/render.mjs`, content: renderScript },
     ]);
 
-    const systemDeps = await sandbox.runCommand({
+    const systemDepsCmd = await sandbox.runCommand({
       cmd: "dnf",
       args: [
         "install",
@@ -62,24 +71,40 @@ export async function renderAssemblyMp4InSandbox(
         ...REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES,
       ],
       sudo: true,
+      detached: true,
     });
-    if (systemDeps.exitCode !== 0) {
-      const err = await systemDeps.stderr();
+    const dnfOutcome = await waitForDetachedSandboxCommandUntil(
+      sandbox,
+      systemDepsCmd,
+      {
+        label: "Sandbox dnf install (Remotion / Chrome libs)",
+        deadlineAt: orchestratorDeadlineAt,
+      },
+    );
+    if (dnfOutcome.exitCode !== 0) {
+      const err = await systemDepsCmd.stderr();
       throw new Error(
-        `Sandbox dnf install (Remotion / Chrome libs) failed (exit ${systemDeps.exitCode}): ${err}`,
+        `Sandbox dnf install (Remotion / Chrome libs) failed (exit ${dnfOutcome.exitCode}): ${err}`,
       );
     }
 
-    const install = await sandbox.runCommand("npm", [
-      "install",
-      "--omit=dev",
-      "--prefix",
-      WORK_ROOT,
-    ]);
-    if (install.exitCode !== 0) {
-      const err = await install.stderr();
+    const installCmd = await sandbox.runCommand({
+      cmd: "npm",
+      args: ["install", "--omit=dev", "--prefix", WORK_ROOT],
+      detached: true,
+    });
+    const npmOutcome = await waitForDetachedSandboxCommandUntil(
+      sandbox,
+      installCmd,
+      {
+        label: "Sandbox npm install",
+        deadlineAt: orchestratorDeadlineAt,
+      },
+    );
+    if (npmOutcome.exitCode !== 0) {
+      const err = await installCmd.stderr();
       throw new Error(
-        `Sandbox npm install failed (exit ${install.exitCode}): ${err}`,
+        `Sandbox npm install failed (exit ${npmOutcome.exitCode}): ${err}`,
       );
     }
 
@@ -89,15 +114,24 @@ export async function renderAssemblyMp4InSandbox(
       "utf8",
     );
 
-    const render = await sandbox.runCommand({
+    const renderCmd = await sandbox.runCommand({
       cmd: "node",
       args: [`${WORK_ROOT}/render.mjs`],
       cwd: WORK_ROOT,
+      detached: true,
     });
-    if (render.exitCode !== 0) {
-      const err = await render.stderr();
+    const renderOutcome = await waitForDetachedSandboxCommandUntil(
+      sandbox,
+      renderCmd,
+      {
+        label: "Sandbox Remotion render",
+        deadlineAt: orchestratorDeadlineAt,
+      },
+    );
+    if (renderOutcome.exitCode !== 0) {
+      const err = await renderCmd.stderr();
       throw new Error(
-        `Sandbox Remotion render failed (exit ${render.exitCode}): ${err}`,
+        `Sandbox Remotion render failed (exit ${renderOutcome.exitCode}): ${err}`,
       );
     }
 
