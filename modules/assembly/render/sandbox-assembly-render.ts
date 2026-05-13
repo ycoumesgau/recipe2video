@@ -1,185 +1,223 @@
 import "server-only";
 
-import fs from "node:fs/promises";
-import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { Writable } from "node:stream";
 
 import { Sandbox } from "@vercel/sandbox";
 
 import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
 
-import { copyLocalDirToSandbox } from "./copy-local-dir-to-sandbox";
 import { REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES } from "./remotion-headless-shell-al2023-packages";
-import {
-  runDetachedMkdirP,
-  waitForDetachedSandboxCommandUntil,
-} from "./wait-for-detached-sandbox-command";
 
-const WORK_ROOT = "/vercel/sandbox/recipe2video-export";
+/**
+ * Repo cloned by the sandbox to render the Remotion composition. The repo is
+ * public, so no credentials are required: the sandbox just does a shallow git
+ * clone over HTTPS.
+ *
+ * See `resolveSandboxGitRevision()` for how the orchestrator picks which
+ * branch / commit to clone.
+ */
+const REPO_URL = "https://github.com/ycoumesgau/recipe2video.git";
 
-/** Shared orchestrator deadline (slightly under the VM `Sandbox.create` timeout). */
-const ORCHESTRATOR_DEADLINE_BUFFER_MS = 24 * 60 * 1000;
+/** Where {@link Sandbox} clones the source — also the working dir we use. */
+const WORK_ROOT = "/vercel/sandbox";
 
-async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
-  const errors: unknown[] = [];
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      await sandbox.stop({ blocking: true });
-      return;
-    } catch (error) {
-      errors.push(error);
-      await delay(2000);
-    }
+const SANDBOX_TIMEOUT_MS = 25 * 60 * 1000;
+
+/**
+ * Pick the git revision (branch / SHA / tag) the sandbox should clone:
+ *
+ * 1. `COMPOSITION_RENDER_GIT_REF` — explicit override (useful locally while
+ *    iterating on a feature branch from the dev machine);
+ * 2. `VERCEL_GIT_COMMIT_SHA` — pinned to the exact commit when running on a
+ *    Vercel deployment (avoids "main moved while a render was queued" races);
+ * 3. `VERCEL_GIT_COMMIT_REF` — branch name on Vercel previews when the SHA is
+ *    not surfaced;
+ * 4. `main` — last-resort fallback.
+ */
+function resolveSandboxGitRevision(): string {
+  const candidates = [
+    process.env.COMPOSITION_RENDER_GIT_REF,
+    process.env.VERCEL_GIT_COMMIT_SHA,
+    process.env.VERCEL_GIT_COMMIT_REF,
+  ];
+  for (const value of candidates) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
   }
-  console.error(
-    "[renderAssemblyMp4InSandbox] sandbox.stop failed after retries:",
-    errors,
-  );
+  return "main";
 }
 
 /**
- * Runs the pre-built Remotion bundle (`remotion-export/serve` from `npm run
- * build`) inside a Vercel Sandbox: `dnf install` for Chrome Headless Shell
- * libs (Amazon Linux 2023), `npm install` for renderer deps, then
- * `render.mjs`. Long commands use **detached** execution plus polling so the
- * Sandbox API is not held on one long NDJSON stream (avoids TLS / idle
- * disconnects during long Remotion renders). Returns the rendered MP4 as a
- * buffer on the **orchestrator** side (no Supabase service key inside the
- * sandbox).
+ * Build a {@link Writable} that line-prefixes every chunk and forwards it to
+ * `console.log`. Piped to `stdout` / `stderr` of long sandbox commands so the
+ * orchestrator never sits on a quiet NDJSON stream (the main failure mode of
+ * the previous architecture: TLS / idle disconnects during long quiet phases
+ * like Remotion render).
+ */
+function createLogWritable(prefix: string): Writable {
+  let buffer = "";
+  return new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      buffer += chunk.toString("utf8");
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.length > 0) console.log(`${prefix} ${line}`);
+      }
+      callback();
+    },
+    final(callback) {
+      if (buffer.length > 0) console.log(`${prefix} ${buffer}`);
+      buffer = "";
+      callback();
+    },
+  });
+}
+
+async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
+  try {
+    await sandbox.stop({ blocking: false });
+  } catch (error) {
+    console.error(
+      "[renderAssemblyMp4InSandbox] sandbox.stop failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+/**
+ * Renders the Remotion composition for a recipe assembly inside a fresh
+ * Vercel Sandbox MicroVM and returns the resulting MP4 as a Buffer.
+ *
+ * ## Strategy
+ *
+ * 1. **Clone the repo via `source: { type: "git" }`** so the sandbox starts
+ *    pre-populated with the full source — no local-to-sandbox file upload
+ *    bottleneck (the previous architecture uploaded the `remotion-export/serve`
+ *    bundle file-by-file from the orchestrator, which was the dominant cause
+ *    of stalled / idle sandboxes in local dev and forbade ever running this
+ *    on a Vercel function deployment).
+ * 2. **`dnf install`** the AL2023 system libs Chrome Headless Shell needs.
+ * 3. **`npm ci --omit=dev --ignore-scripts`** in the cloned repo. Skipping
+ *    scripts avoids the `sqlite3` postinstall (used by `@cursor/sdk` on the
+ *    web side, irrelevant for the renderer).
+ * 4. **Write `props.json`** into the sandbox.
+ * 5. **`node remotion-export/render.mjs`** — bundles and renders the
+ *    composition in a single Node process inside the sandbox.
+ * 6. **`readFileToBuffer`** the resulting MP4 and return it. The orchestrator
+ *    then uploads it to Supabase Storage / Mux — the service-role key never
+ *    leaves the orchestrator process.
+ *
+ * Every long command pipes its stdout/stderr to `console.log`. This keeps the
+ * sandbox API stream "busy" (avoiding the idle TLS disconnects we saw with the
+ * previous architecture) and surfaces real progress in the Inngest / Vercel
+ * logs and in the Sandbox dashboard activity tab.
  */
 export async function renderAssemblyMp4InSandbox(
   props: AssemblyRemotionProps,
 ): Promise<Buffer> {
-  const repoRoot = process.cwd();
-  const localServe = path.join(repoRoot, "remotion-export", "serve");
-  const pkgPath = path.join(repoRoot, "remotion-export", "package.json");
-  const renderPath = path.join(repoRoot, "remotion-export", "render.mjs");
-
-  await fs.access(localServe).catch(() => {
-    throw new Error(
-      "remotion-export/serve is missing. Run `npm run build` so the Remotion bundle is produced before deploying.",
-    );
-  });
+  const revision = resolveSandboxGitRevision();
+  console.log(
+    `[renderAssemblyMp4InSandbox] creating sandbox source=${REPO_URL} revision=${revision}`,
+  );
 
   const sandbox = await Sandbox.create({
-    timeout: 25 * 60 * 1000,
-    resources: { vcpus: 2 },
+    source: {
+      type: "git",
+      url: REPO_URL,
+      revision,
+      depth: 1,
+    },
+    runtime: "node24",
+    resources: { vcpus: 4 },
+    timeout: SANDBOX_TIMEOUT_MS,
   });
 
+  const sandboxId = sandbox.sandboxId;
+  const stepLog = (step: string, extra?: string) => {
+    const suffix = extra ? ` ${extra}` : "";
+    console.log(
+      `[renderAssemblyMp4InSandbox] sandbox=${sandboxId} step=${step}${suffix}`,
+    );
+  };
+
   try {
-    const orchestratorDeadlineAt = Date.now() + ORCHESTRATOR_DEADLINE_BUFFER_MS;
-    const log = (step: string, extra?: string) => {
-      const suffix = extra ? ` ${extra}` : "";
-      console.log(
-        `[renderAssemblyMp4InSandbox] sandbox=${sandbox.sandboxId} step=${step}${suffix}`,
-      );
-    };
+    stepLog("sandbox_ready", `revision=${revision}`);
 
-    log("sandbox_ready");
-    await runDetachedMkdirP(sandbox, `${WORK_ROOT}/serve`, {
-      deadlineAt: orchestratorDeadlineAt,
-      label: "Sandbox mkdir export tree",
-    });
-    log("mkdir_serve_done");
-
-    await copyLocalDirToSandbox(sandbox, localServe, `${WORK_ROOT}/serve`, {
-      sandboxId: sandbox.sandboxId,
-    });
-    log("copy_bundle_done");
-
-    const [pkg, renderScript] = await Promise.all([
-      fs.readFile(pkgPath, "utf8"),
-      fs.readFile(renderPath, "utf8"),
-    ]);
-
-    await sandbox.writeFiles([
-      { path: `${WORK_ROOT}/package.json`, content: pkg },
-      { path: `${WORK_ROOT}/render.mjs`, content: renderScript },
-    ]);
-    log("worker_scripts_written");
-
-    const systemDepsCmd = await sandbox.runCommand({
+    const dnfResult = await sandbox.runCommand({
       cmd: "dnf",
       args: [
         "install",
         "-y",
+        "--setopt=install_weak_deps=False",
         ...REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES,
       ],
       sudo: true,
-      detached: true,
+      stdout: createLogWritable(`[sandbox=${sandboxId} dnf]`),
+      stderr: createLogWritable(`[sandbox=${sandboxId} dnf!]`),
     });
-    const dnfOutcome = await waitForDetachedSandboxCommandUntil(
-      sandbox,
-      systemDepsCmd,
-      {
-        label: "Sandbox dnf install (Remotion / Chrome libs)",
-        deadlineAt: orchestratorDeadlineAt,
-      },
-    );
-    if (dnfOutcome.exitCode !== 0) {
-      const err = await systemDepsCmd.stderr();
+    if (dnfResult.exitCode !== 0) {
+      const err = await dnfResult.stderr();
       throw new Error(
-        `Sandbox dnf install (Remotion / Chrome libs) failed (exit ${dnfOutcome.exitCode}): ${err}`,
+        `Sandbox dnf install (Remotion / Chrome libs) failed (exit ${dnfResult.exitCode}): ${err}`,
       );
     }
-    log("dnf_done");
+    stepLog("dnf_done");
 
-    const installCmd = await sandbox.runCommand({
+    const npmResult = await sandbox.runCommand({
       cmd: "npm",
-      args: ["install", "--omit=dev", "--prefix", WORK_ROOT],
-      detached: true,
-    });
-    const npmOutcome = await waitForDetachedSandboxCommandUntil(
-      sandbox,
-      installCmd,
-      {
-        label: "Sandbox npm install",
-        deadlineAt: orchestratorDeadlineAt,
-      },
-    );
-    if (npmOutcome.exitCode !== 0) {
-      const err = await installCmd.stderr();
-      throw new Error(
-        `Sandbox npm install failed (exit ${npmOutcome.exitCode}): ${err}`,
-      );
-    }
-    log("npm_install_done");
-
-    await sandbox.fs.writeFile(
-      `${WORK_ROOT}/props.json`,
-      JSON.stringify(props),
-      "utf8",
-    );
-
-    const renderCmd = await sandbox.runCommand({
-      cmd: "node",
-      args: [`${WORK_ROOT}/render.mjs`],
+      args: [
+        "ci",
+        "--omit=dev",
+        "--no-audit",
+        "--no-fund",
+        "--ignore-scripts",
+        "--prefer-offline",
+      ],
       cwd: WORK_ROOT,
-      detached: true,
+      stdout: createLogWritable(`[sandbox=${sandboxId} npm]`),
+      stderr: createLogWritable(`[sandbox=${sandboxId} npm!]`),
     });
-    const renderOutcome = await waitForDetachedSandboxCommandUntil(
-      sandbox,
-      renderCmd,
-      {
-        label: "Sandbox Remotion render",
-        deadlineAt: orchestratorDeadlineAt,
-      },
-    );
-    if (renderOutcome.exitCode !== 0) {
-      const err = await renderCmd.stderr();
+    if (npmResult.exitCode !== 0) {
+      const err = await npmResult.stderr();
       throw new Error(
-        `Sandbox Remotion render failed (exit ${renderOutcome.exitCode}): ${err}`,
+        `Sandbox npm ci failed (exit ${npmResult.exitCode}): ${err}`,
       );
     }
-    log("remotion_render_done");
+    stepLog("npm_install_done");
 
-    const out = await sandbox.readFileToBuffer({ path: `${WORK_ROOT}/out.mp4` });
+    await sandbox.writeFiles([
+      {
+        path: `${WORK_ROOT}/remotion-export/props.json`,
+        content: Buffer.from(JSON.stringify(props), "utf8"),
+      },
+    ]);
+    stepLog("props_written");
+
+    const renderResult = await sandbox.runCommand({
+      cmd: "node",
+      args: ["remotion-export/render.mjs"],
+      cwd: WORK_ROOT,
+      stdout: createLogWritable(`[sandbox=${sandboxId} render]`),
+      stderr: createLogWritable(`[sandbox=${sandboxId} render!]`),
+    });
+    if (renderResult.exitCode !== 0) {
+      const err = await renderResult.stderr();
+      throw new Error(
+        `Sandbox Remotion render failed (exit ${renderResult.exitCode}): ${err}`,
+      );
+    }
+    stepLog("remotion_render_done");
+
+    const out = await sandbox.readFileToBuffer({
+      path: `${WORK_ROOT}/remotion-export/out.mp4`,
+    });
     if (!out || out.byteLength === 0) {
       throw new Error("Sandbox Remotion render produced an empty MP4.");
     }
-    log("read_mp4_done", `bytes=${out.byteLength}`);
+    stepLog("read_mp4_done", `bytes=${out.byteLength}`);
 
-    return out;
+    return Buffer.from(out);
   } finally {
     await stopSandboxBestEffort(sandbox);
   }
