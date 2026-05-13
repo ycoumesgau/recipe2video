@@ -25,6 +25,7 @@ await renderMedia({
   inputProps,
   chromiumOptions: {
     disableWebSecurity: true,
+    enableMultiProcessOnLinux: true,
   },
 });
 
