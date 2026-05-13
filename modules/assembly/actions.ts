@@ -31,6 +31,7 @@ import {
 } from "./timeline-state";
 import {
   createComposition,
+  tryClaimCompositionCloudRender,
   updateCompositionExport,
   upsertDraftComposition,
 } from "./repositories/assembly.repository";
@@ -212,14 +213,19 @@ export async function requestAssemblyRenderAction(
         audioTrack: assemblyData.audioTrack,
         audioClips: timelineState.audioClips,
       }),
-      exportStatus: "pending",
       createdBy: profile.id,
     });
 
-    await updateCompositionExport(supabase, {
-      compositionId: composition.id,
-      exportStatus: "rendering",
-    });
+    const claimed = await tryClaimCompositionCloudRender(supabase, composition.id);
+    if (!claimed) {
+      revalidateAssemblyPaths(videoId);
+      return {
+        status: "success",
+        message:
+          "A cloud render is already running for this assembly. You will be notified when it finishes.",
+        compositionId: composition.id,
+      };
+    }
 
     await updateVideoProjectStatus(supabase, videoId, "assembling");
 

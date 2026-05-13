@@ -2,6 +2,7 @@ import "server-only";
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { Sandbox } from "@vercel/sandbox";
 
@@ -9,12 +10,32 @@ import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
 
 import { copyLocalDirToSandbox } from "./copy-local-dir-to-sandbox";
 import { REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES } from "./remotion-headless-shell-al2023-packages";
-import { waitForDetachedSandboxCommandUntil } from "./wait-for-detached-sandbox-command";
+import {
+  runDetachedMkdirP,
+  waitForDetachedSandboxCommandUntil,
+} from "./wait-for-detached-sandbox-command";
 
 const WORK_ROOT = "/vercel/sandbox/recipe2video-export";
 
 /** Shared orchestrator deadline (slightly under the VM `Sandbox.create` timeout). */
 const ORCHESTRATOR_DEADLINE_BUFFER_MS = 24 * 60 * 1000;
+
+async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
+  const errors: unknown[] = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await sandbox.stop({ blocking: true });
+      return;
+    } catch (error) {
+      errors.push(error);
+      await delay(2000);
+    }
+  }
+  console.error(
+    "[renderAssemblyMp4InSandbox] sandbox.stop failed after retries:",
+    errors,
+  );
+}
 
 /**
  * Runs the pre-built Remotion bundle (`remotion-export/serve` from `npm run
@@ -48,10 +69,14 @@ export async function renderAssemblyMp4InSandbox(
   try {
     const orchestratorDeadlineAt = Date.now() + ORCHESTRATOR_DEADLINE_BUFFER_MS;
 
-    await sandbox.fs.mkdir(WORK_ROOT, { recursive: true });
-    await sandbox.fs.mkdir(`${WORK_ROOT}/serve`, { recursive: true });
+    await runDetachedMkdirP(sandbox, `${WORK_ROOT}/serve`, {
+      deadlineAt: orchestratorDeadlineAt,
+      label: "Sandbox mkdir export tree",
+    });
 
-    await copyLocalDirToSandbox(sandbox, localServe, `${WORK_ROOT}/serve`);
+    await copyLocalDirToSandbox(sandbox, localServe, `${WORK_ROOT}/serve`, {
+      orchestratorDeadlineAt,
+    });
 
     const [pkg, renderScript] = await Promise.all([
       fs.readFile(pkgPath, "utf8"),
@@ -142,6 +167,6 @@ export async function renderAssemblyMp4InSandbox(
 
     return out;
   } finally {
-    await sandbox.stop({ blocking: true }).catch(() => undefined);
+    await stopSandboxBestEffort(sandbox);
   }
 }
