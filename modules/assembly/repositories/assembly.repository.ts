@@ -99,6 +99,26 @@ export async function getCompositionById(
   return data ? mapComposition(data) : null;
 }
 
+/**
+ * Atomically moves a composition from **pending** or **failed** to **rendering**
+ * so only one cloud render job can own the row (dedupes double Inngest sends).
+ */
+export async function tryClaimCompositionCloudRender(
+  supabase: SupabaseDataClient,
+  compositionId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("compositions")
+    .update({ export_status: "rendering" })
+    .eq("id", compositionId)
+    .in("export_status", ["pending", "failed"])
+    .select("id")
+    .maybeSingle();
+
+  throwIfSupabaseError(error, "tryClaimCompositionCloudRender failed");
+  return data != null;
+}
+
 export async function createComposition(
   supabase: SupabaseDataClient,
   input: SaveCompositionInput,
@@ -128,8 +148,11 @@ export async function createComposition(
  * `saveAssemblySettingsAction` to avoid stacking a new row on every save.
  *
  * Strategy:
- *   - If a draft (export_status = 'pending') already exists for the video,
+ *   - If a draft (`export_status = 'pending'`) already exists for the video,
  *     update it in place and keep the original `id` and `created_at`.
+ *   - On update, `export_status` is only written when `exportStatus` is passed
+ *     explicitly; omit it to preserve the current export state (e.g. while a
+ *     cloud render is `rendering`).
  *   - Otherwise insert a new draft row.
  *
  * Final exports keep their own dedicated row created with `createComposition`
@@ -158,7 +181,9 @@ export async function upsertDraftComposition(
         audio_media_asset_id: input.audioMediaAssetId ?? null,
         audio_sync: serializeAudioSyncColumn(input),
         remotion_props: toJson(input.remotionProps),
-        export_status: input.exportStatus ?? "pending",
+        ...(input.exportStatus !== undefined
+          ? { export_status: input.exportStatus }
+          : {}),
       })
       .eq("id", existing.id)
       .select("*")

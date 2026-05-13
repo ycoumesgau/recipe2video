@@ -5,6 +5,8 @@ import path from "node:path";
 
 import type { Sandbox } from "@vercel/sandbox";
 
+import { runDetachedMkdirP } from "./wait-for-detached-sandbox-command";
+
 /**
  * Recursively copies a local directory into the sandbox filesystem via
  * {@link Sandbox.fs} (no Supabase secrets in the VM).
@@ -13,6 +15,7 @@ export async function copyLocalDirToSandbox(
   sandbox: Sandbox,
   localDir: string,
   remoteDir: string,
+  options: { orchestratorDeadlineAt: number },
 ) {
   const entries = await fs.readdir(localDir, { withFileTypes: true });
 
@@ -21,11 +24,13 @@ export async function copyLocalDirToSandbox(
     const remotePath = path.posix.join(remoteDir, entry.name);
 
     if (entry.isDirectory()) {
-      await sandbox.fs.mkdir(remotePath, { recursive: true });
-      await copyLocalDirToSandbox(sandbox, localPath, remotePath);
+      await runDetachedMkdirP(sandbox, remotePath, {
+        deadlineAt: options.orchestratorDeadlineAt,
+      });
+      await copyLocalDirToSandbox(sandbox, localPath, remotePath, options);
     } else {
-      await sandbox.fs.mkdir(path.posix.dirname(remotePath), {
-        recursive: true,
+      await runDetachedMkdirP(sandbox, path.posix.dirname(remotePath), {
+        deadlineAt: options.orchestratorDeadlineAt,
       });
       const buf = await fs.readFile(localPath);
       await sandbox.fs.writeFile(remotePath, buf);
