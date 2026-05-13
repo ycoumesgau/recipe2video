@@ -52,9 +52,9 @@ export function AppShell({
           <div className="flex h-16 items-center gap-3 px-5">
             <Image
               alt="Licorn"
-              className="size-10 shrink-0 object-contain"
+              className="size-10 shrink-0 rounded-full object-contain ring-1 ring-black/8 ring-inset dark:ring-white/18"
               height={40}
-              src="/branding/favicon-licorn.png"
+              src="/branding/licorn-mark.svg"
               width={40}
               unoptimized
               priority
