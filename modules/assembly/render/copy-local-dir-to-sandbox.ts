@@ -41,12 +41,19 @@ export async function copyLocalDirToSandbox(
   sandbox: Sandbox,
   localDir: string,
   remoteDir: string,
+  options: { sandboxId: string },
 ) {
   const batch: { path: string; content: Buffer }[] = [];
   let batchBytes = 0;
+  let uploadBatchCount = 0;
+  let fileCount = 0;
 
   async function flush() {
     if (batch.length === 0) return;
+    uploadBatchCount++;
+    console.log(
+      `[copyLocalDirToSandbox] sandbox=${options.sandboxId} batch=${uploadBatchCount} files=${batch.length} bytes=${batchBytes}`,
+    );
     await sandbox.writeFiles(
       batch.map((f) => ({ path: f.path, content: f.content })),
     );
@@ -58,6 +65,7 @@ export async function copyLocalDirToSandbox(
     localDir,
     remoteDir,
   )) {
+    fileCount++;
     const size = content.byteLength;
 
     if (size > WRITE_FILES_BATCH_MAX_BYTES) {
@@ -79,4 +87,7 @@ export async function copyLocalDirToSandbox(
   }
 
   await flush();
+  console.log(
+    `[copyLocalDirToSandbox] sandbox=${options.sandboxId} done files_total=${fileCount} upload_batches=${uploadBatchCount}`,
+  );
 }

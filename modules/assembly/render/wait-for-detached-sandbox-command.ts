@@ -3,27 +3,36 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Command, Sandbox } from "@vercel/sandbox";
 
 const DEFAULT_POLL_INTERVAL_MS = 8_000;
+const MKDIR_POLL_INTERVAL_MS = 2_000;
 
 /**
- * `mkdir -p` via a **blocking** `runCommand` (not detached). The NDJSON
- * stream closes in milliseconds, so it does not hit the long-idle TLS
- * disconnect issues we avoid for `dnf` / `npm` / Remotion. Prefer this over
- * detached+poll for mkdir, which could leave the orchestrator waiting with no
- * visible sandbox progress.
+ * `mkdir -p` via a **detached** command plus polling (short interval). Avoids
+ * {@link Sandbox.runCommand} in blocking mode for mkdir: that path keeps an
+ * NDJSON stream open and has been observed to hang the orchestrator until the
+ * sandbox lifetime ends, with almost no CPU / ingress on the VM afterward.
  */
-export async function runBlockingMkdirP(
+export async function runDetachedMkdirP(
   sandbox: Sandbox,
   posixPath: string,
-  options?: { label?: string },
+  options: {
+    deadlineAt: number;
+    label?: string;
+  },
 ): Promise<void> {
-  const result = await sandbox.runCommand({
+  const cmd = await sandbox.runCommand({
     cmd: "mkdir",
     args: ["-p", posixPath],
+    detached: true,
   });
-  if (result.exitCode !== 0) {
-    const err = await result.stderr();
+  const { exitCode } = await waitForDetachedSandboxCommandUntil(sandbox, cmd, {
+    label: options.label ?? `Sandbox mkdir -p (${posixPath})`,
+    deadlineAt: options.deadlineAt,
+    pollIntervalMs: MKDIR_POLL_INTERVAL_MS,
+  });
+  if (exitCode !== 0) {
+    const err = await cmd.stderr();
     throw new Error(
-      `${options?.label ?? "Sandbox mkdir -p"} failed (${posixPath}, exit ${result.exitCode}): ${err}`,
+      `Sandbox mkdir -p failed (${posixPath}, exit ${exitCode}): ${err}`,
     );
   }
 }
