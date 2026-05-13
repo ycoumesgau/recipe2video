@@ -5,30 +5,25 @@ import type { Command, Sandbox } from "@vercel/sandbox";
 const DEFAULT_POLL_INTERVAL_MS = 8_000;
 
 /**
- * Creates a directory tree with `mkdir -p` via a **detached** shell command
- * (not `sandbox.fs.mkdir`, which maps to a blocking `runCommand` stream).
+ * `mkdir -p` via a **blocking** `runCommand` (not detached). The NDJSON
+ * stream closes in milliseconds, so it does not hit the long-idle TLS
+ * disconnect issues we avoid for `dnf` / `npm` / Remotion. Prefer this over
+ * detached+poll for mkdir, which could leave the orchestrator waiting with no
+ * visible sandbox progress.
  */
-export async function runDetachedMkdirP(
+export async function runBlockingMkdirP(
   sandbox: Sandbox,
   posixPath: string,
-  options: {
-    deadlineAt: number;
-    label?: string;
-  },
+  options?: { label?: string },
 ): Promise<void> {
-  const cmd = await sandbox.runCommand({
+  const result = await sandbox.runCommand({
     cmd: "mkdir",
     args: ["-p", posixPath],
-    detached: true,
   });
-  const { exitCode } = await waitForDetachedSandboxCommandUntil(sandbox, cmd, {
-    label: options.label ?? `Sandbox mkdir -p (${posixPath})`,
-    deadlineAt: options.deadlineAt,
-  });
-  if (exitCode !== 0) {
-    const err = await cmd.stderr();
+  if (result.exitCode !== 0) {
+    const err = await result.stderr();
     throw new Error(
-      `Sandbox mkdir -p failed (${posixPath}, exit ${exitCode}): ${err}`,
+      `${options?.label ?? "Sandbox mkdir -p"} failed (${posixPath}, exit ${result.exitCode}): ${err}`,
     );
   }
 }

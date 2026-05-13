@@ -11,7 +11,7 @@ import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
 import { copyLocalDirToSandbox } from "./copy-local-dir-to-sandbox";
 import { REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES } from "./remotion-headless-shell-al2023-packages";
 import {
-  runDetachedMkdirP,
+  runBlockingMkdirP,
   waitForDetachedSandboxCommandUntil,
 } from "./wait-for-detached-sandbox-command";
 
@@ -69,14 +69,11 @@ export async function renderAssemblyMp4InSandbox(
   try {
     const orchestratorDeadlineAt = Date.now() + ORCHESTRATOR_DEADLINE_BUFFER_MS;
 
-    await runDetachedMkdirP(sandbox, `${WORK_ROOT}/serve`, {
-      deadlineAt: orchestratorDeadlineAt,
+    await runBlockingMkdirP(sandbox, `${WORK_ROOT}/serve`, {
       label: "Sandbox mkdir export tree",
     });
 
-    await copyLocalDirToSandbox(sandbox, localServe, `${WORK_ROOT}/serve`, {
-      orchestratorDeadlineAt,
-    });
+    await copyLocalDirToSandbox(sandbox, localServe, `${WORK_ROOT}/serve`);
 
     const [pkg, renderScript] = await Promise.all([
       fs.readFile(pkgPath, "utf8"),
