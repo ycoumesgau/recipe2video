@@ -3,10 +3,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { Command, Sandbox } from "@vercel/sandbox";
 
 const DEFAULT_POLL_INTERVAL_MS = 8_000;
+const MKDIR_POLL_INTERVAL_MS = 2_000;
 
 /**
- * Creates a directory tree with `mkdir -p` via a **detached** shell command
- * (not `sandbox.fs.mkdir`, which maps to a blocking `runCommand` stream).
+ * `mkdir -p` via a **detached** command plus polling (short interval). Avoids
+ * {@link Sandbox.runCommand} in blocking mode for mkdir: that path keeps an
+ * NDJSON stream open and has been observed to hang the orchestrator until the
+ * sandbox lifetime ends, with almost no CPU / ingress on the VM afterward.
  */
 export async function runDetachedMkdirP(
   sandbox: Sandbox,
@@ -24,6 +27,7 @@ export async function runDetachedMkdirP(
   const { exitCode } = await waitForDetachedSandboxCommandUntil(sandbox, cmd, {
     label: options.label ?? `Sandbox mkdir -p (${posixPath})`,
     deadlineAt: options.deadlineAt,
+    pollIntervalMs: MKDIR_POLL_INTERVAL_MS,
   });
   if (exitCode !== 0) {
     const err = await cmd.stderr();

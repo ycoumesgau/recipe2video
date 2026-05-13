@@ -68,15 +68,24 @@ export async function renderAssemblyMp4InSandbox(
 
   try {
     const orchestratorDeadlineAt = Date.now() + ORCHESTRATOR_DEADLINE_BUFFER_MS;
+    const log = (step: string, extra?: string) => {
+      const suffix = extra ? ` ${extra}` : "";
+      console.log(
+        `[renderAssemblyMp4InSandbox] sandbox=${sandbox.sandboxId} step=${step}${suffix}`,
+      );
+    };
 
+    log("sandbox_ready");
     await runDetachedMkdirP(sandbox, `${WORK_ROOT}/serve`, {
       deadlineAt: orchestratorDeadlineAt,
       label: "Sandbox mkdir export tree",
     });
+    log("mkdir_serve_done");
 
     await copyLocalDirToSandbox(sandbox, localServe, `${WORK_ROOT}/serve`, {
-      orchestratorDeadlineAt,
+      sandboxId: sandbox.sandboxId,
     });
+    log("copy_bundle_done");
 
     const [pkg, renderScript] = await Promise.all([
       fs.readFile(pkgPath, "utf8"),
@@ -87,6 +96,7 @@ export async function renderAssemblyMp4InSandbox(
       { path: `${WORK_ROOT}/package.json`, content: pkg },
       { path: `${WORK_ROOT}/render.mjs`, content: renderScript },
     ]);
+    log("worker_scripts_written");
 
     const systemDepsCmd = await sandbox.runCommand({
       cmd: "dnf",
@@ -112,6 +122,7 @@ export async function renderAssemblyMp4InSandbox(
         `Sandbox dnf install (Remotion / Chrome libs) failed (exit ${dnfOutcome.exitCode}): ${err}`,
       );
     }
+    log("dnf_done");
 
     const installCmd = await sandbox.runCommand({
       cmd: "npm",
@@ -132,6 +143,7 @@ export async function renderAssemblyMp4InSandbox(
         `Sandbox npm install failed (exit ${npmOutcome.exitCode}): ${err}`,
       );
     }
+    log("npm_install_done");
 
     await sandbox.fs.writeFile(
       `${WORK_ROOT}/props.json`,
@@ -159,11 +171,13 @@ export async function renderAssemblyMp4InSandbox(
         `Sandbox Remotion render failed (exit ${renderOutcome.exitCode}): ${err}`,
       );
     }
+    log("remotion_render_done");
 
     const out = await sandbox.readFileToBuffer({ path: `${WORK_ROOT}/out.mp4` });
     if (!out || out.byteLength === 0) {
       throw new Error("Sandbox Remotion render produced an empty MP4.");
     }
+    log("read_mp4_done", `bytes=${out.byteLength}`);
 
     return out;
   } finally {
