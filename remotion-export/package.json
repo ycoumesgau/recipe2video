@@ -2,10 +2,12 @@
   "name": "recipe2video-remotion-export",
   "private": true,
   "type": "module",
-  "//": "Documents the runtime deps used by render.mjs. The script is executed from the repo root inside Vercel Sandbox (`node remotion-export/render.mjs`) and resolves these from the root node_modules/, so this file is informational only — no separate npm install runs here anymore.",
+  "//": "Standalone worker package: installed by 'npm ci' inside the Vercel Sandbox (cwd=remotion-export). Pinned exact versions so the lockfile is deterministic and the sandbox snapshot we will introduce in PR-B step 2 can be reused safely. React is required at runtime by '@remotion/renderer' (it spins up a JSDOM-less React renderer to walk the composition tree).",
   "dependencies": {
     "@remotion/bundler": "4.0.459",
     "@remotion/renderer": "4.0.459",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
     "remotion": "4.0.459"
   }
 }

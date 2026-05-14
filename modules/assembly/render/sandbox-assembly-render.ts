@@ -18,8 +18,25 @@ import { REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES } from "./remotion-headless
  */
 const DEFAULT_REPO_URL = "https://github.com/ycoumesgau/recipe2video.git";
 
-/** Where {@link Sandbox} clones the source — also the working dir we use. */
-const WORK_ROOT = "/vercel/sandbox";
+/** Where {@link Sandbox} clones the source. */
+const REPO_ROOT = "/vercel/sandbox";
+
+/**
+ * The renderer is a **self-contained sub-package** with a minimal lockfile
+ * (`@remotion/bundler`, `@remotion/renderer`, `remotion`, `react`,
+ * `react-dom`). Every long sandbox command runs with this as `cwd` so:
+ *
+ * - `npm ci` installs ~170 packages (1 lockfile resolved against npm) instead
+ *   of the ~800 of the full app — saves ~60–90 s per cold render.
+ * - `node render.mjs` resolves `@remotion/*` from the sub-package's own
+ *   `node_modules/`.
+ *
+ * The composition entrypoint at `remotion/index.tsx` (parent dir) is read by
+ * the bundler via a relative path — type-only imports from `@/modules/...`
+ * are stripped by esbuild before module resolution, so the bundler never
+ * touches the app code.
+ */
+const WORKER_ROOT = `${REPO_ROOT}/remotion-export`;
 
 const SANDBOX_TIMEOUT_MS = 25 * 60 * 1000;
 
@@ -128,12 +145,16 @@ async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
  *    of stalled / idle sandboxes in local dev and forbade ever running this
  *    on a Vercel function deployment).
  * 2. **`dnf install`** the AL2023 system libs Chrome Headless Shell needs.
- * 3. **`npm ci --omit=dev --ignore-scripts`** in the cloned repo. Skipping
- *    scripts avoids the `sqlite3` postinstall (used by `@cursor/sdk` on the
- *    web side, irrelevant for the renderer).
- * 4. **Write `props.json`** into the sandbox.
- * 5. **`node remotion-export/render.mjs`** — bundles and renders the
- *    composition in a single Node process inside the sandbox.
+ * 3. **`npm ci --ignore-scripts`** inside `remotion-export/`, the slim worker
+ *    sub-package with its own `package-lock.json` (~170 packages vs ~800 of
+ *    the full app). Skipping scripts avoids the `sqlite3` postinstall (used
+ *    by `@cursor/sdk` on the web side, irrelevant for the renderer).
+ * 4. **Write `props.json`** into `remotion-export/`.
+ * 5. **`node render.mjs`** (cwd = `remotion-export/`) — bundles the parent
+ *    `../remotion/index.tsx` entry and renders the composition in a single
+ *    Node process inside the sandbox. Type-only `@/modules/...` imports in
+ *    the composition are stripped by esbuild before module resolution, so
+ *    the bundler never reaches into the rest of the app.
  * 6. **`readFileToBuffer`** the resulting MP4 and return it. The orchestrator
  *    then uploads it to Supabase Storage / Mux — the service-role key never
  *    leaves the orchestrator process.
@@ -205,13 +226,12 @@ export async function renderAssemblyMp4InSandbox(
       cmd: "npm",
       args: [
         "ci",
-        "--omit=dev",
         "--no-audit",
         "--no-fund",
         "--ignore-scripts",
         "--prefer-offline",
       ],
-      cwd: WORK_ROOT,
+      cwd: WORKER_ROOT,
       stdout: createLogWritable(`[sandbox=${sandboxId} npm]`),
       stderr: createLogWritable(`[sandbox=${sandboxId} npm!]`),
     });
@@ -225,7 +245,7 @@ export async function renderAssemblyMp4InSandbox(
 
     await sandbox.writeFiles([
       {
-        path: `${WORK_ROOT}/remotion-export/props.json`,
+        path: `${WORKER_ROOT}/props.json`,
         content: Buffer.from(JSON.stringify(props), "utf8"),
       },
     ]);
@@ -233,8 +253,8 @@ export async function renderAssemblyMp4InSandbox(
 
     const renderResult = await sandbox.runCommand({
       cmd: "node",
-      args: ["remotion-export/render.mjs"],
-      cwd: WORK_ROOT,
+      args: ["render.mjs"],
+      cwd: WORKER_ROOT,
       stdout: createLogWritable(`[sandbox=${sandboxId} render]`),
       stderr: createLogWritable(`[sandbox=${sandboxId} render!]`),
     });
@@ -247,7 +267,7 @@ export async function renderAssemblyMp4InSandbox(
     stepLog("remotion_render_done");
 
     const out = await sandbox.readFileToBuffer({
-      path: `${WORK_ROOT}/remotion-export/out.mp4`,
+      path: `${WORKER_ROOT}/out.mp4`,
     });
     if (!out || out.byteLength === 0) {
       throw new Error("Sandbox Remotion render produced an empty MP4.");
