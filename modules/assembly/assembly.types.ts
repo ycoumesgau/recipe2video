@@ -142,6 +142,13 @@ export interface Composition {
   audioSync?: Json | null;
   remotionProps?: Json | null;
   exportStatus: ExportStatus;
+  /**
+   * Raw `render_progress` JSON column. Parse with `readRenderProgress` from
+   * `@/modules/assembly/render-progress` to get a typed snapshot. Stored as
+   * Json (not the typed shape) so the legacy row reader does not have to know
+   * about every new field we add during the hackathon.
+   */
+  renderProgress?: Json | null;
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;

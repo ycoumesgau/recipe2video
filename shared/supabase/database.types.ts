@@ -577,6 +577,7 @@ export type Database = {
           audio_sync: Json | null;
           remotion_props: Json | null;
           export_status: string;
+          render_progress: Json | null;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -590,6 +591,7 @@ export type Database = {
           audio_sync?: Json | null;
           remotion_props?: Json | null;
           export_status?: string;
+          render_progress?: Json | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -603,6 +605,7 @@ export type Database = {
           audio_sync?: Json | null;
           remotion_props?: Json | null;
           export_status?: string;
+          render_progress?: Json | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;

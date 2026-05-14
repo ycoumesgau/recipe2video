@@ -4,6 +4,7 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronRight,
+  Film,
   PauseCircle,
   PlayCircle,
   RefreshCcw,
@@ -30,6 +31,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import type { Composition } from "@/modules/assembly/assembly.types";
+import {
+  RENDER_PHASE_LABELS,
+  computeRenderProgressDisplay,
+  formatDurationSeconds,
+  readRenderProgress,
+  type RenderProgress,
+} from "@/modules/assembly/render-progress";
+import { listInFlightCompositionRenders } from "@/modules/assembly/repositories/assembly.repository";
 import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import {
   cancelGenerationAction,
@@ -62,8 +72,16 @@ interface ActiveTaskRow {
   runwayProgress: number | null;
 }
 
+interface ActiveCloudRenderRow {
+  compositionId: string;
+  videoId: string;
+  videoTitle: string;
+  progress: RenderProgress | null;
+  updatedAt: string;
+}
+
 export default async function ActiveGenerationsPage() {
-  const { rows, paused, error } = await loadActiveGenerations();
+  const { rows, paused, error, cloudRenders } = await loadActiveGenerations();
 
   return (
     <div className="space-y-6">
@@ -128,7 +146,13 @@ export default async function ActiveGenerationsPage() {
         </Alert>
       ) : null}
 
-      <GenerationRscSync enabled={rows.length > 0} />
+      <GenerationRscSync
+        enabled={rows.length > 0 || cloudRenders.length > 0}
+      />
+
+      {cloudRenders.length > 0 ? (
+        <CloudRendersCard renders={cloudRenders} />
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -268,9 +292,10 @@ export default async function ActiveGenerationsPage() {
 async function loadActiveGenerations() {
   try {
     const supabase = createSupabaseAdminClient();
-    const [generations, paused] = await Promise.all([
+    const [generations, paused, compositions] = await Promise.all([
       listActiveGenerations(supabase, { limit: 50 }),
       getGenerationQueuePaused(supabase),
+      listInFlightCompositionRenders(supabase, { limit: 20 }),
     ]);
 
     const rows = await Promise.all(
@@ -279,7 +304,18 @@ async function loadActiveGenerations() {
       ),
     );
 
-    return { rows: rows.filter((row): row is ActiveTaskRow => Boolean(row)), paused, error: null as string | null };
+    const cloudRenders = await Promise.all(
+      compositions.map(async (composition) =>
+        decorateCloudRender(supabase, composition),
+      ),
+    );
+
+    return {
+      rows: rows.filter((row): row is ActiveTaskRow => Boolean(row)),
+      paused,
+      error: null as string | null,
+      cloudRenders,
+    };
   } catch (error) {
     return {
       rows: [] as ActiveTaskRow[],
@@ -288,8 +324,116 @@ async function loadActiveGenerations() {
         error instanceof Error
           ? error.message
           : "Unable to load active generations.",
+      cloudRenders: [] as ActiveCloudRenderRow[],
     };
   }
+}
+
+async function decorateCloudRender(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  composition: Composition,
+): Promise<ActiveCloudRenderRow> {
+  const video = await getVideoProjectById(supabase, composition.videoId).catch(
+    () => null,
+  );
+  return {
+    compositionId: composition.id,
+    videoId: composition.videoId,
+    videoTitle: video?.title ?? "Untitled project",
+    progress: readRenderProgress(composition.renderProgress ?? null),
+    updatedAt: composition.updatedAt,
+  };
+}
+
+function CloudRendersCard({ renders }: { renders: ActiveCloudRenderRow[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Film className="h-5 w-5" />
+          Cloud renders in progress
+        </CardTitle>
+        <CardDescription>
+          Vercel Sandbox sessions assembling the final MP4 for an
+          `assembly.composition`. Polled every few seconds while at least one
+          composition row is in `rendering`.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Project</TableHead>
+              <TableHead>Phase</TableHead>
+              <TableHead>Progress</TableHead>
+              <TableHead>Frames</TableHead>
+              <TableHead>Speed</TableHead>
+              <TableHead>ETA</TableHead>
+              <TableHead>Elapsed</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {renders.map((render) => (
+              <CloudRenderRow key={render.compositionId} render={render} />
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CloudRenderRow({ render }: { render: ActiveCloudRenderRow }) {
+  const progress = render.progress;
+  const display = progress
+    ? computeRenderProgressDisplay(progress, new Date())
+    : null;
+  const phaseLabel = progress ? RENDER_PHASE_LABELS[progress.phase] : "Queued";
+  const frames =
+    progress?.totalFrames && progress.renderedFrames != null
+      ? `${progress.renderedFrames.toLocaleString("en-US")} / ${progress.totalFrames.toLocaleString("en-US")}`
+      : progress?.totalFrames
+        ? `0 / ${progress.totalFrames.toLocaleString("en-US")}`
+        : "—";
+  return (
+    <TableRow>
+      <TableCell className="font-medium">{render.videoTitle}</TableCell>
+      <TableCell>
+        <Badge variant={display?.isStale ? "destructive" : "outline"}>
+          {phaseLabel}
+        </Badge>
+      </TableCell>
+      <TableCell className="min-w-32">
+        <div className="flex items-center gap-2">
+          <Progress className="w-24" value={display?.percent ?? 0} />
+          <span className="font-mono text-xs">
+            {display ? `${display.percent}%` : "—"}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell className="font-mono text-xs">{frames}</TableCell>
+      <TableCell className="font-mono text-xs">
+        {display?.fps ? `${display.fps.toFixed(1)} fps` : "—"}
+      </TableCell>
+      <TableCell className="font-mono text-xs">
+        {display?.etaSeconds != null
+          ? formatDurationSeconds(display.etaSeconds)
+          : "—"}
+      </TableCell>
+      <TableCell className="font-mono text-xs">
+        {display ? formatDurationSeconds(display.elapsedSeconds) : "—"}
+      </TableCell>
+      <TableCell className="text-right">
+        <Button asChild size="sm" variant="outline">
+          <Link href={`/videos/${render.videoId}/assembly`}>
+            Open assembly
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
 }
 
 async function decorateGeneration(

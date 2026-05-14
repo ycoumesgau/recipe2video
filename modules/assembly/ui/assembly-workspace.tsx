@@ -46,8 +46,10 @@ import {
   type AssemblyActionState,
 } from "@/modules/assembly/actions";
 import type { ExportStatus } from "@/modules/assembly/export-status";
+import type { RenderProgress } from "@/modules/assembly/render-progress";
 import { generatePlacementId } from "@/modules/assembly/timeline-state";
 import { VideoClipMixSection } from "@/modules/assembly/ui/audio-mix-panel";
+import { CloudRenderProgressCard } from "@/modules/assembly/ui/cloud-render-progress-card";
 import { SegmentBin } from "@/modules/assembly/ui/segment-bin";
 import {
   AddAudioClipButton,
@@ -73,6 +75,7 @@ export function AssemblyWorkspace({
   missingAcceptedSegments,
   projectStatus,
   projectTitle,
+  renderProgress = null,
   videoId,
 }: {
   /**
@@ -90,6 +93,12 @@ export function AssemblyWorkspace({
   missingAcceptedSegments: SeedanceSegment[];
   projectStatus: string;
   projectTitle: string;
+  /**
+   * Latest cloud-render progress snapshot from
+   * `compositions.render_progress`. Surfaced from the page loader so we can
+   * show a live progress bar while the Vercel Sandbox is running.
+   */
+  renderProgress?: RenderProgress | null;
   videoId: string;
 }) {
   const [segments, setSegments] = useState<AssemblySegmentClip[]>(
@@ -219,6 +228,10 @@ export function AssemblyWorkspace({
       <ActionNotice state={saveState} title="Assembly settings" />
       <ActionNotice state={exportState} title="Final export" />
       <ActionNotice state={renderState} title="Cloud render" />
+
+      {compositionExportStatus === "rendering" && renderProgress ? (
+        <CloudRenderProgressCard progress={renderProgress} />
+      ) : null}
 
       <GenerationRscSync
         enabled={compositionExportStatus === "rendering"}

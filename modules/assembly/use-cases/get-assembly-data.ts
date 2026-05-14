@@ -23,6 +23,10 @@ import {
   ASSEMBLY_CANVAS_WIDTH,
   ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
 } from "../assembly.constants";
+import {
+  readRenderProgress,
+  type RenderProgress,
+} from "../render-progress";
 import { getLatestCompositionByVideoId } from "../repositories/assembly.repository";
 import {
   buildClipsFromPlacements,
@@ -56,6 +60,8 @@ export interface AssemblyPageData {
   projectTitle: string;
   projectStatus: string;
   composition: Composition | null;
+  /** Latest typed snapshot of the cloud-render progress, when one is running. */
+  renderProgress: RenderProgress | null;
   remotionProps: AssemblyRemotionProps;
   /**
    * Catalogue of every accepted segment with a stored media asset. Drives
@@ -176,6 +182,7 @@ export async function getAssemblyPageData(
     projectTitle: project?.title ?? "Assembly",
     projectStatus: project?.status ?? "assembling",
     composition,
+    renderProgress: readRenderProgress(composition?.renderProgress ?? null),
     remotionProps,
     availableSegments,
     missingAcceptedSegments,
