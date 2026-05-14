@@ -567,6 +567,36 @@ export type Database = {
         };
         Relationships: [];
       };
+      sandbox_snapshots: {
+        Row: {
+          id: string;
+          scope: string;
+          cache_key: string;
+          snapshot_id: string;
+          created_at: string;
+          expires_at: string | null;
+          last_used_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          scope: string;
+          cache_key: string;
+          snapshot_id: string;
+          created_at?: string;
+          expires_at?: string | null;
+          last_used_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          scope?: string;
+          cache_key?: string;
+          snapshot_id?: string;
+          created_at?: string;
+          expires_at?: string | null;
+          last_used_at?: string | null;
+        };
+        Relationships: [];
+      };
       compositions: {
         Row: {
           id: string;

@@ -11,6 +11,7 @@ import type {
 } from "@/modules/assembly/render-progress";
 
 import { REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES } from "./remotion-headless-shell-al2023-packages";
+import { defaultSnapshotExpirationMs } from "./sandbox-snapshot-cache";
 
 /**
  * Repo cloned by the sandbox to render the Remotion composition. When the
@@ -269,6 +270,29 @@ function createProgressTracker(options: {
   };
 }
 
+export interface SandboxSnapshotHooks {
+  /**
+   * Stable cache key for the current cold-install state (lockfile +
+   * composition + dnf + runtime hash). When `null`, the snapshot warm-start
+   * path is fully disabled — the orchestrator always cold-installs and never
+   * persists a snapshot. Pre-computed on the orchestrator side because the
+   * sandbox itself has no view of the orchestrator's filesystem.
+   */
+  cacheKey: string | null;
+  /** Return a cached snapshot id for `cacheKey`, or `null` to skip. */
+  findSnapshotId(cacheKey: string): Promise<string | null>;
+  /** Save `snapshotId` against `cacheKey` after a successful cold render. */
+  persistSnapshotId(cacheKey: string, snapshotId: string): Promise<void>;
+  /**
+   * Called when restoring from a cached snapshot fails (e.g. snapshot
+   * deleted upstream) so the orchestrator can drop the stale row and
+   * fall back to a cold render.
+   */
+  invalidateSnapshot(cacheKey: string): Promise<void>;
+  /** Optional best-effort hook to bump `last_used_at` on a cache hit. */
+  touchSnapshot?(cacheKey: string): Promise<void>;
+}
+
 export interface RenderAssemblyMp4Options {
   /**
    * Called by the orchestrator on phase changes and ~every 1.5 s during the
@@ -276,33 +300,45 @@ export interface RenderAssemblyMp4Options {
    * sequentially so progress writes never reorder.
    */
   onProgress?: (progress: RenderProgress) => Promise<void> | void;
+  /**
+   * Plugs in the Vercel Sandbox snapshot warm-start cache. When omitted the
+   * orchestrator always cold-installs (clone → dnf → npm ci) on every render.
+   */
+  snapshotHooks?: SandboxSnapshotHooks;
 }
 
 /**
- * Renders the Remotion composition for a recipe assembly inside a fresh
- * Vercel Sandbox MicroVM and returns the resulting MP4 as a Buffer.
+ * Renders the Remotion composition for a recipe assembly inside a Vercel
+ * Sandbox MicroVM and returns the resulting MP4 as a Buffer.
  *
- * ## Strategy
+ * ## Two paths into the sandbox
  *
- * 1. **Clone the repo via `source: { type: "git" }`** so the sandbox starts
- *    pre-populated with the full source — no local-to-sandbox file upload
- *    bottleneck.
- * 2. **`dnf install`** the AL2023 system libs Chrome Headless Shell needs.
- * 3. **`npm ci --ignore-scripts`** inside `remotion-export/`, the slim worker
- *    sub-package with its own `package-lock.json` (~170 packages vs ~800 of
- *    the full app). Skipping scripts avoids the `sqlite3` postinstall (used
- *    by `@cursor/sdk` on the web side, irrelevant for the renderer).
- * 4. **Write `props.json`** into `remotion-export/`.
- * 5. **`node render.mjs`** (cwd = `remotion-export/`) — bundles the parent
- *    `../remotion/index.tsx` entry and renders the composition in a single
- *    Node process inside the sandbox. Type-only `@/modules/...` imports in
- *    the composition are stripped by esbuild before module resolution, so
- *    the bundler never reaches into the rest of the app. The orchestrator
- *    scrapes its stdout to surface live frame-level progress via
- *    `options.onProgress`.
- * 6. **`readFileToBuffer`** the resulting MP4 and return it. The orchestrator
- *    then uploads it to Supabase Storage / Mux — the service-role key never
- *    leaves the orchestrator process.
+ * **Warm-start (cache hit)** — when `snapshotHooks.findSnapshotId` returns a
+ * snapshot id for the current cache key, we create the sandbox from that
+ * snapshot. Everything we cold-install (cloned repo + dnf libs + npm ci of
+ * the slim `remotion-export/` worker) is already present, so we jump
+ * straight to writing `props.json` and running the render. Typical warm
+ * start time: a few seconds before the render itself.
+ *
+ * **Cold-start (cache miss / first run / snapshot expired)** — we fall back
+ * to:
+ *   1. **Clone the repo via `source: { type: "git" }`** so the sandbox
+ *      starts pre-populated with the full source.
+ *   2. **`dnf install`** the AL2023 system libs Chrome Headless Shell needs.
+ *   3. **`npm ci --ignore-scripts`** inside `remotion-export/` (~170
+ *      packages vs ~800 of the full app).
+ *
+ * Then both paths converge on:
+ *   4. **Write `props.json`** into `remotion-export/`.
+ *   5. **`node render.mjs`** (cwd = `remotion-export/`) — bundles the parent
+ *      `../remotion/index.tsx` entry and renders the composition in a single
+ *      Node process. The orchestrator scrapes its stdout to surface
+ *      live frame-level progress via `options.onProgress`.
+ *   6. **`readFileToBuffer`** the resulting MP4 and return it.
+ *
+ * After a successful **cold render**, the orchestrator cleans up the
+ * render-specific files and calls `sandbox.snapshot()`, then persists the
+ * resulting snapshot id against the cache key for future runs.
  *
  * Every long command pipes its stdout/stderr to `console.log`. This keeps the
  * sandbox API stream "busy" (avoiding the idle TLS disconnects we saw with the
@@ -313,29 +349,79 @@ export async function renderAssemblyMp4InSandbox(
   props: AssemblyRemotionProps,
   options: RenderAssemblyMp4Options = {},
 ): Promise<Buffer> {
-  const repoUrl = resolveRepoUrl();
-  const revision = resolveSandboxGitRevision();
-  const auth = resolveSandboxGitAuth();
-  console.log(
-    `[renderAssemblyMp4InSandbox] creating sandbox source=${repoUrl} revision=${revision} auth=${auth ? "pat" : "public"}`,
-  );
+  const hooks = options.snapshotHooks;
+  const cacheKey = hooks?.cacheKey ?? null;
 
-  const baseSource = {
-    type: "git" as const,
-    url: repoUrl,
-    revision,
-    depth: 1,
-  };
-  const gitSource = auth
-    ? { ...baseSource, username: auth.username, password: auth.password }
-    : baseSource;
+  let sandbox: Sandbox | null = null;
+  let usedSnapshot = false;
+  let cachedSnapshotId: string | null = null;
 
-  const sandbox = await Sandbox.create({
-    source: gitSource,
-    runtime: "node24",
-    resources: { vcpus: 4 },
-    timeout: SANDBOX_TIMEOUT_MS,
-  });
+  // ---- 1. Try warm-start from snapshot ----------------------------------
+  if (hooks && cacheKey) {
+    try {
+      cachedSnapshotId = await hooks.findSnapshotId(cacheKey);
+    } catch (error) {
+      console.warn(
+        "[renderAssemblyMp4InSandbox] findSnapshotId failed (falling back to cold):",
+        error instanceof Error ? error.message : error,
+      );
+    }
+    if (cachedSnapshotId) {
+      try {
+        console.log(
+          `[renderAssemblyMp4InSandbox] creating sandbox source=snapshot snapshotId=${cachedSnapshotId} cacheKey=${cacheKey.slice(0, 12)}…`,
+        );
+        sandbox = await Sandbox.create({
+          source: { type: "snapshot", snapshotId: cachedSnapshotId },
+          resources: { vcpus: 4 },
+          timeout: SANDBOX_TIMEOUT_MS,
+        });
+        usedSnapshot = true;
+      } catch (error) {
+        console.warn(
+          `[renderAssemblyMp4InSandbox] snapshot ${cachedSnapshotId} unusable, invalidating and falling back to cold:`,
+          error instanceof Error ? error.message : error,
+        );
+        await hooks
+          .invalidateSnapshot(cacheKey)
+          .catch((invalidateError) =>
+            console.warn(
+              "[renderAssemblyMp4InSandbox] invalidateSnapshot failed (ignored):",
+              invalidateError instanceof Error
+                ? invalidateError.message
+                : invalidateError,
+            ),
+          );
+      }
+    }
+  }
+
+  // ---- 2. Cold-start from git source if the warm path did not give us a VM
+  if (!sandbox) {
+    const repoUrl = resolveRepoUrl();
+    const revision = resolveSandboxGitRevision();
+    const auth = resolveSandboxGitAuth();
+    console.log(
+      `[renderAssemblyMp4InSandbox] creating sandbox source=${repoUrl} revision=${revision} auth=${auth ? "pat" : "public"} cacheKey=${cacheKey ? cacheKey.slice(0, 12) + "…" : "none"}`,
+    );
+
+    const baseSource = {
+      type: "git" as const,
+      url: repoUrl,
+      revision,
+      depth: 1,
+    };
+    const gitSource = auth
+      ? { ...baseSource, username: auth.username, password: auth.password }
+      : baseSource;
+
+    sandbox = await Sandbox.create({
+      source: gitSource,
+      runtime: "node24",
+      resources: { vcpus: 4 },
+      timeout: SANDBOX_TIMEOUT_MS,
+    });
+  }
 
   const sandboxId = sandbox.sandboxId;
   const sandboxStartedAt = new Date().toISOString();
@@ -352,52 +438,72 @@ export async function renderAssemblyMp4InSandbox(
     );
   };
 
+  // When we snapshot the sandbox to persist the warm-start state, `snapshot()`
+  // stops the VM as part of its lifecycle, so we must NOT call our own
+  // `stopSandboxBestEffort` in the finally block. This flag tracks whether
+  // snapshot() has already taken responsibility for stopping the sandbox.
+  let stoppedBySnapshot = false;
+
   try {
-    stepLog("sandbox_ready", `revision=${revision}`);
+    stepLog(
+      "sandbox_ready",
+      usedSnapshot
+        ? `path=warm snapshotId=${cachedSnapshotId}`
+        : "path=cold",
+    );
     tracker.setPhase("starting");
 
-    tracker.setPhase("dnf_install");
-    const dnfResult = await sandbox.runCommand({
-      cmd: "dnf",
-      args: [
-        "install",
-        "-y",
-        "--setopt=install_weak_deps=False",
-        ...REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES,
-      ],
-      sudo: true,
-      stdout: createLogWritable(`[sandbox=${sandboxId} dnf]`),
-      stderr: createLogWritable(`[sandbox=${sandboxId} dnf!]`),
-    });
-    if (dnfResult.exitCode !== 0) {
-      const err = await dnfResult.stderr();
-      throw new Error(
-        `Sandbox dnf install (Remotion / Chrome libs) failed (exit ${dnfResult.exitCode}): ${err}`,
-      );
-    }
-    stepLog("dnf_done");
+    if (!usedSnapshot) {
+      tracker.setPhase("dnf_install");
+      const dnfResult = await sandbox.runCommand({
+        cmd: "dnf",
+        args: [
+          "install",
+          "-y",
+          "--setopt=install_weak_deps=False",
+          ...REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES,
+        ],
+        sudo: true,
+        stdout: createLogWritable(`[sandbox=${sandboxId} dnf]`),
+        stderr: createLogWritable(`[sandbox=${sandboxId} dnf!]`),
+      });
+      if (dnfResult.exitCode !== 0) {
+        const err = await dnfResult.stderr();
+        throw new Error(
+          `Sandbox dnf install (Remotion / Chrome libs) failed (exit ${dnfResult.exitCode}): ${err}`,
+        );
+      }
+      stepLog("dnf_done");
 
-    tracker.setPhase("npm_install");
-    const npmResult = await sandbox.runCommand({
-      cmd: "npm",
-      args: [
-        "ci",
-        "--no-audit",
-        "--no-fund",
-        "--ignore-scripts",
-        "--prefer-offline",
-      ],
-      cwd: WORKER_ROOT,
-      stdout: createLogWritable(`[sandbox=${sandboxId} npm]`),
-      stderr: createLogWritable(`[sandbox=${sandboxId} npm!]`),
-    });
-    if (npmResult.exitCode !== 0) {
-      const err = await npmResult.stderr();
-      throw new Error(
-        `Sandbox npm ci failed (exit ${npmResult.exitCode}): ${err}`,
-      );
+      tracker.setPhase("npm_install");
+      const npmResult = await sandbox.runCommand({
+        cmd: "npm",
+        args: [
+          "ci",
+          "--no-audit",
+          "--no-fund",
+          "--ignore-scripts",
+          "--prefer-offline",
+        ],
+        cwd: WORKER_ROOT,
+        stdout: createLogWritable(`[sandbox=${sandboxId} npm]`),
+        stderr: createLogWritable(`[sandbox=${sandboxId} npm!]`),
+      });
+      if (npmResult.exitCode !== 0) {
+        const err = await npmResult.stderr();
+        throw new Error(
+          `Sandbox npm ci failed (exit ${npmResult.exitCode}): ${err}`,
+        );
+      }
+      stepLog("npm_install_done");
+    } else {
+      stepLog("warm_start_skip_install");
+      // Best-effort: bump last_used_at so we can later age out snapshots
+      // that have not been touched in a long time.
+      if (hooks && cacheKey && hooks.touchSnapshot) {
+        await hooks.touchSnapshot(cacheKey).catch(() => undefined);
+      }
     }
-    stepLog("npm_install_done");
 
     await sandbox.writeFiles([
       {
@@ -464,9 +570,50 @@ export async function renderAssemblyMp4InSandbox(
 
     await tracker.drain();
 
+    // ---- 3. Persist warm-start snapshot after a successful cold render ----
+    // We only snapshot on the cold path: warm renders started from a snapshot
+    // already point at the same cache key, so re-snapshotting them would
+    // double-charge sandbox compute without adding value.
+    if (
+      !usedSnapshot &&
+      hooks &&
+      cacheKey &&
+      process.env.COMPOSITION_RENDER_DISABLE_SNAPSHOT_CACHE !== "1"
+    ) {
+      try {
+        // Strip render-specific artefacts so the snapshot only contains the
+        // cold-install filesystem. `--force` so a missing file does not
+        // abort the cleanup (defensive — these were just written above).
+        await sandbox.runCommand({
+          cmd: "rm",
+          args: ["-f", `${WORKER_ROOT}/props.json`, `${WORKER_ROOT}/out.mp4`],
+        });
+        stepLog("snapshot_pre_cleanup_done");
+
+        const snapshot = await sandbox.snapshot({
+          expiration: defaultSnapshotExpirationMs(),
+        });
+        stoppedBySnapshot = true;
+        stepLog("snapshot_taken", `snapshotId=${snapshot.snapshotId}`);
+
+        await hooks.persistSnapshotId(cacheKey, snapshot.snapshotId);
+        stepLog("snapshot_persisted");
+      } catch (error) {
+        // Never fail a successful render because the snapshot side
+        // misbehaved — the user already has their MP4 and warm-start is just
+        // an optimisation.
+        console.error(
+          "[renderAssemblyMp4InSandbox] snapshot persistence failed (ignored):",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
     return Buffer.from(out);
   } finally {
     await tracker.drain().catch(() => undefined);
-    await stopSandboxBestEffort(sandbox);
+    if (sandbox && !stoppedBySnapshot) {
+      await stopSandboxBestEffort(sandbox);
+    }
   }
 }
