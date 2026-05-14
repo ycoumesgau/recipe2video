@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" aria-hidden="true">
+  <defs>
+    <mask id="licorn-mark-cut" maskUnits="userSpaceOnUse">
+      <rect width="512" height="512" fill="#fff" />
+      <!-- Découpe en coin : large en bas-gauche, pointe vers le haut-droite -->
+      <path
+        fill="#000"
+        d="M -24 536 L 108 352 L 398 78 L 438 128 L 188 382 L 16 544 Z"
+      />
+    </mask>
+  </defs>
+  <circle cx="256" cy="256" r="214" fill="#3C3C34" mask="url(#licorn-mark-cut)" />
+</svg>

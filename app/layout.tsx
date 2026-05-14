@@ -20,7 +20,8 @@ export const metadata: Metadata = {
   description:
     "Cockpit de production interne Licorn pour les vidéos de recettes (Runway, Mux…).",
   icons: {
-    icon: [{ url: "/branding/favicon-licorn.png", type: "image/png" }],
+    icon: [{ url: "/branding/licorn-mark.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/branding/licorn-mark.svg", type: "image/svg+xml" }],
   },
 };
 
