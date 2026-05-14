@@ -11,11 +11,6 @@ import {
   isAuthAccessError,
 } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
-import { MEDIA_STORAGE_BUCKETS } from "@/modules/media-assets/media-asset.constants";
-import { insertStoredMediaAsset } from "@/modules/media-assets/repositories/media-asset.repository";
-import { uploadStorageObject } from "@/modules/media-assets/services/storage.service";
-import { buildMediaStoragePath } from "@/modules/media-assets/storage-paths";
-import { uploadMediaAssetToMux } from "@/modules/media-assets/use-cases/upload-media-asset-to-mux";
 import { updateVideoProjectStatus } from "@/modules/videos/repositories/video.repository";
 
 import type {
@@ -30,9 +25,7 @@ import {
   readTimelineState,
 } from "./timeline-state";
 import {
-  createComposition,
   tryClaimCompositionCloudRender,
-  updateCompositionExport,
   upsertDraftComposition,
 } from "./repositories/assembly.repository";
 import { uploadSunoAudio } from "./use-cases/upload-suno-audio";
@@ -45,8 +38,6 @@ export interface AssemblyActionState {
   status?: "success" | "error";
   message?: string;
   compositionId?: string;
-  mediaAssetId?: string;
-  muxPlaybackId?: string;
 }
 
 export async function uploadSunoAudioAction(formData: FormData) {
@@ -252,155 +243,6 @@ export async function requestAssemblyRenderAction(
       error,
       "Unable to queue assembly render.",
     );
-  }
-}
-
-export async function uploadFinalExportAction(
-  _previousState: AssemblyActionState,
-  formData: FormData,
-): Promise<AssemblyActionState> {
-  const videoId = optionalString(formData, "videoId");
-  const compositionId = crypto.randomUUID();
-
-  try {
-    const { profile } = await assertCostlyActionAllowed();
-    const finalExport = formData.get("finalExport");
-
-    if (!videoId) {
-      return { status: "error", message: "Missing video project ID." };
-    }
-
-    if (!(finalExport instanceof File) || finalExport.size === 0) {
-      return {
-        status: "error",
-        message: "Select a final MP4 export before uploading.",
-      };
-    }
-
-    if (
-      finalExport.type &&
-      finalExport.type !== "video/mp4" &&
-      !finalExport.name.toLowerCase().endsWith(".mp4")
-    ) {
-      return {
-        status: "error",
-        message: "Final export must be an MP4 file.",
-      };
-    }
-
-    const assemblyData = await getAssemblyPageData(videoId);
-    const placements = parsePlacementsPayload(
-      formData.get("placements"),
-      assemblyData.availableSegments,
-    );
-    const timelineState = parseTimelineState(formData.get("timelineState"));
-    const audioMediaAssetId = optionalString(formData, "audioMediaAssetId");
-    const orderedClips = buildClipsFromPlacements(
-      placements,
-      new Map(
-        assemblyData.availableSegments.map((segment) => [
-          segment.segmentId,
-          {
-            segmentId: segment.segmentId,
-            mediaAssetId: segment.mediaAssetId,
-            generationId: segment.generationId,
-            title: segment.title,
-            durationSeconds: segment.durationSeconds,
-            sourceUrl: segment.sourceUrl,
-            storageBucket: segment.storageBucket,
-            storagePath: segment.storagePath,
-          },
-        ]),
-      ),
-    );
-    const remotionProps = buildRemotionProps({
-      segments: orderedClips,
-      audioTrack: assemblyData.audioTrack,
-      audioClips: timelineState.audioClips,
-    });
-
-    if (orderedClips.length === 0) {
-      return {
-        status: "error",
-        message: "No accepted Supabase-stored segment clips are available yet.",
-      };
-    }
-
-    const supabase = createSupabaseAdminClient();
-    const composition = await createComposition(supabase, {
-      id: compositionId,
-      videoId,
-      placements,
-      audioMediaAssetId,
-      audioSync: projectLegacyAudioSync(timelineState.audioClips),
-      timelineState,
-      remotionProps,
-      exportStatus: "rendering",
-      createdBy: profile.id,
-    });
-    const storagePath = buildMediaStoragePath({
-      type: "final_export",
-      videoId,
-      compositionId: composition.id,
-      filename: finalExport.name,
-      mimeType: finalExport.type || "video/mp4",
-    });
-
-    await uploadStorageObject(supabase, {
-      bucket: MEDIA_STORAGE_BUCKETS.finalExports,
-      path: storagePath,
-      body: finalExport,
-      contentType: finalExport.type || "video/mp4",
-    });
-
-    const mediaAsset = await insertStoredMediaAsset(supabase, {
-      videoId,
-      type: "final_export",
-      provider: "supabase",
-      storageBucket: MEDIA_STORAGE_BUCKETS.finalExports,
-      storagePath,
-      originalFilename: finalExport.name,
-      mimeType: finalExport.type || "video/mp4",
-      fileSizeBytes: finalExport.size,
-      status: "stored",
-      metadata: {
-        compositionId: composition.id,
-        placements,
-        timelineState,
-        source: "assembly_final_export_upload",
-      },
-      createdBy: profile.id,
-    });
-
-    const muxResult = await uploadMediaAssetToMux(mediaAsset.id);
-
-    await updateCompositionExport(supabase, {
-      compositionId: composition.id,
-      exportMediaAssetId: mediaAsset.id,
-      exportStatus: "completed",
-      remotionProps,
-    });
-    await updateVideoProjectStatus(supabase, videoId, "exported");
-
-    revalidateAssemblyPaths(videoId);
-
-    return {
-      status: "success",
-      message: "Final MP4 stored in Supabase Storage and uploaded to Mux.",
-      compositionId: composition.id,
-      mediaAssetId: mediaAsset.id,
-      muxPlaybackId: muxResult.muxPlaybackId,
-    };
-  } catch (error) {
-    if (videoId) {
-      await updateCompositionExport(createSupabaseAdminClient(), {
-        compositionId,
-        exportStatus: "failed",
-      }).catch(() => undefined);
-      revalidateAssemblyPaths(videoId);
-    }
-
-    return formatAssemblyActionError(error, "Unable to store final export.");
   }
 }
 
