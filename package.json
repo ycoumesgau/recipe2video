@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "test": "tsx --test \"modules/**/*.test.ts\"",
     "seed:asset-library": "tsx --env-file=.env.local scripts/seed-asset-library.ts",
     "normalize:asset-library": "tsx --env-file=.env.local scripts/normalize-asset-library-images.ts",
