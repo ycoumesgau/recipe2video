@@ -33,7 +33,14 @@ Use whenever a scene, segment, or reference plan mentions kitchen, character, po
 - Do not re-describe the Licorn character from scratch. Refer to character references and specify only pose, expression, action, and visible hands.
 - For every reference in a Seedance prompt, state exactly what role it plays.
 - A reference appears AT MOST once in \`reference-plan.json\`. If multiple segments reuse it, list them all in \`usedInSegmentIds\`.
-- Prefer a canonical library asset over generating a recipe-specific one. Only declare a recipe-specific reference when nothing in this list fits.`;
+- Prefer a canonical library asset over generating a recipe-specific one. Only declare a recipe-specific reference when nothing in this list fits.
+- Every Seedance segment should include the kitchen continuity pair: \`@KitchenLayoutContextWide\` (structural context) plus one shot-specific kitchen view (\`@KitchenIslandDefault\` OR overhead/induction/oven variants).
+- \`@KitchenLayoutContextWide\` is a context lock, not a camera framing requirement.
+- Do not force \`@KitchenIslandDefault\` when another kitchen angle is the active shot view; use it when needed for the actual shot or explicit terrazzo lock.
+- Keep kitchen invariants stable across segments: same light terrazzo countertop, same induction geometry, same cabinet layout.
+- Match utensil choice to action physics (for deep-fry retrieval, prefer \`@SpiderSkimmer\`; avoid near-miss substitutions like \`@Spatula\`).
+- Avoid cloth-in-hand hot transfer prompts due hand/cloth fusion risk.
+- Quantify side/garnish amounts in prompts and keep prop continuity when relevant.`;
 
 const SKILL_FOOTER = `If an object does not exist as an asset, describe it in the prompt but do not list it as a reference.`;
 

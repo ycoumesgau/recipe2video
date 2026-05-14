@@ -60,6 +60,24 @@ interface SeedSummary {
   failures: { canonicalName: string; error: string }[];
 }
 
+/**
+ * Friendly @handles exposed to the agent in the generated SKILL.md.
+ * Keep this map minimal and intentional: only entries that need stable,
+ * human-readable aliases beyond their snake_case canonical filename.
+ */
+const DEFAULT_LIBRARY_ALIASES: Record<string, string[]> = {
+  island_default: ["KitchenIslandDefault"],
+  island_overhead: ["KitchenIslandOverhead"],
+  island_overview_wide: ["KitchenIslandWide"],
+  kitchen_wide: ["KitchenLayoutContextWide"],
+  induction_left_closeup: ["InductionCloseup"],
+  induction_wide: ["InductionWide"],
+  oven_opened_wide: ["OvenWide"],
+  oven_opened_closeup: ["OvenCloseup"],
+  spider_skimmer: ["SpiderSkimmer"],
+  tongs: ["Tongs"],
+};
+
 function getSupabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
@@ -109,6 +127,9 @@ function buildDescription(category: AssetCategory, canonicalName: string): strin
     case "character_pose":
       return `Character pose reference (${canonicalName}). Use as a pose hint; do not invent unlisted poses.`;
     case "kitchen":
+      if (canonicalName === "kitchen_wide") {
+        return "Wide structural kitchen context. Use in every segment to lock layout/material continuity; do not force wide framing.";
+      }
       return `Canonical kitchen background (${canonicalName}). Choose by what the image actually frames, not by historical aliases.`;
     case "utensil":
       return `Canonical utensil (${canonicalName}). Attach only the exact variant identifier; never use generic family names.`;
@@ -239,6 +260,7 @@ async function upsertAssetLibraryRow(
   item: SeedItem,
   mediaAssetId: string,
 ) {
+  const aliases = DEFAULT_LIBRARY_ALIASES[item.canonicalName];
   const { error } = await supabase
     .from("asset_library")
     .upsert(
@@ -247,6 +269,7 @@ async function upsertAssetLibraryRow(
         category: item.category,
         media_asset_id: mediaAssetId,
         description: item.description,
+        ...(aliases ? { aliases } : {}),
         status: "active",
       },
       { onConflict: "canonical_name" },

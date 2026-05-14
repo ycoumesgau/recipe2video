@@ -504,7 +504,7 @@ function buildSeedancePrompt(input: {
     input.references
       .map((reference) => `Use @${reference.label} only as ${reference.role}.`)
       .join(" "),
-    "Use @KitchenIslandDefault to preserve the same kitchen identity, surfaces, materials and lighting whenever the shot becomes frontal, three-quarter, or wider than expected. Do not copy the exact original photo framing; choose macro or close-up zooms that fit the food action.",
+    "Use @KitchenLayoutContextWide as structural kitchen context in every segment. Add one shot-specific kitchen view (@KitchenIslandDefault, @KitchenIslandOverhead, @InductionWide, etc.) to preserve materials and layout continuity without forcing a wide framing.",
     "Use character references to preserve identity and hands. The character's face may stay out of frame in macro shots, but hands must be visible on every human action.",
     `Generate exactly ${input.timing.length} short shots with hard cuts, total duration ${input.durationTarget} seconds, no slow motion, no soft transitions, no extra shots. TikTok/Reels food ASMR style, no text on screen.`,
     "Integrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with the cuts and food actions.",
@@ -521,8 +521,16 @@ function buildSeedancePrompt(input: {
 function buildSegmentReferences(position: number): SegmentReference[] {
   return [
     {
+      id: `reference-kitchen-context-${position}`,
+      role: "structural kitchen context and layout anchor",
+      name: "KitchenLayoutContextWide",
+      label: "KitchenLayoutContextWide",
+      runwayUri: null,
+      required: true,
+    },
+    {
       id: `reference-kitchen-${position}`,
-      role: "global Licorn kitchen environment",
+      role: "shot-specific kitchen view for active framing and material continuity",
       name: "KitchenIslandDefault",
       label: "KitchenIslandDefault",
       runwayUri: null,
@@ -641,9 +649,26 @@ function buildSeedancePromptQa(input: {
   references: SegmentReference[];
   risk: string;
 }): SeedancePromptQa {
+  const hasKitchenLayoutContext = input.references.some(
+    (reference) => reference.label === "KitchenLayoutContextWide",
+  );
+  const hasShotSpecificKitchenView = input.references.some((reference) => {
+    if (reference.label === "KitchenLayoutContextWide") {
+      return false;
+    }
+    const name = `${reference.label} ${reference.name}`.toLowerCase();
+    return (
+      name.includes("kitchen") ||
+      name.includes("island") ||
+      name.includes("induction") ||
+      name.includes("oven")
+    );
+  });
+
   return {
     referencesWithinLimit: input.references.length <= MAX_SEEDANCE_REFERENCES,
-    globalKitchenReferencePresent: input.references.some((reference) => reference.label === "KitchenIslandDefault"),
+    globalKitchenReferencePresent:
+      hasKitchenLayoutContext && hasShotSpecificKitchenView,
     referenceRolesExplicit: input.references.every((reference) => reference.role.length > 0),
     promptWithinPracticalLimit: input.prompt.length <= MAX_SEEDANCE_PROMPT_CHARACTERS,
     hardCutsSpecified: input.prompt.includes("hard cuts"),

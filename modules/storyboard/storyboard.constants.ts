@@ -43,7 +43,7 @@ export const FOOD_VIDEO_PROMPT_RULES = [
   "Specify hard cuts, mandatory timing, total duration, and kitchen ASMR only.",
   "Do not request speech, voiceover, or music in video generation prompts.",
   "Keep no more than 9 references per Seedance segment.",
-  "Include a global Licorn kitchen reference when generation references exist.",
+  "Include `KitchenLayoutContextWide` plus one shot-specific kitchen view when generation references exist.",
   "Describe fragile food physics and non-standard geometry explicitly.",
   "For non-standard shapes, describe what the dish is and what it is not.",
   "For repetitive structures, lock visible count/topology or require target state frames.",
@@ -53,7 +53,7 @@ export const FOOD_VIDEO_PROMPT_RULES = [
 
 export const SEEDANCE_PROMPT_SKELETON = [
   "Use @... for [role]. Use @... only as [role].",
-  "Use @KitchenIslandDefault to preserve kitchen identity, materials and lighting without copying exact framing.",
+  "Use @KitchenLayoutContextWide as structural context and one shot-specific kitchen view (e.g. @KitchenIslandDefault or @KitchenIslandOverhead) to preserve identity without forcing framing.",
   "Generate exactly N short shots with hard cuts, total duration X seconds, no slow motion, no soft transitions, no extra shots.",
   "TikTok/Reels food ASMR style, no text on screen.",
   "Integrated audio: no speech, no voiceover, no music. Only close-up kitchen ASMR sounds synchronized with cuts and food actions.",
