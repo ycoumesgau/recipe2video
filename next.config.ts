@@ -26,7 +26,7 @@ function supabaseImageRemotePatterns(): NonNullable<
 }
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@cursor/sdk", "@vercel/sandbox"],
+  serverExternalPackages: ["@cursor/sdk"],
   images: {
     remotePatterns: supabaseImageRemotePatterns(),
   },
