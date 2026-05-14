@@ -73,7 +73,6 @@ export default async function AssemblyPage({
         compositionExportStatus={
           data.assemblyData.composition?.exportStatus ?? "pending"
         }
-        compositionId={data.assemblyData.composition?.id}
         finalExports={data.assemblyData.finalExports}
         initialRemotionProps={data.assemblyData.remotionProps}
         initialTimelineState={data.assemblyData.timelineState}

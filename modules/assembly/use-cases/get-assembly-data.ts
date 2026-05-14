@@ -56,6 +56,12 @@ type SegmentCatalogueEntry = Omit<
   "placementId" | "position" | "inSeconds" | "outSeconds" | "volume"
 >;
 
+export interface AssemblyFinalExport {
+  asset: MediaAsset;
+  /** Freshly signed Supabase URL that triggers a browser download. */
+  downloadUrl: string;
+}
+
 export interface AssemblyPageData {
   projectTitle: string;
   projectStatus: string;
@@ -71,7 +77,12 @@ export interface AssemblyPageData {
   availableSegments: AssemblySegmentClip[];
   missingAcceptedSegments: SeedanceSegment[];
   audioTrack: AssemblyAudioTrack | null;
-  finalExports: MediaAsset[];
+  /**
+   * Past Supabase-stored MP4 exports for this video, newest first. Each entry
+   * carries a freshly signed download URL so the UI can render an `<a>`
+   * tag without round-tripping through a server action.
+   */
+  finalExports: AssemblyFinalExport[];
   timelineState: AssemblyTimelineState;
   placements: SegmentPlacement[];
 }
@@ -178,6 +189,12 @@ export async function getAssemblyPageData(
     audioClips: timelineState.audioClips,
   });
 
+  const finalExports = await buildFinalExports(
+    supabase,
+    mediaAssets,
+    SIGNED_URL_TTL_SECONDS,
+  );
+
   return {
     projectTitle: project?.title ?? "Assembly",
     projectStatus: project?.status ?? "assembling",
@@ -187,10 +204,51 @@ export async function getAssemblyPageData(
     availableSegments,
     missingAcceptedSegments,
     audioTrack,
-    finalExports: mediaAssets.filter((asset) => asset.type === "final_export"),
+    finalExports,
     timelineState,
     placements,
   };
+}
+
+/**
+ * Build the list of `final_export` media assets with a freshly signed
+ * Supabase download URL each, sorted newest first.
+ *
+ * Failure to sign any single URL drops that export from the list rather than
+ * crashing the whole page (e.g. if Storage briefly hiccups on a stale path).
+ */
+async function buildFinalExports(
+  supabase: SupabaseDataClient,
+  mediaAssets: MediaAsset[],
+  signedUrlTtlSeconds: number,
+) {
+  const exports = mediaAssets
+    .filter(
+      (asset) =>
+        asset.type === "final_export" &&
+        asset.storageBucket &&
+        asset.storagePath,
+    )
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const out: { asset: MediaAsset; downloadUrl: string }[] = [];
+  for (const asset of exports) {
+    try {
+      const downloadUrl = await createStorageSignedUrl(supabase, {
+        bucket: asset.storageBucket as MediaStorageBucket,
+        path: asset.storagePath!,
+        expiresInSeconds: signedUrlTtlSeconds,
+        download: asset.originalFilename ?? true,
+      });
+      out.push({ asset, downloadUrl });
+    } catch (error) {
+      console.error(
+        "[getAssemblyPageData] signing download URL failed for media_asset:",
+        asset.id,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+  return out;
 }
 
 export function buildRemotionProps(input: {

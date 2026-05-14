@@ -13,11 +13,11 @@ import { Player, type PlayerRef } from "@remotion/player";
 import {
   AlertCircle,
   CheckCircle2,
+  Download,
   Film,
   Loader2,
   Music2,
   Save,
-  UploadCloud,
 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -30,9 +30,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import type {
   AssemblyAudioClip,
   AssemblyRemotionProps,
@@ -42,12 +41,12 @@ import type {
 import {
   requestAssemblyRenderAction,
   saveAssemblySettingsAction,
-  uploadFinalExportAction,
   type AssemblyActionState,
 } from "@/modules/assembly/actions";
 import type { ExportStatus } from "@/modules/assembly/export-status";
 import type { RenderProgress } from "@/modules/assembly/render-progress";
 import { generatePlacementId } from "@/modules/assembly/timeline-state";
+import type { AssemblyFinalExport } from "@/modules/assembly/use-cases/get-assembly-data";
 import { VideoClipMixSection } from "@/modules/assembly/ui/audio-mix-panel";
 import { CloudRenderProgressCard } from "@/modules/assembly/ui/cloud-render-progress-card";
 import { SegmentBin } from "@/modules/assembly/ui/segment-bin";
@@ -55,7 +54,6 @@ import {
   AddAudioClipButton,
   TimelineEditor,
 } from "@/modules/assembly/ui/timeline-editor";
-import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import { RecipeMuxPlayer } from "@/modules/media-assets/ui/mux-player";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import {
@@ -68,7 +66,6 @@ const initialActionState: AssemblyActionState = {};
 export function AssemblyWorkspace({
   availableSegments,
   compositionExportStatus = "pending",
-  compositionId,
   finalExports,
   initialRemotionProps,
   initialTimelineState,
@@ -85,9 +82,10 @@ export function AssemblyWorkspace({
    * timeline (we look up the metadata here and materialise a placement).
    */
   availableSegments: AssemblySegmentClip[];
-  compositionId?: string | null;
   compositionExportStatus?: ExportStatus;
-  finalExports: MediaAsset[];
+  /** Past Supabase-stored MP4 exports, newest first, each with a fresh
+   *  signed download URL. */
+  finalExports: AssemblyFinalExport[];
   initialRemotionProps: AssemblyRemotionProps;
   initialTimelineState: AssemblyTimelineState;
   missingAcceptedSegments: SeedanceSegment[];
@@ -109,10 +107,6 @@ export function AssemblyWorkspace({
   );
   const [saveState, saveAction] = useActionState(
     saveAssemblySettingsAction,
-    initialActionState,
-  );
-  const [exportState, exportAction] = useActionState(
-    uploadFinalExportAction,
     initialActionState,
   );
   const [renderState, renderAction] = useActionState(
@@ -226,7 +220,6 @@ export function AssemblyWorkspace({
       </div>
 
       <ActionNotice state={saveState} title="Assembly settings" />
-      <ActionNotice state={exportState} title="Final export" />
       <ActionNotice state={renderState} title="Cloud render" />
 
       {compositionExportStatus === "rendering" && renderProgress ? (
@@ -390,9 +383,8 @@ export function AssemblyWorkspace({
           <CardHeader>
             <CardTitle>Export panel</CardTitle>
             <CardDescription>
-              Save the timeline, render an MP4 in a Vercel Sandbox (no extra
-              click to save before render), or upload a file you rendered
-              locally.
+              Save the timeline, render an MP4 in a Vercel Sandbox, then
+              download the latest export to upload to socials.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -405,28 +397,6 @@ export function AssemblyWorkspace({
               />
               <SaveButton disabled={segments.length === 0} />
             </form>
-
-            <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-              <p className="font-medium text-foreground">Cloud render</p>
-              <p className="mt-1">
-                Uses the pre-built Remotion bundle from this deployment plus
-                signed read URLs for your Supabase originals. The MP4 is
-                produced inside an isolated sandbox, then uploaded to Storage
-                and Mux from the app — no Supabase service key is passed into
-                the sandbox.
-              </p>
-              {compositionExportStatus === "rendering" ? (
-                <p className="mt-2 font-medium text-foreground">
-                  Render in progress… this section refreshes every few seconds.
-                </p>
-              ) : null}
-              {compositionExportStatus === "failed" ? (
-                <p className="mt-2 font-medium text-destructive">
-                  Last cloud render failed. Fix any issues, adjust the timeline,
-                  then try again.
-                </p>
-              ) : null}
-            </div>
 
             <form action={renderAction} className="space-y-3">
               <HiddenAssemblyFields
@@ -443,39 +413,23 @@ export function AssemblyWorkspace({
               />
             </form>
 
-            <div className="relative py-2 text-center text-xs text-muted-foreground">
-              <span className="bg-background px-2">Or manual upload</span>
-            </div>
+            <DownloadLatestExportButton
+              latestExport={finalExports[0] ?? null}
+              renderInFlight={compositionExportStatus === "rendering"}
+            />
 
-            <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
-              If you prefer to render with Remotion CLI on your machine, upload
-              the MP4 below. Supabase remains the durable master; Mux is
-              playback only.
-            </div>
+            {compositionExportStatus === "failed" ? (
+              <p className="text-xs font-medium text-destructive">
+                Last cloud render failed. Fix any issues, adjust the timeline,
+                then try again.
+              </p>
+            ) : null}
 
-            <form action={exportAction} className="space-y-3">
-              <HiddenAssemblyFields
-                audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
-                placements={placementsJson}
-                timelineState={timelineStateJson}
-                videoId={videoId}
-              />
-              <input
-                name="compositionId"
-                type="hidden"
-                value={saveState.compositionId ?? compositionId ?? ""}
-              />
-              <div className="space-y-2">
-                <Label htmlFor="finalExport">Final MP4 export</Label>
-                <Input
-                  accept="video/mp4,.mp4"
-                  id="finalExport"
-                  name="finalExport"
-                  type="file"
-                />
-              </div>
-              <ExportButton disabled={segments.length === 0} />
-            </form>
+            <p className="text-xs text-muted-foreground">
+              Cloud render uses the slim Remotion worker bundled with this
+              deployment and signed read URLs for your Supabase originals.
+              The MP4 lives in Supabase Storage; Mux is playback only.
+            </p>
           </CardContent>
         </Card>
 
@@ -483,31 +437,26 @@ export function AssemblyWorkspace({
           <CardHeader>
             <CardTitle>Final playback</CardTitle>
             <CardDescription>
-              Completed exports appear here once Mux returns a playback ID.
+              The latest completed export plays here once Mux returns a
+              playback ID.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {finalExports.length > 0 ? (
-              finalExports.map((asset) => (
-                <div className="space-y-2" key={asset.id}>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary">{asset.status}</Badge>
-                    <Badge variant="outline">final_export</Badge>
-                  </div>
-                  <RecipeMuxPlayer
-                    playbackId={asset.muxPlaybackId}
-                    title={asset.originalFilename ?? "Final export"}
-                  />
-                </div>
-              ))
+              <LatestExportPreview export={finalExports[0]} />
             ) : (
               <p className="text-sm text-muted-foreground">
-                No final export has been stored yet.
+                No final export has been stored yet. Run the cloud render to
+                produce one.
               </p>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {finalExports.length > 1 ? (
+        <ExportHistoryCard exports={finalExports} />
+      ) : null}
     </div>
   );
 }
@@ -747,21 +696,6 @@ function SaveButton({ disabled }: { disabled: boolean }) {
   );
 }
 
-function ExportButton({ disabled }: { disabled: boolean }) {
-  const { pending } = useFormStatus();
-
-  return (
-    <Button disabled={disabled || pending} type="submit">
-      {pending ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <UploadCloud className="h-4 w-4" />
-      )}
-      Store final MP4 and upload to Mux
-    </Button>
-  );
-}
-
 function ActionNotice({
   state,
   title,
@@ -781,16 +715,170 @@ function ActionNotice({
         <CheckCircle2 className="h-4 w-4" />
       )}
       <AlertTitle>{title}</AlertTitle>
-      <AlertDescription>
-        {state.message}
-        {state.muxPlaybackId ? (
-          <span className="mt-2 block font-mono text-xs">
-            mux_playback_id: {state.muxPlaybackId}
-          </span>
-        ) : null}
-      </AlertDescription>
+      <AlertDescription>{state.message}</AlertDescription>
     </Alert>
   );
+}
+
+function DownloadLatestExportButton({
+  latestExport,
+  renderInFlight,
+}: {
+  latestExport: AssemblyFinalExport | null;
+  renderInFlight: boolean;
+}) {
+  if (!latestExport) {
+    return (
+      <Button
+        disabled
+        title={
+          renderInFlight
+            ? "Render in progress — the button unlocks when the MP4 is ready."
+            : "Run a cloud render first to produce a downloadable MP4."
+        }
+        type="button"
+        variant="default"
+      >
+        <Download className="h-4 w-4" />
+        Download MP4
+      </Button>
+    );
+  }
+
+  const filename =
+    latestExport.asset.originalFilename ?? `assembly-${latestExport.asset.id}.mp4`;
+
+  return (
+    <Button asChild type="button" variant="default">
+      <a
+        download={filename}
+        href={latestExport.downloadUrl}
+        rel="noopener noreferrer"
+      >
+        <Download className="h-4 w-4" />
+        Download MP4
+      </a>
+    </Button>
+  );
+}
+
+function LatestExportPreview({ export: entry }: { export: AssemblyFinalExport }) {
+  const { asset } = entry;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="secondary">{asset.status}</Badge>
+        <Badge variant="outline">latest</Badge>
+        <span className="text-xs text-muted-foreground">
+          Rendered {formatExportDate(asset.createdAt)}
+        </span>
+      </div>
+      {asset.muxPlaybackId ? (
+        <RecipeMuxPlayer
+          playbackId={asset.muxPlaybackId}
+          title={asset.originalFilename ?? "Final export"}
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Mux is still processing this export — playback will appear here
+          once the playback id is ready. The download below is available
+          immediately because it streams the Supabase MP4 directly.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ExportHistoryCard({
+  exports,
+}: {
+  exports: AssemblyFinalExport[];
+}) {
+  // Skip the first entry — it is shown as "latest" in the export panel.
+  const older = exports.slice(1);
+  if (older.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Film className="h-4 w-4" />
+          Export history
+        </CardTitle>
+        <CardDescription>
+          Every Supabase-stored MP4 export for this video. Click the icon to
+          re-download an older render — useful for variants you sent to
+          socials before tweaking the timeline.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="divide-y divide-border rounded-md border bg-muted/20">
+          {older.map((entry) => {
+            const { asset } = entry;
+            const filename =
+              asset.originalFilename ?? `assembly-${asset.id}.mp4`;
+            return (
+              <li
+                className="flex items-center justify-between gap-3 px-3 py-2"
+                key={asset.id}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{filename}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Rendered {formatExportDate(asset.createdAt)}
+                    {asset.fileSizeBytes != null ? (
+                      <> · {formatBytes(asset.fileSizeBytes)}</>
+                    ) : null}
+                  </p>
+                </div>
+                <Button
+                  asChild
+                  size="sm"
+                  title={`Download ${filename}`}
+                  variant="outline"
+                >
+                  <a
+                    download={filename}
+                    href={entry.downloadUrl}
+                    rel="noopener noreferrer"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span className="sr-only">Download</span>
+                  </a>
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function formatExportDate(value: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB"];
+  let v = value / 1024;
+  let unit = units[0];
+  for (let i = 1; i < units.length && v >= 1024; i++) {
+    v /= 1024;
+    unit = units[i];
+  }
+  return `${v.toFixed(1)} ${unit}`;
 }
 
 function EmptyPreview() {
