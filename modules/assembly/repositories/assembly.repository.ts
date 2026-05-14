@@ -11,6 +11,10 @@ import type {
   SegmentPlacement,
 } from "../assembly.types";
 import type { ExportStatus } from "../export-status";
+import {
+  serializeRenderProgress,
+  type RenderProgress,
+} from "../render-progress";
 import { serializePlacements } from "../timeline-state";
 
 type CompositionRow = Database["public"]["Tables"]["compositions"]["Row"];
@@ -102,6 +106,10 @@ export async function getCompositionById(
 /**
  * Atomically moves a composition from **pending** or **failed** to **rendering**
  * so only one cloud render job can own the row (dedupes double Inngest sends).
+ *
+ * Also resets `render_progress` to null on the claim so a fresh run does not
+ * start by displaying the leftover frame counter from the previous (failed)
+ * render in the assembly UI.
  */
 export async function tryClaimCompositionCloudRender(
   supabase: SupabaseDataClient,
@@ -109,7 +117,7 @@ export async function tryClaimCompositionCloudRender(
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from("compositions")
-    .update({ export_status: "rendering" })
+    .update({ export_status: "rendering", render_progress: null })
     .eq("id", compositionId)
     .in("export_status", ["pending", "failed"])
     .select("id")
@@ -117,6 +125,43 @@ export async function tryClaimCompositionCloudRender(
 
   throwIfSupabaseError(error, "tryClaimCompositionCloudRender failed");
   return data != null;
+}
+
+/**
+ * Push a {@link RenderProgress} snapshot for a running cloud render. The
+ * orchestrator throttles these so we do not write to Supabase on every line
+ * of Remotion stdout.
+ */
+export async function updateCompositionRenderProgress(
+  supabase: SupabaseDataClient,
+  compositionId: string,
+  progress: RenderProgress,
+): Promise<void> {
+  const { error } = await supabase
+    .from("compositions")
+    .update({ render_progress: serializeRenderProgress(progress) })
+    .eq("id", compositionId);
+
+  throwIfSupabaseError(error, "updateCompositionRenderProgress failed");
+}
+
+/**
+ * Lists every composition currently in `rendering` state across all videos.
+ * Powers the in-flight cloud renders card on the Active generations page.
+ */
+export async function listInFlightCompositionRenders(
+  supabase: SupabaseDataClient,
+  options: { limit?: number } = {},
+): Promise<Composition[]> {
+  const { data, error } = await supabase
+    .from("compositions")
+    .select("*")
+    .eq("export_status", "rendering")
+    .order("updated_at", { ascending: false })
+    .limit(options.limit ?? 20);
+
+  throwIfSupabaseError(error, "listInFlightCompositionRenders failed");
+  return (data ?? []).map(mapComposition);
 }
 
 export async function createComposition(
@@ -272,6 +317,7 @@ export function mapComposition(row: CompositionRow): Composition {
     audioSync: fromJson<Json>(row.audio_sync),
     remotionProps: fromJson<Json>(row.remotion_props),
     exportStatus: row.export_status as ExportStatus,
+    renderProgress: fromJson<Json>(row.render_progress),
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

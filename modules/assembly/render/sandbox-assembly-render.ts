@@ -5,6 +5,10 @@ import { Writable } from "node:stream";
 import { Sandbox } from "@vercel/sandbox";
 
 import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
+import type {
+  RenderPhase,
+  RenderProgress,
+} from "@/modules/assembly/render-progress";
 
 import { REMOTION_HEADLESS_SHELL_AL2023_DNF_PACKAGES } from "./remotion-headless-shell-al2023-packages";
 
@@ -83,8 +87,15 @@ function resolveRepoUrl(): string {
  * orchestrator never sits on a quiet NDJSON stream (the main failure mode of
  * the previous architecture: TLS / idle disconnects during long quiet phases
  * like Remotion render).
+ *
+ * Optionally invokes `onLine` for every full line received — used by the
+ * render-stdout writable to scrape Remotion's progress log lines and push
+ * them to the orchestrator's progress callback.
  */
-function createLogWritable(prefix: string): Writable {
+function createLogWritable(
+  prefix: string,
+  options: { onLine?: (line: string) => void } = {},
+): Writable {
   let buffer = "";
   return new Writable({
     write(chunk: Buffer, _encoding, callback) {
@@ -92,16 +103,66 @@ function createLogWritable(prefix: string): Writable {
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? "";
       for (const line of lines) {
-        if (line.length > 0) console.log(`${prefix} ${line}`);
+        if (line.length === 0) continue;
+        console.log(`${prefix} ${line}`);
+        options.onLine?.(line);
       }
       callback();
     },
     final(callback) {
-      if (buffer.length > 0) console.log(`${prefix} ${buffer}`);
+      if (buffer.length > 0) {
+        console.log(`${prefix} ${buffer}`);
+        options.onLine?.(buffer);
+      }
       buffer = "";
       callback();
     },
   });
+}
+
+/**
+ * Parsed view of a single `render.mjs` log line. Returns null for everything
+ * we do not care about — keeps the orchestrator-side state machine simple.
+ *
+ * We do not match `RENDER_OK` here (the orchestrator transitions out of
+ * `rendering` based on the command exit code, not stdout) because the line
+ * comes after some encoding lag and we want the UI to show "finalizing"
+ * separately when we are reading the MP4 back.
+ */
+interface RenderLogEvent {
+  kind: "bundle_done" | "composition_selected" | "render_progress";
+  totalFrames?: number;
+  renderedFrames?: number;
+  encodedFrames?: number;
+}
+
+const PROGRESS_LINE_RE =
+  /^\[render\] progress rendered=(\d+)\/(\d+) encoded=(\d+)/;
+const COMPOSITION_LINE_RE =
+  /^\[render\] composition_selected duration_frames=(\d+)/;
+const BUNDLE_DONE_LINE_RE = /^\[render\] bundle_done /;
+
+function parseRenderLogLine(line: string): RenderLogEvent | null {
+  const progressMatch = line.match(PROGRESS_LINE_RE);
+  if (progressMatch) {
+    return {
+      kind: "render_progress",
+      renderedFrames: Number(progressMatch[1]),
+      totalFrames: Number(progressMatch[2]),
+      encodedFrames: Number(progressMatch[3]),
+    };
+  }
+  const compositionMatch = line.match(COMPOSITION_LINE_RE);
+  if (compositionMatch) {
+    return {
+      kind: "composition_selected",
+      totalFrames: Number(compositionMatch[1]),
+    };
+  }
+  if (BUNDLE_DONE_LINE_RE.test(line)) {
+    return { kind: "bundle_done" };
+  }
+  return null;
 }
 
 async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
@@ -116,6 +177,91 @@ async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
 }
 
 /**
+ * Throttled progress reporter. The orchestrator hands us a callback that
+ * persists a {@link RenderProgress} snapshot to Supabase. We coalesce
+ * frequent updates (every ~1.5 s for frame progress, immediate for phase
+ * transitions) so we do not flood Postgres with writes while the Remotion
+ * renderer is busy spitting out 30+ progress lines per second.
+ */
+function createProgressTracker(options: {
+  sandboxId: string;
+  sandboxStartedAt: string;
+  onProgress: (progress: RenderProgress) => Promise<void> | void;
+  intervalMs?: number;
+}) {
+  const intervalMs = options.intervalMs ?? 1_500;
+  let phase: RenderPhase = "starting";
+  let renderedFrames: number | null = null;
+  let totalFrames: number | null = null;
+  let encodedFrames: number | null = null;
+  let renderStartedAt: string | null = null;
+  let lastFlushAt = 0;
+  let pending: Promise<void> = Promise.resolve();
+
+  const buildSnapshot = (): RenderProgress => ({
+    schema: "render_progress_v1",
+    phase,
+    renderedFrames,
+    totalFrames,
+    encodedFrames,
+    sandboxId: options.sandboxId,
+    sandboxStartedAt: options.sandboxStartedAt,
+    renderStartedAt,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const flush = async () => {
+    lastFlushAt = Date.now();
+    const snapshot = buildSnapshot();
+    try {
+      await options.onProgress(snapshot);
+    } catch (error) {
+      console.error(
+        "[renderAssemblyMp4InSandbox] onProgress failed (ignored):",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  };
+
+  const enqueueFlush = (force: boolean) => {
+    if (!force && Date.now() - lastFlushAt < intervalMs) return;
+    pending = pending.then(flush);
+  };
+
+  return {
+    setPhase(next: RenderPhase) {
+      phase = next;
+      if (next === "rendering" && !renderStartedAt) {
+        renderStartedAt = new Date().toISOString();
+      }
+      enqueueFlush(true);
+    },
+    setTotalFrames(value: number) {
+      totalFrames = value;
+      enqueueFlush(true);
+    },
+    setFrameProgress(rendered: number, encoded: number) {
+      renderedFrames = rendered;
+      encodedFrames = encoded;
+      enqueueFlush(false);
+    },
+    /** Wait for any in-flight DB write to settle. */
+    drain() {
+      return pending;
+    },
+  };
+}
+
+export interface RenderAssemblyMp4Options {
+  /**
+   * Called by the orchestrator on phase changes and ~every 1.5 s during the
+   * `rendering` phase. The callback is allowed to be async; we await it
+   * sequentially so progress writes never reorder.
+   */
+  onProgress?: (progress: RenderProgress) => Promise<void> | void;
+}
+
+/**
  * Renders the Remotion composition for a recipe assembly inside a fresh
  * Vercel Sandbox MicroVM and returns the resulting MP4 as a Buffer.
  *
@@ -123,20 +269,15 @@ async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
  *
  * 1. **Clone the repo via `source: { type: "git" }`** so the sandbox starts
  *    pre-populated with the full source — no local-to-sandbox file upload
- *    bottleneck (the previous architecture uploaded the `remotion-export/serve`
- *    bundle file-by-file from the orchestrator, which was the dominant cause
- *    of stalled / idle sandboxes in local dev and forbade ever running this
- *    on a Vercel function deployment).
+ *    bottleneck.
  * 2. **`dnf install`** the AL2023 system libs Chrome Headless Shell needs.
- * 3. **`npm ci --omit=dev --ignore-scripts`** in the cloned repo. Skipping
- *    scripts avoids the `sqlite3` postinstall (used by `@cursor/sdk` on the
- *    web side, irrelevant for the renderer).
+ * 3. **`npm ci --omit=dev --ignore-scripts`** in the cloned repo.
  * 4. **Write `props.json`** into the sandbox.
  * 5. **`node remotion-export/render.mjs`** — bundles and renders the
- *    composition in a single Node process inside the sandbox.
- * 6. **`readFileToBuffer`** the resulting MP4 and return it. The orchestrator
- *    then uploads it to Supabase Storage / Mux — the service-role key never
- *    leaves the orchestrator process.
+ *    composition in a single Node process inside the sandbox. The orchestrator
+ *    scrapes its stdout to surface live frame-level progress via
+ *    `options.onProgress`.
+ * 6. **`readFileToBuffer`** the resulting MP4 and return it.
  *
  * Every long command pipes its stdout/stderr to `console.log`. This keeps the
  * sandbox API stream "busy" (avoiding the idle TLS disconnects we saw with the
@@ -145,6 +286,7 @@ async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
  */
 export async function renderAssemblyMp4InSandbox(
   props: AssemblyRemotionProps,
+  options: RenderAssemblyMp4Options = {},
 ): Promise<Buffer> {
   const repoUrl = resolveRepoUrl();
   const revision = resolveSandboxGitRevision();
@@ -171,6 +313,13 @@ export async function renderAssemblyMp4InSandbox(
   });
 
   const sandboxId = sandbox.sandboxId;
+  const sandboxStartedAt = new Date().toISOString();
+  const tracker = createProgressTracker({
+    sandboxId,
+    sandboxStartedAt,
+    onProgress: options.onProgress ?? (() => undefined),
+  });
+
   const stepLog = (step: string, extra?: string) => {
     const suffix = extra ? ` ${extra}` : "";
     console.log(
@@ -180,7 +329,9 @@ export async function renderAssemblyMp4InSandbox(
 
   try {
     stepLog("sandbox_ready", `revision=${revision}`);
+    tracker.setPhase("starting");
 
+    tracker.setPhase("dnf_install");
     const dnfResult = await sandbox.runCommand({
       cmd: "dnf",
       args: [
@@ -201,6 +352,7 @@ export async function renderAssemblyMp4InSandbox(
     }
     stepLog("dnf_done");
 
+    tracker.setPhase("npm_install");
     const npmResult = await sandbox.runCommand({
       cmd: "npm",
       args: [
@@ -231,11 +383,42 @@ export async function renderAssemblyMp4InSandbox(
     ]);
     stepLog("props_written");
 
+    // The render command alternates through three sub-phases inside one
+    // Node process (bundle → composition select → render). We scrape its
+    // stdout to advance the orchestrator-side phase machine in real time.
+    tracker.setPhase("bundling");
     const renderResult = await sandbox.runCommand({
       cmd: "node",
       args: ["remotion-export/render.mjs"],
       cwd: WORK_ROOT,
-      stdout: createLogWritable(`[sandbox=${sandboxId} render]`),
+      stdout: createLogWritable(`[sandbox=${sandboxId} render]`, {
+        onLine: (line) => {
+          const event = parseRenderLogLine(line);
+          if (!event) return;
+          if (event.kind === "bundle_done") {
+            // Stay in `bundling` until composition_selected — gives the UI
+            // a smoother transition than flipping straight to `rendering`.
+          } else if (event.kind === "composition_selected") {
+            if (event.totalFrames != null) {
+              tracker.setTotalFrames(event.totalFrames);
+            }
+            tracker.setPhase("rendering");
+          } else if (event.kind === "render_progress") {
+            if (event.totalFrames != null) {
+              tracker.setTotalFrames(event.totalFrames);
+            }
+            if (
+              event.renderedFrames != null &&
+              event.encodedFrames != null
+            ) {
+              tracker.setFrameProgress(
+                event.renderedFrames,
+                event.encodedFrames,
+              );
+            }
+          }
+        },
+      }),
       stderr: createLogWritable(`[sandbox=${sandboxId} render!]`),
     });
     if (renderResult.exitCode !== 0) {
@@ -246,6 +429,7 @@ export async function renderAssemblyMp4InSandbox(
     }
     stepLog("remotion_render_done");
 
+    tracker.setPhase("finalizing");
     const out = await sandbox.readFileToBuffer({
       path: `${WORK_ROOT}/remotion-export/out.mp4`,
     });
@@ -254,8 +438,11 @@ export async function renderAssemblyMp4InSandbox(
     }
     stepLog("read_mp4_done", `bytes=${out.byteLength}`);
 
+    await tracker.drain();
+
     return Buffer.from(out);
   } finally {
+    await tracker.drain().catch(() => undefined);
     await stopSandboxBestEffort(sandbox);
   }
 }
