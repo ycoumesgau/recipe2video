@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { ThemeModeDropdown } from "@/components/layout/theme-mode-dropdown";
+import { BRAND_LOGO_PATH } from "@/lib/branding";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -54,7 +55,7 @@ export function AppShell({
               alt="Licorn"
               className="size-10 shrink-0 object-contain"
               height={40}
-              src="/branding/favicon-licorn.png"
+              src={BRAND_LOGO_PATH}
               width={40}
               unoptimized
               priority

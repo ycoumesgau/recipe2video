@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Quicksand } from "next/font/google";
 
 import { ThemeProvider } from "@/components/theme-provider";
+import { BRAND_LOGO_PATH } from "@/lib/branding";
 
 import "./globals.css";
 
@@ -20,7 +21,7 @@ export const metadata: Metadata = {
   description:
     "Cockpit de production interne Licorn pour les vidéos de recettes (Runway, Mux…).",
   icons: {
-    icon: [{ url: "/branding/favicon-licorn.png", type: "image/png" }],
+    icon: [{ url: BRAND_LOGO_PATH, type: "image/png" }],
   },
 };
 
