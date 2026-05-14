@@ -4,6 +4,13 @@ import { assertAllowlistedUser } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { renderAssemblyMp4InSandbox } from "@/modules/assembly/render/sandbox-assembly-render";
 import {
+  computeSandboxRenderCacheKey,
+  findSandboxSnapshot,
+  invalidateSandboxSnapshot,
+  persistSandboxSnapshot,
+  touchSandboxSnapshot,
+} from "@/modules/assembly/render/sandbox-snapshot-cache";
+import {
   getCompositionById,
   updateCompositionExport,
   updateCompositionRenderProgress,
@@ -65,6 +72,8 @@ export const renderCompositionExport = inngest.createFunction(
         composition,
       );
 
+      const sandboxCacheKey = await computeSandboxRenderCacheKey();
+
       const mp4Buffer = await renderAssemblyMp4InSandbox(remotionProps, {
         onProgress: async (progress) => {
           // The orchestrator already throttles to ~1.5 s between writes; we
@@ -80,6 +89,25 @@ export const renderCompositionExport = inngest.createFunction(
               error instanceof Error ? error.message : error,
             );
           });
+        },
+        snapshotHooks: {
+          cacheKey: sandboxCacheKey,
+          async findSnapshotId(cacheKey) {
+            const entry = await findSandboxSnapshot(supabase, cacheKey);
+            return entry?.snapshotId ?? null;
+          },
+          async persistSnapshotId(cacheKey, snapshotId) {
+            await persistSandboxSnapshot(supabase, {
+              cacheKey,
+              snapshotId,
+            });
+          },
+          async invalidateSnapshot(cacheKey) {
+            await invalidateSandboxSnapshot(supabase, cacheKey);
+          },
+          async touchSnapshot(cacheKey) {
+            await touchSandboxSnapshot(supabase, cacheKey);
+          },
         },
       });
 
