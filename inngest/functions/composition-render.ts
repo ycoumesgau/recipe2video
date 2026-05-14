@@ -6,6 +6,7 @@ import { renderAssemblyMp4InSandbox } from "@/modules/assembly/render/sandbox-as
 import {
   getCompositionById,
   updateCompositionExport,
+  updateCompositionRenderProgress,
 } from "@/modules/assembly/repositories/assembly.repository";
 import {
   readPlacementsState,
@@ -64,7 +65,23 @@ export const renderCompositionExport = inngest.createFunction(
         composition,
       );
 
-      const mp4Buffer = await renderAssemblyMp4InSandbox(remotionProps);
+      const mp4Buffer = await renderAssemblyMp4InSandbox(remotionProps, {
+        onProgress: async (progress) => {
+          // The orchestrator already throttles to ~1.5 s between writes; we
+          // also swallow any error here so a transient Supabase blip never
+          // takes down a long Remotion render.
+          await updateCompositionRenderProgress(
+            supabase,
+            data.compositionId,
+            progress,
+          ).catch((error) => {
+            console.error(
+              "[composition-render] updateCompositionRenderProgress failed:",
+              error instanceof Error ? error.message : error,
+            );
+          });
+        },
+      });
 
       const durations = new Map(
         remotionProps.segments.map((segment) => [

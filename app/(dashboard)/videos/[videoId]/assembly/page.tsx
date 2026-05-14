@@ -80,6 +80,7 @@ export default async function AssemblyPage({
         missingAcceptedSegments={data.assemblyData.missingAcceptedSegments}
         projectStatus={data.assemblyData.projectStatus}
         projectTitle={data.assemblyData.projectTitle}
+        renderProgress={data.assemblyData.renderProgress}
         videoId={videoId}
       />
     </div>
