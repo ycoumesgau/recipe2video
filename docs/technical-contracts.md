@@ -776,9 +776,20 @@ compositions
   audio_sync jsonb
   remotion_props jsonb
   export_status text
+  render_progress jsonb nullable
   created_by uuid references profiles(id) nullable
   created_at timestamptz
   updated_at timestamptz
+
+sandbox_snapshots
+  id uuid primary key
+  scope text -- 'composition_render' for the cloud Remotion worker
+  cache_key text -- sha256 of lockfile + composition + dnf packages + runtime
+  snapshot_id text -- Vercel Sandbox snapshot id
+  expires_at timestamptz nullable
+  last_used_at timestamptz nullable
+  created_at timestamptz
+  unique (scope, cache_key)
 
 agent_runs
   id uuid primary key
@@ -887,12 +898,26 @@ When a Runway generation succeeds:
 
 When a final Remotion export succeeds:
 
-1. Use original clip files from Supabase Storage.
-2. Render final MP4.
-3. Store final MP4 in Supabase Storage.
-4. Create a `media_assets` record with type `final_export`.
-5. Upload final MP4 to Mux for playback.
-6. Link the composition to the export media asset.
+1. The Inngest function `renderCompositionExport` resolves the composition row and builds an `AssemblyRemotionProps` object with **signed read URLs** for every required Supabase Storage object (segment clips, optional Suno audio).
+2. The orchestrator (`renderAssemblyMp4InSandbox`) launches a Vercel Sandbox MicroVM via either:
+   - `source: { type: "snapshot", snapshotId }` when a cached snapshot exists for the current cache key (warm path), or
+   - `source: { type: "git", url, revision, depth: 1 }` cloning this repository (cold path).
+3. On the cold path, the orchestrator runs `dnf install` for the Chrome Headless Shell libs and `npm ci` inside `remotion-export/`. On the warm path, both steps are skipped.
+4. The orchestrator writes `props.json` into `remotion-export/` (the only payload that ever crosses the orchestrator → sandbox boundary; the Supabase service-role key never enters the sandbox) and then runs `node render.mjs`, which bundles `../remotion/index.tsx` with `@remotion/bundler` and renders the composition with `@remotion/renderer`.
+5. The orchestrator reads back `remotion-export/out.mp4` via `sandbox.readFileToBuffer`, stores it in Supabase Storage at `final-exports/{videoId}/{compositionId}.mp4`, creates a `media_assets` row of type `final_export`, uploads to Mux for playback, and links the composition row (`export_media_asset_id`, `export_status = 'completed'`).
+6. On the cold path only, the orchestrator removes render-specific files (`props.json`, `out.mp4`) from the sandbox, calls `sandbox.snapshot({ expiration: 14 d })`, and upserts the returned `snapshot_id` into `public.sandbox_snapshots`. `sandbox.snapshot()` stops the VM, so no extra `sandbox.stop` is issued in that branch.
+7. Throughout the render, the orchestrator scrapes `render.mjs` stdout (`[render] composition_selected duration_frames=…`, `[render] progress rendered=N/M encoded=K`) and updates `compositions.render_progress` (jsonb) at ~1.5 s throttle so the UI can show a live progress bar.
+
+Failure handling:
+
+* If the cached snapshot is unusable (404 / corrupted), the orchestrator deletes the row from `sandbox_snapshots` and falls back to the cold path automatically.
+* If `sandbox.snapshot()` or `persistSandboxSnapshot` fails after a successful render, the orchestrator logs the error and returns the MP4 anyway — warm-start is an optimisation, never a render-blocker.
+* Setting `COMPOSITION_RENDER_DISABLE_SNAPSHOT_CACHE=1` forces every render down the cold path with no snapshot persistence; setting `DISABLE_COMPOSITION_SANDBOX_RENDER=1` short-circuits the Inngest function with an explicit error before any sandbox is created.
+
+Repo cloning auth:
+
+* The public repo path needs no credentials. When the repo flips to private after the hackathon, set `COMPOSITION_RENDER_GIT_TOKEN` (and optionally `COMPOSITION_RENDER_GIT_USERNAME`, default `x-access-token`) — the orchestrator forwards them as the `username` / `password` fields of `source: { type: "git", … }`. A fine-grained PAT with `Contents: read` on this repo is sufficient.
+* `COMPOSITION_RENDER_GIT_URL` and `COMPOSITION_RENDER_GIT_REF` override the cloned URL and revision (the latter defaults to `VERCEL_GIT_COMMIT_SHA` → `VERCEL_GIT_COMMIT_REF` → `"main"`).
 
 ### Retention policy
 
@@ -1253,6 +1278,12 @@ Workflow rules:
 * Do not retry costly generations indefinitely.
 * Respect configured Runway concurrency.
 
+`composition.render.requested` specifics:
+
+* Triggered by the `Render in cloud (MP4)` button on the Assembly page, after the orchestrator atomically claims the composition row via `tryClaimCompositionCloudRender` so a double-click never fires two Inngest events for the same render.
+* Handled by `renderCompositionExport` in `inngest/functions/composition-render.ts` with `retries: 0` and `concurrency: { limit: 2 }`. The function calls `renderAssemblyMp4InSandbox` and forwards `compositions.render_progress` updates to Supabase.
+* `retries: 0` is intentional: a Sandbox failure during a long render is expensive and a silent retry would obscure the real failure mode. Failed renders flip `compositions.export_status` to `failed` and surface in the Assembly UI for the user to retry manually.
+
 Recommended concurrency defaults:
 
 * Start with 2 concurrent Seedance tasks.
@@ -1265,23 +1296,36 @@ Recommended concurrency defaults:
 
 Use Remotion for:
 
-* final assembly preview
+* in-app assembly preview via `@remotion/player`
 * segment ordering preview
 * Suno audio alignment
-* final MP4 export if feasible
+* final MP4 cloud render via `@remotion/bundler` + `@remotion/renderer` inside a Vercel Sandbox MicroVM
 
 Rules:
 
-* Use Supabase Storage original files for final rendering.
+* Use Supabase Storage original files for final rendering (read via signed HTTPS URLs embedded in `AssemblyRemotionProps`).
 * Do not render from Mux HLS playback streams.
-* Store rendered final MP4 in Supabase Storage.
+* Store rendered final MP4 in Supabase Storage at `final-exports/{videoId}/{compositionId}.mp4`.
 * Upload final MP4 to Mux after render for playback.
+* The same `RecipeAssemblyComposition` (in `remotion/compositions/recipe-assembly.tsx`) is rendered by the Player in the browser AND by `@remotion/renderer` inside the sandbox — no divergence between preview and export.
 
-Fallbacks:
+Cloud render packaging:
 
-* P0: Remotion Player preview.
-* P1: client-side export.
-* Backup: Vercel Sandbox if client-side export is too slow or unstable.
+* The render worker is a self-contained sub-package at `remotion-export/` with its own `package.json` and committed `package-lock.json`. It pins `@remotion/bundler`, `@remotion/renderer`, `remotion`, `react`, `react-dom` at exact versions matching the web side.
+* The sandbox runs `npm ci` inside `remotion-export/` (~170 packages, ~20-40 s on a cold install) instead of installing the full app (~800 packages).
+* `remotion-export/render.mjs` runs `bundle({ entryPoint: "../remotion/index.tsx" })` followed by `selectComposition` and `renderMedia`. Type-only `import type { … } from "@/modules/..."` references in the composition are stripped by esbuild before module resolution, so the bundler never reaches into the rest of the app.
+
+Snapshot warm-start cache:
+
+* Cache key: `sha256(remotion-export/package-lock.json + remotion-export/package.json + remotion-export/render.mjs + remotion/index.tsx + remotion/compositions/recipe-assembly.tsx + sorted dnf packages + runtime)`. Anything that changes the cold-install filesystem invalidates the cache.
+* Cache storage: `public.sandbox_snapshots(scope='composition_render', cache_key, snapshot_id, expires_at, last_used_at)` upserted on `(scope, cache_key)`.
+* Default TTL: 14 days (well under Vercel's 30-day cap).
+* Cache key files are force-included in the `/api/inngest` Vercel function bundle via `outputFileTracingIncludes` in `next.config.ts` so `fs.readFile` works at runtime.
+
+UI surfacing:
+
+* `compositions.render_progress jsonb` (`schema: "render_progress_v1"`, with `phase`, `renderedFrames`, `totalFrames`, `encodedFrames`, `sandboxId`, `sandboxStartedAt`, `renderStartedAt`, `updatedAt`) is updated at ~1.5 s throttle by the orchestrator and polled by the Assembly page and `/active-generations`.
+* The Assembly page exposes a download button for the latest export and an `Export history` card listing every prior `final_export` with a per-row download icon. Downloads go through fresh signed Supabase URLs with `Content-Disposition: attachment` and the original filename.
 
 ---
 
