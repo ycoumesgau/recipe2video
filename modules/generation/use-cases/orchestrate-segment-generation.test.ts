@@ -190,7 +190,15 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
       getSegmentById: async () => baseSegment,
       getVideoProjectById: async () => baseVideo,
       resolveSegmentSeedanceReferences: async () => [
-        seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png"),
+        seedanceRef("kitchen_wide", "https://signed.test/kitchen-context.png", {
+          position: 0,
+          role: "structural kitchen context",
+          aliases: ["KitchenLayoutContextWide"],
+        }),
+        seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png", {
+          position: 1,
+          aliases: ["KitchenIslandDefault"],
+        }),
       ],
       updateSegmentStatus: async (_segmentId, status) => {
         segmentStatuses.push(status);
@@ -226,6 +234,7 @@ test("requestSegmentGenerationWorkflow persists queued and generating states bef
   assert.deepEqual(costOperations, ["seedance_segment_generation_started"]);
   assert.equal(generationInputs[0]?.promptImage, undefined);
   assert.deepEqual(generationInputs[0]?.references, [
+    { type: "image", uri: "https://signed.test/kitchen-context.png" },
     { type: "image", uri: "https://signed.test/kitchen.png" },
   ]);
   assert.equal(generationInputs[0]?.ratio, RUNWAY_DEFAULT_VIDEO_RATIO);
@@ -345,12 +354,19 @@ test("requestSegmentGenerationWorkflow uses JIT signed URLs from the resolver", 
       getSegmentById: async () => segmentWithTwoRefs,
       getVideoProjectById: async () => baseVideo,
       resolveSegmentSeedanceReferences: async () => [
-        seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png", {
+        seedanceRef("kitchen_wide", "https://signed.test/kitchen-context.png", {
           position: 0,
+          role: "structural kitchen context",
+          aliases: ["KitchenLayoutContextWide"],
+          source: "asset_library",
+        }),
+        seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png", {
+          position: 1,
+          aliases: ["KitchenIslandDefault"],
           source: "asset_library",
         }),
         seedanceRef("RawChouxCrownFrame", "https://signed.test/raw-choux.png", {
-          position: 1,
+          position: 2,
           role: "current recipe state and fragile food geometry",
           source: "reference_assets",
         }),
@@ -380,6 +396,7 @@ test("requestSegmentGenerationWorkflow uses JIT signed URLs from the resolver", 
 
   assert.equal(generationInputs[0]?.promptImage, undefined);
   assert.deepEqual(generationInputs[0]?.references, [
+    { type: "image", uri: "https://signed.test/kitchen-context.png" },
     { type: "image", uri: "https://signed.test/kitchen.png" },
     { type: "image", uri: "https://signed.test/raw-choux.png" },
   ]);
@@ -427,12 +444,16 @@ test("requestSegmentGenerationWorkflow accepts the agent's PascalCase alias when
       }),
       getVideoProjectById: async () => baseVideo,
       resolveSegmentSeedanceReferences: async () => [
-        seedanceRef("island_default", "https://signed.test/island.png", {
+        seedanceRef("kitchen_wide", "https://signed.test/context.png", {
           position: 0,
+          aliases: ["KitchenLayoutContextWide"],
+        }),
+        seedanceRef("island_default", "https://signed.test/island.png", {
+          position: 1,
           aliases: ["KitchenIslandDefault"],
         }),
         seedanceRef("Luma-topDown-pose", "https://signed.test/pose.png", {
-          position: 1,
+          position: 2,
           role: "top-down hands pose",
           aliases: ["PoseTopDown"],
         }),
@@ -491,8 +512,13 @@ test("requestSegmentGenerationWorkflow detects the global kitchen reference via 
       }),
       getVideoProjectById: async () => baseVideo,
       resolveSegmentSeedanceReferences: async () => [
-        seedanceRef("bg_main", "https://signed.test/bg.png", {
+        seedanceRef("bg_kitchen_context", "https://signed.test/context.png", {
           position: 0,
+          role: "structural context backdrop",
+          aliases: ["KitchenLayoutContextWide"],
+        }),
+        seedanceRef("bg_main", "https://signed.test/bg.png", {
+          position: 1,
           role: "primary backdrop",
           aliases: ["KitchenIslandDefault"],
         }),
@@ -656,13 +682,19 @@ test("requestSegmentGenerationWorkflow blocks when a reference exceeds Runway's 
           getSegmentById: async () => baseSegment,
           getVideoProjectById: async () => baseVideo,
           resolveSegmentSeedanceReferences: async () => [
-            seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png", {
+            seedanceRef("KitchenLayoutContextWide", "https://signed.test/context.png", {
               position: 0,
+              aliases: ["KitchenLayoutContextWide"],
+              fileSizeBytes: 4 * 1024 * 1024,
+              mimeType: "image/png",
+            }),
+            seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png", {
+              position: 1,
               fileSizeBytes: 9 * 1024 * 1024,
               mimeType: "image/png",
             }),
             seedanceRef("InductionLeftCloseup", "https://signed.test/induction.png", {
-              position: 1,
+              position: 2,
               fileSizeBytes: 17_153_462,
               mimeType: "image/png",
             }),
@@ -711,7 +743,14 @@ test("requestSegmentGenerationWorkflow blocks when segment duration is below See
           }),
           getVideoProjectById: async () => baseVideo,
           resolveSegmentSeedanceReferences: async () => [
-            seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png"),
+            seedanceRef("KitchenLayoutContextWide", "https://signed.test/context.png", {
+              position: 0,
+              aliases: ["KitchenLayoutContextWide"],
+            }),
+            seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png", {
+              position: 1,
+              aliases: ["KitchenIslandDefault"],
+            }),
           ],
           updateSegmentStatus: async (_segmentId, status) => {
             segmentStatuses.push(status);
@@ -751,7 +790,14 @@ test("requestSegmentGenerationWorkflow blocks when segment duration exceeds Seed
           }),
           getVideoProjectById: async () => baseVideo,
           resolveSegmentSeedanceReferences: async () => [
-            seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png"),
+            seedanceRef("KitchenLayoutContextWide", "https://signed.test/context.png", {
+              position: 0,
+              aliases: ["KitchenLayoutContextWide"],
+            }),
+            seedanceRef("KitchenIslandDefault", "https://signed.test/kitchen.png", {
+              position: 1,
+              aliases: ["KitchenIslandDefault"],
+            }),
           ],
           updateSegmentStatus: async (_segmentId, status) => ({
             ...baseSegment,

@@ -48,6 +48,13 @@ export function buildRecipeAgentSystemPrompt(input: {
     "- reference-plan.json: at most ONE entry per canonicalName. If the same reference is used in multiple segments, declare it once and list every segment id in `usedInSegmentIds`. Do NOT clone entries per segment — the application will reject the plan with a Zod validation error.",
     "- seedance-segments.json[*].references[].name MUST equal either a library canonical name OR a canonicalName declared in reference-plan.json. Any name not resolvable against one of these two sources will be reported as a sync error.",
     "- Library assets do NOT require runwayUri / mediaAssetId in reference-plan.json — they only need to be declared if the agent has new metadata (override role, change priority). When in doubt about an existing library asset, omit it from reference-plan.json and reference it directly from a segment.",
+    "- Every Seedance segment should include the kitchen continuity pair: `KitchenLayoutContextWide` (structural context) plus one shot-specific kitchen view (`KitchenIslandDefault` OR overhead/induction/oven/etc.).",
+    "- `KitchenLayoutContextWide` is a structural context lock, not a camera framing instruction. Keep storyboard framing decisions independent.",
+    "- Do not force `KitchenIslandDefault` when the scene uses another kitchen angle; use it when that is the active shot view or when explicit terrazzo lock is needed.",
+    "- Kitchen invariants must stay stable across segments: same light terrazzo countertop, same induction geometry, same cabinet layout; explicitly add negatives against material/layout drift when needed.",
+    "- Match utensils to task physics. Example: deep-fry extraction should use `SpiderSkimmer` (or `Tongs` fallback), not `Spatula`.",
+    "- Avoid cloth-in-hand hot transfer prompts because of hand/cloth fusion artifacts; prefer utensil handling or post-cooling bare-hand actions.",
+    "- For side components and garnish, specify quantities visually (`2-3 leaves`, `small bed`, `one spoonful`) and keep continuity if a side bowl/prop appears across adjacent segments.",
     "",
     `Project video id: ${input.videoId}`,
   ].join("\n");

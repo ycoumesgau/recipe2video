@@ -530,8 +530,10 @@ function assertSeedance2Selected(video: VideoProject) {
 /**
  * Enforce the references discipline from `.cursor/rules/recipe2video-seedance-segments.mdc`
  * and the PRD: every Seedance segment needs at least one resolved reference,
- * a global kitchen reference (typically `@KitchenIslandDefault`) is
- * mandatory, and the Seedance 9-reference cap must hold.
+ * kitchen anchors are mandatory (`@KitchenLayoutContextWide` as structural
+ * context + one shot-specific kitchen view such as `@KitchenIslandDefault`,
+ * `@KitchenIslandOverhead`, `@InductionWide`, etc.), and the Seedance
+ * 9-reference cap must hold.
  *
  * The check now operates on the JIT-resolved inputs: a resolved entry implies
  * the reference's media is uploaded to Supabase Storage and a signed URL has
@@ -584,12 +586,64 @@ function assertSegmentReferencesReady(
     const aliasHaystack = (input.aliases ?? []).join(" ").toLowerCase();
     const haystack =
       `${input.canonicalName} ${input.role} ${aliasHaystack}`.toLowerCase();
-    return haystack.includes("kitchen") || haystack.includes("island");
+    return (
+      haystack.includes("kitchen") ||
+      haystack.includes("island") ||
+      haystack.includes("induction") ||
+      haystack.includes("oven")
+    );
   });
 
   if (!hasKitchenReference) {
     throw new Error(
       `Segment ${segment.id} is missing a global kitchen reference (e.g. @KitchenIslandDefault).`,
+    );
+  }
+
+  const hasKitchenLayoutContext = referenceInputs.some((input) => {
+    const names = [input.canonicalName, ...(input.aliases ?? [])];
+    return names.some((name) => {
+      const normalized = normalizeReferenceName(name);
+      return (
+        normalized === normalizeReferenceName("KitchenLayoutContextWide") ||
+        normalized === normalizeReferenceName("kitchen_wide") ||
+        normalized === normalizeReferenceName("kitchen_layout_context_wide")
+      );
+    });
+  });
+  if (!hasKitchenLayoutContext) {
+    throw new Error(
+      `Segment ${segment.id} is missing the structural kitchen context reference (@KitchenLayoutContextWide / kitchen_wide). Add it to segment references before generation.`,
+    );
+  }
+
+  const hasShotSpecificKitchenView = referenceInputs.some((input) => {
+    const aliasHaystack = (input.aliases ?? []).join(" ").toLowerCase();
+    const haystack =
+      `${input.canonicalName} ${input.role} ${aliasHaystack}`.toLowerCase();
+    const isKitchenLike =
+      haystack.includes("kitchen") ||
+      haystack.includes("island") ||
+      haystack.includes("induction") ||
+      haystack.includes("oven");
+    if (!isKitchenLike) {
+      return false;
+    }
+    const names = [input.canonicalName, ...(input.aliases ?? [])];
+    const isLayoutContext = names.some((name) => {
+      const normalized = normalizeReferenceName(name);
+      return (
+        normalized === normalizeReferenceName("KitchenLayoutContextWide") ||
+        normalized === normalizeReferenceName("kitchen_wide") ||
+        normalized === normalizeReferenceName("kitchen_layout_context_wide")
+      );
+    });
+    return !isLayoutContext;
+  });
+
+  if (!hasShotSpecificKitchenView) {
+    throw new Error(
+      `Segment ${segment.id} is missing a shot-specific kitchen view reference in addition to @KitchenLayoutContextWide (for example @KitchenIslandDefault, @KitchenIslandOverhead, @InductionWide).`,
     );
   }
 }
