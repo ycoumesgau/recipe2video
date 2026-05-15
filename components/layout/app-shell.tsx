@@ -1,16 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
-import {
-  Activity,
-  BarChart3,
-  BookOpen,
-  FlaskConical,
-  LayoutDashboard,
-  Library,
-  PlusCircle,
-  Settings,
-} from "lucide-react";
 
+import { DashboardMobileNav } from "@/components/layout/dashboard-mobile-nav";
+import { dashboardNavigationItems } from "@/components/layout/dashboard-navigation";
 import { ThemeModeDropdown } from "@/components/layout/theme-mode-dropdown";
 import { BRAND_LOGO_PATH } from "@/lib/branding";
 import { Badge } from "@/components/ui/badge";
@@ -19,17 +11,6 @@ import { Separator } from "@/components/ui/separator";
 import { DashboardDataModeSwitch } from "@/components/layout/dashboard-data-mode-switch";
 import { signOutAction } from "@/modules/auth/auth.actions";
 import type { DashboardDataMode } from "@/modules/dashboard/dashboard-data-mode.shared";
-
-const navigationItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/videos/new", label: "New Video", icon: PlusCircle },
-  { href: "/active-generations", label: "Active Generations", icon: Activity },
-  { href: "/library", label: "Library", icon: Library },
-  { href: "/costs", label: "Costs", icon: BarChart3 },
-  { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/demo", label: "Demo Mode", icon: FlaskConical },
-  { href: "/docs", label: "Docs", icon: BookOpen },
-];
 
 export function AppShell({
   activeTaskCount,
@@ -71,7 +52,7 @@ export function AppShell({
           </div>
           <Separator className="bg-sidebar-border" />
           <nav className="space-y-1 p-4">
-            {navigationItems.map((item) => (
+            {dashboardNavigationItems.map((item) => (
               <Button
                 key={`${item.href}-${item.label}`}
                 asChild
@@ -88,8 +69,11 @@ export function AppShell({
         </aside>
 
         <div className="flex min-w-0 flex-col">
-          <header className="flex min-h-14 flex-shrink-0 flex-wrap items-start gap-x-4 gap-y-3 border-b px-4 py-3 lg:min-h-16 lg:flex-nowrap lg:items-center lg:justify-between lg:px-6">
-            <div className="min-w-0 shrink-0 flex-1 basis-full sm:flex-none md:basis-auto">
+          <header className="relative flex min-h-14 flex-shrink-0 flex-col gap-3 border-b px-4 py-3 lg:min-h-16 lg:flex-row lg:flex-nowrap lg:items-center lg:justify-between lg:gap-x-4 lg:gap-y-0 lg:px-6">
+            <div className="absolute top-3 right-4 z-20 lg:hidden">
+              <DashboardMobileNav />
+            </div>
+            <div className="w-full min-w-0 shrink-0 pr-14 lg:w-auto lg:max-w-[min(100%,42rem)] lg:shrink lg:pr-0">
               <p className="text-sm font-medium text-muted-foreground">
                 Production cockpit
               </p>
@@ -97,7 +81,7 @@ export function AppShell({
                 Runway API Hackathon
               </p>
             </div>
-            <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2 sm:w-auto sm:max-w-none sm:justify-end">
+            <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-2 sm:w-auto sm:max-w-none sm:justify-end lg:ml-auto lg:w-auto lg:flex-nowrap">
               <DashboardDataModeSwitch mode={dashboardDataMode} />
               <Badge
                 variant="secondary"
