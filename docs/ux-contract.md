@@ -527,16 +527,24 @@ Suno panel:
 
 Export panel:
 
-* Preview final composition.
-* Render client-side.
-* Save final export to Supabase Storage.
-* Upload final export to Mux for playback.
-* Download final MP4.
+* Save assembly settings (timeline + audio mix) to the latest draft composition.
+* Render in cloud (MP4): triggers the `composition.render.requested` Inngest workflow which spawns a Vercel Sandbox MicroVM running the slim `remotion-export/` worker. Disabled while a render is in flight; the live progress card surfaces phase, frame counter, fps, and ETA via `compositions.render_progress`.
+* Download MP4: disabled when no `final_export` exists yet; otherwise becomes a regular `<a download>` pointing at a freshly signed Supabase URL with `Content-Disposition: attachment` and the original filename.
+
+Final playback card:
+
+* Shows only the **latest** export with a Mux Player. If Mux is still transcoding the new asset, the card displays a clear "still processing" note while the download button remains usable (it streams Supabase directly, not Mux HLS).
+
+Export history card (only when at least 2 exports exist):
+
+* Compact list newest-first with rendered date, file size, and a download icon per row.
+* Useful for retrieving previous variants without re-rendering.
 
 Rules:
 
-* Remotion should use original files from Supabase Storage, not Mux playback streams, for final assembly.
-* Mux is used after export for playback.
+* Remotion (both Player preview and cloud render) reads original files from Supabase Storage over signed HTTPS URLs, not Mux playback streams.
+* Mux is used after export for in-app playback only.
+* The legacy "manual MP4 upload" form has been removed. The cloud render is the only path that creates a `final_export` row.
 
 ---
 

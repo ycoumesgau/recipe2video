@@ -50,7 +50,7 @@ Recipe2Video supports the following workflow:
 13. Track costs by project, segment, provider, and model.
 14. Generate a Suno prompt for music, then upload the manually generated audio file.
 15. Preview the final assembly with Remotion.
-16. Export the final MP4 and preserve it as a durable asset.
+16. Render the final MP4 in a Vercel Sandbox MicroVM (slim Remotion worker with snapshot warm-start), preserve it in Supabase Storage, and download it from the Assembly page or pull older variants from the export history.
 
 ## Hackathon scope
 
@@ -91,7 +91,8 @@ The first milestone is an end-to-end usable product for Licorn’s own marketing
 * Runway API (`@runwayml/sdk`)
 * OpenAI GPT-5.5 High (fallback/narrow utilities: prompt diffs, feedback interpretation)
 * Mux Pay-as-you-go with Basic on-demand video
-* Remotion
+* Remotion (`@remotion/player` for in-app preview, `@remotion/bundler` + `@remotion/renderer` inside Vercel Sandbox for cloud export)
+* Vercel Sandbox (`@vercel/sandbox`) for the cloud render pipeline
 * Suno manual music workflow
 * GitHub Issues for hackathon execution
 * Cursor Cloud Agents for parallel implementation
@@ -131,13 +132,16 @@ Supabase Storage
   ↓ durable original media source of truth
 Mux
   ↓ playback, thumbnails, review, streaming
-Remotion
-  ↑ uses Supabase Storage originals for final assembly
-  ↓ exports final MP4
-Supabase Storage
-  ↓ stores final master
+Vercel Sandbox MicroVM
+  ↑ clones recipe2video, npm ci of remotion-export/, bundles + renders
+  ↑ reads segment / Suno audio originals over HTTPS from Supabase Storage
+  ↓ writes out.mp4
+Orchestrator (Inngest function)
+  ↓ readFileToBuffer + uploads to
+Supabase Storage (final-exports/)
+  ↓ stores final master, served to the user as a signed download URL
 Mux
-  ↓ final playback
+  ↓ final playback in the Assembly page Final playback card
 ```
 
 Rules:
@@ -145,7 +149,43 @@ Rules:
 * Runway output URLs are temporary API artifacts and must not be treated as durable storage.
 * Original generated media files must be persisted to Supabase Storage.
 * Mux assets are used for playback and review, not as the only archive.
-* Final Remotion assembly should use original files from Supabase Storage, not Mux playback streams.
+* Final Remotion assembly reads original files from Supabase Storage over signed HTTPS URLs — never from Mux HLS playback streams.
+* The Supabase service-role key never leaves the orchestrator: the sandbox only sees pre-signed asset URLs embedded in `props.json`.
+
+## Cloud render pipeline
+
+Recipe2Video does not ship a server-rendering host of its own. The final MP4 is produced inside an ephemeral [Vercel Sandbox](https://vercel.com/docs/vercel-sandbox) MicroVM that the Inngest orchestrator drives end-to-end. The pipeline lives in `modules/assembly/render/` and is triggered by the `composition.render.requested` Inngest event when the user clicks **Render in cloud** on the Assembly page.
+
+The two paths into the sandbox:
+
+```txt
+[ cold path — first render or any code change to the worker ]
+  Sandbox.create({ source: { type: "git", url, revision, depth: 1 } })
+    └ git clone of this public repo (private auth via PAT also supported)
+    └ dnf install <Chrome Headless Shell libs>
+    └ npm ci inside remotion-export/   (~170 packages, ~20-40 s)
+    └ writeFiles remotion-export/props.json
+    └ node render.mjs                  (bundle + render in one Node process)
+    └ readFileToBuffer remotion-export/out.mp4
+    └ rm props.json + out.mp4
+    └ sandbox.snapshot({ expiration: 14 d })  → snapshot_id
+    └ INSERT public.sandbox_snapshots (cache_key, snapshot_id)
+
+[ warm path — every subsequent render that matches the cache key ]
+  Sandbox.create({ source: { type: "snapshot", snapshotId } })
+    └ writeFiles remotion-export/props.json
+    └ node render.mjs
+    └ readFileToBuffer remotion-export/out.mp4
+```
+
+Why this shape:
+
+* **The slim `remotion-export/` worker.** A sibling sub-package with its own `package.json` + `package-lock.json` pinning only `@remotion/bundler`, `@remotion/renderer`, `remotion`, `react`, `react-dom`. `npm ci` resolves ~170 packages instead of the ~800 of the full app and inherits no `@cursor/sdk` / `sqlite3` postinstall.
+* **`render.mjs` bundles in-process.** It uses `@remotion/bundler.bundle()` on `../remotion/index.tsx` and immediately renders with `@remotion/renderer.renderMedia()`. Type-only `import type { … } from "@/modules/...";` references in the composition are stripped by esbuild before module resolution, so the bundler never reaches into the rest of the app.
+* **Snapshot warm-start.** The cache key is a sha256 of `remotion-export/package-lock.json` + `package.json` + `render.mjs` + `remotion/index.tsx` + `remotion/compositions/recipe-assembly.tsx` + the dnf package list + the sandbox runtime. Any change invalidates the snapshot automatically. Cached rows live in `public.sandbox_snapshots`.
+* **Live progress.** Every long sandbox command pipes its stdout/stderr through `console.log` to keep the sandbox API stream busy (we hit idle TLS disconnects when it stayed quiet). The orchestrator scrapes `[render] composition_selected duration_frames=…` and `[render] progress rendered=N/M encoded=K` lines to update `compositions.render_progress` (jsonb) at ~1.5 s throttle. The Assembly page and `/active-generations` show that as a percentage, fps, ETA, and elapsed counter.
+* **Authentication.** The repo is public during the hackathon. When it flips back to private after the demo, set `COMPOSITION_RENDER_GIT_TOKEN` (and optionally `COMPOSITION_RENDER_GIT_USERNAME`, default `x-access-token`) in the Vercel project environment — the orchestrator forwards them as HTTP basic auth credentials in the sandbox `source.git` config. No code change required.
+* **Failure handling.** If `Sandbox.create({ source: snapshot })` fails (snapshot deleted upstream, expired), the orchestrator deletes the cache row and silently retries the cold path. A user-facing render never fails because the snapshot side misbehaved.
 
 ## Cursor SDK Agent Architecture
 
@@ -310,7 +350,7 @@ Rules:
 * `media-assets` — Supabase Storage, Mux upload, durable media records
 * `feedback` — natural-language correction, prompt diffs, learning data
 * `costs` — Runway/OpenAI/Mux cost logging and budget alerts
-* `assembly` — Suno audio upload, Remotion preview, final export
+* `assembly` — Suno audio upload, Remotion preview, cloud render orchestration (`modules/assembly/render/`), and final export browser download / history
 
 ## Demo mode
 
@@ -389,6 +429,22 @@ CURSOR_AGENT_MODEL=gpt-5.5
 CURSOR_AGENT_MODEL_THINKING=high
 CURSOR_AGENT_RUNTIME=cloud
 CURSOR_AGENT_LOCAL_CWD=
+# Cloud render (Vercel Sandbox) — see `Cloud render pipeline` above.
+# All optional. The defaults (public repo + main + warm-start enabled) cover
+# the hackathon setup.
+COMPOSITION_RENDER_GIT_URL=
+COMPOSITION_RENDER_GIT_REF=
+COMPOSITION_RENDER_GIT_TOKEN=
+COMPOSITION_RENDER_GIT_USERNAME=
+COMPOSITION_RENDER_DISABLE_SNAPSHOT_CACHE=
+# Forces every render down the cold path (no snapshot lookup, no
+# persistence) when set to "1". Otherwise the orchestrator looks up
+# public.sandbox_snapshots, falls back to the cold path on any cache miss,
+# and re-snapshots after each successful cold render.
+DISABLE_COMPOSITION_SANDBOX_RENDER=
+# Fails fast in Inngest with a clear error when set to "1". Useful when
+# Vercel Sandbox credentials are not yet wired but the rest of the app
+# needs to run end-to-end.
 ```
 
 Never expose server-side secrets to the client.

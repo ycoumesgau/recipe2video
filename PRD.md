@@ -3,7 +3,7 @@
 
 ### TL;DR
 
-Recipe2Video is an internal Licorn production tool that turns a food recipe into a repeatable, agent-assisted workflow for producing short vertical cooking videos featuring the Licorn mascot. Licorn is a food app — a "Spotify-like for food" that connects food influencers and home cooks around recipes — currently in pre-launch. The app is built by a solo founder who needs to produce two short marketing videos per week from end of May 2026, plus one Suno music single per week on streaming platforms, to support the launch of Licorn's waitlist and cooking forum. It uses the Runway API with Seedance 2 as the default video generation model, GPT-Image 2 for recipe-specific reference images, Cursor SDK with persistent per-recipe agents for creative planning, GPT-5.5 High for prompt diffs and narrow utilities, Inngest for durable workflows, Supabase Auth/Postgres/Storage for access control, state and original media masters, Mux Pay-as-you-go Basic for playback and review, Remotion for assembly preview/export, and shadcn/ui for fast interface delivery.
+Recipe2Video is an internal Licorn production tool that turns a food recipe into a repeatable, agent-assisted workflow for producing short vertical cooking videos featuring the Licorn mascot. Licorn is a food app — a "Spotify-like for food" that connects food influencers and home cooks around recipes — currently in pre-launch. The app is built by a solo founder who needs to produce two short marketing videos per week from end of May 2026, plus one Suno music single per week on streaming platforms, to support the launch of Licorn's waitlist and cooking forum. It uses the Runway API with Seedance 2 as the default video generation model, GPT-Image 2 for recipe-specific reference images, Cursor SDK with persistent per-recipe agents for creative planning, GPT-5.5 High for prompt diffs and narrow utilities, Inngest for durable workflows, Supabase Auth/Postgres/Storage for access control, state and original media masters, Mux Pay-as-you-go Basic for playback and review, Remotion for assembly preview, Vercel Sandbox MicroVMs for the actual cloud MP4 render (`@remotion/bundler` + `@remotion/renderer` inside an ephemeral worker, with a snapshot warm-start cache), and shadcn/ui for fast interface delivery.
 
 The hackathon goal is to ship a real internal production workflow for Licorn, not a generic model wrapper or throwaway proof of concept. The first milestone focuses on the highest-value end-to-end path: recipe input, storyboard, Seedance segment planning, reference validation, Runway generation, durable storage, Mux playback, feedback-driven prompt diffs, cost tracking, and final assembly preview.
 
@@ -175,9 +175,11 @@ Persona: Runway Hackathon Judge
   * Original media input: Remotion must use original files from Supabase Storage, not Mux HLS playback streams.
   * Segment timeline: Use dnd-kit for lightweight segment ordering.
   * Trim-lite: Allow simple start/end selection for variants when feasible, but avoid building a full editor.
-  * Client-side render: Use Remotion client-side rendering for hackathon export if performance is acceptable.
-  * Vercel Sandbox backup: Keep Vercel Sandbox as an optional backup if client-side export is too slow or unreliable.
-  * Final persistence: Store final MP4 in Supabase Storage, then upload a playback copy to Mux.
+  * Cloud render: Render the final MP4 inside a Vercel Sandbox MicroVM driven by the `composition.render.requested` Inngest workflow. The orchestrator clones the public Recipe2Video repo into the sandbox (with PAT-based HTTPS auth when the repo flips back to private), `npm ci` installs only the slim `remotion-export/` worker (~170 packages), then runs `node render.mjs` (bundle + render in one Node process). See `docs/technical-contracts.md` → Cloud Render Pipeline.
+  * Snapshot warm-start: After the first cold render, persist a sandbox snapshot keyed by `sha256(remotion-export/package-lock.json + composition source + dnf packages + runtime)` in `public.sandbox_snapshots`. Subsequent renders bypass `dnf install` and `npm ci` entirely. Snapshots are invalidated automatically on any code/lockfile change and on Vercel-side TTL expiration.
+  * Live progress: `compositions.render_progress` (jsonb) carries `{ phase, renderedFrames, totalFrames, encodedFrames, fps, ETA, sandboxId, timestamps }` so the Assembly page and `/active-generations` can show a real progress bar with ETA while the render runs.
+  * Final persistence: Store final MP4 in Supabase Storage, then upload a playback copy to Mux. The Supabase service-role key never enters the sandbox; the orchestrator pre-signs asset URLs in `props.json`.
+  * Downloadable history: The Assembly page exposes a download button for the latest export and an export-history list with one-click download per past variant. The legacy "manual MP4 upload" form is removed — every final export goes through the cloud render path.
 
 * GitHub-based execution workflow (Priority: P0)
   * GitHub Issues: Use GitHub Issues, not Linear, as the execution system for the hackathon repository.
@@ -441,7 +443,7 @@ Primary stack:
 * Auth and database: Supabase Auth with Magic Link, Supabase Postgres, Supabase Storage, and pgvector.
 * Workflow orchestration: Inngest.
 * Video media architecture: Supabase Storage as durable media master storage; Mux Pay-as-you-go Basic for playback, thumbnails, review, and streaming.
-* Video assembly: Remotion Player and client-side rendering for hackathon export, with Vercel Sandbox as backup.
+* Video assembly: `@remotion/player` for in-app preview; cloud MP4 render driven by an Inngest workflow that creates a Vercel Sandbox MicroVM (with snapshot warm-start cache) and runs `@remotion/bundler` + `@remotion/renderer` inside a slim `remotion-export/` worker. No client-side rendering, no manual upload.
 * Creative planning runtime: Cursor TypeScript SDK (`@cursor/sdk`) with persistent per-recipe agents running against a dedicated workspace repository (`recipe2video-agent-workspace`). Each agent maintains structured artifacts that are validated and synchronized into Supabase by the application.
 * LLM (fallback and narrow utilities): OpenAI GPT-5.5 High through direct OpenAI API, used for feedback prompt diffs and narrow planning utilities when the Cursor recipe agent is not involved.
 * Runway API: Seedance 2, GPT-Image 2, ElevenLabs TTS/SFX, uploads, task polling.
@@ -664,9 +666,20 @@ compositions
   audio_sync jsonb
   remotion_props jsonb
   export_status text
+  render_progress jsonb nullable
   created_by uuid references profiles(id) nullable
   created_at timestamptz
   updated_at timestamptz
+
+sandbox_snapshots
+  id uuid primary key
+  scope text -- 'composition_render' for the cloud Remotion render
+  cache_key text -- sha256 of lockfile + composition + dnf packages + runtime
+  snapshot_id text -- Vercel Sandbox snapshot id
+  expires_at timestamptz nullable
+  last_used_at timestamptz nullable
+  created_at timestamptz
+  unique (scope, cache_key)
 
 agent_runs
   id uuid primary key
@@ -704,6 +717,8 @@ Important data model clarification:
 * `segments` are the actual Seedance generation units, usually around 5-10 per final video.
 * `generations` are individual generated variants for a segment.
 * `media_assets` is the central media metadata table for source uploads, references, Runway outputs, accepted clips, Suno audio, and final exports.
+* `compositions.render_progress` is a JSONB snapshot pushed by the cloud render orchestrator (`renderAssemblyMp4InSandbox`) at ~1.5 s throttle so the Assembly page and `/active-generations` can render a live progress bar with frame counter, fps, and ETA.
+* `sandbox_snapshots` is the warm-start cache for the cloud Remotion render. Rows are upserted after each successful cold render and deleted automatically when the corresponding Vercel snapshot becomes unusable.
 * `agent_runs` track every message sent to a persistent Cursor recipe agent, including stage, status, and result summary.
 * `agent_artifacts` store validated artifact contents (recipe analysis, decisions, scenes, segments, reference plan, Suno prompt, changelog) with content hash and validation status.
 * The primary creative planning path uses Cursor SDK agents orchestrated through the `recipe-agent` module; GPT-5.5 High is reserved for prompt diffs and narrow utilities.
@@ -959,10 +974,13 @@ Small but intense hackathon build: 10-15 focused human hours, supported by Curso
   * Implement Remotion Player preview using original files from Supabase Storage.
   * Implement lightweight segment ordering with dnd-kit.
   * Add audio offset, cut, fade in, and fade out controls.
-  * Attempt client-side export; after export, store final MP4 in Supabase Storage and upload playback copy to Mux.
+  * Wire the cloud render: `composition.render.requested` Inngest workflow → Vercel Sandbox MicroVM cloning the public repo → `npm ci` of slim `remotion-export/` → `node render.mjs` → `readFileToBuffer` → Supabase Storage + Mux. After the first cold render, persist a sandbox snapshot keyed on a content hash of the worker for warm-start on subsequent renders.
+  * Surface render phase, frame counter, fps, and ETA in the Assembly page and `/active-generations` via `compositions.render_progress` (jsonb) polled through the existing RSC sync.
+  * Expose a download button for the latest export and an export-history list with one-click download per past variant.
 * Dependencies:
   * Accepted segment variants or fixture clips available.
   * User manually generates Suno audio if music is included in demo.
+  * Vercel Sandbox credentials available in the deployment environment (OIDC token on Vercel; `VERCEL_TEAM_ID` / `VERCEL_PROJECT_ID` / `VERCEL_TOKEN` triplet otherwise).
 
 **Phase 7 — Demo polish and submission (Monday morning, 3-6h)**
 

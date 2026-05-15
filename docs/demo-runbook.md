@@ -442,7 +442,10 @@ This matrix maps the Issue #20 acceptance checklist to the actual implementation
 | Suno prompt | Implemented | `modules/assembly/suno-prompt.ts` + `/videos/[videoId]/assembly` | Copy-ready prompt, no unsupported Suno API call. |
 | Suno audio upload | Implemented | `modules/assembly/use-cases/upload-suno-audio.ts` | Stored as `suno_audio` media asset in Supabase Storage. |
 | Remotion preview | Implemented | `remotion/compositions/recipe-assembly.tsx` + `assembly-workspace.tsx` | Uses Supabase originals; no Mux HLS dependency for assembly. |
-| Final export persistence | Implemented | `uploadFinalExportAction` | Final MP4 stored in Supabase Storage, then uploaded to Mux for playback. |
+| Cloud render (Vercel Sandbox) | Implemented | `modules/assembly/render/sandbox-assembly-render.ts` + `composition-render.ts` Inngest function | Sandbox clones the repo, `npm ci` inside `remotion-export/`, runs `node render.mjs` (bundle + render), reads back `out.mp4`. Snapshot warm-start cache via `public.sandbox_snapshots`. |
+| Cloud render live progress | Implemented | `compositions.render_progress` + `CloudRenderProgressCard` + `/active-generations` card | Phase + frame counter + fps + ETA, polled through the existing RSC sync at 5 s. |
+| Final export persistence | Implemented | `persistFinalExportFromBuffer` (orchestrator-side after `readFileToBuffer`) | Final MP4 stored in Supabase Storage, media_asset row created, uploaded to Mux for playback. The legacy manual upload form was removed. |
+| Final export download / history | Implemented | `AssemblyFinalExport[]` in `getAssemblyPageData` + `DownloadLatestExportButton` + `ExportHistoryCard` | Signed download URLs with `Content-Disposition: attachment`. History card lists every prior `final_export` for the project. |
 | Demo Mode fixture | Implemented | `/demo` | Paris-Brest public-safe fixture with storyboard, references, segments, prompt diff, costs, and assembly preview. |
 | In-repo Runway skills | Tracked | `.cursor/skills/use-runway-api/SKILL.md` and companion `rw-*` skills | Cursor agents use these as the authoritative low-level reference. |
 | Recipe Agent lifecycle | Implemented | Project overview + `modules/recipe-agent/*` | Create, resume, send message, validate artifacts, sync to Supabase. Agent panel shows status. |
@@ -495,15 +498,21 @@ Explain:
 The durable original file is stored separately from the playback layer, so the system can recover from playback-provider issues.
 ```
 
-### If Remotion export fails
+### If the cloud render fails
 
-Show Remotion Player preview only.
+The Assembly page surfaces the failure inline (`Last cloud render failed.`) and the previous successful export, if any, stays downloadable from the Export history card. If the render fails repeatedly during the demo:
+
+1. Open `/active-generations` to confirm the render row reached a terminal state.
+2. Use a pre-recorded final MP4 (Paris-Brest fixture) for the playback story while you check the Inngest run logs for the root cause.
+3. Fall back to the in-app Remotion Player preview (which uses the same composition) for the visual demo and mention that the cloud render is the production path that produced the MP4 you are showing.
 
 Say:
 
 ```txt
-The preview is the core workflow. Export can be performed client-side or through a render worker after the hackathon.
+The cloud render runs inside a Vercel Sandbox MicroVM. The preview you see in the Player is the exact same Remotion composition; the sandbox renders it with @remotion/renderer headless. If the run fails I get an explicit failure state — no silent retry.
 ```
+
+If you suspect a warm-start snapshot regression, set `COMPOSITION_RENDER_DISABLE_SNAPSHOT_CACHE=1` and rerun: this forces a cold path with a fresh `npm ci`.
 
 ### If cost dashboard has no live costs
 
@@ -530,7 +539,7 @@ Document these for judges. They are framed as roadmap items, not failures, in li
 * `Ask agent to revise` on the storyboard captures the revision request in the UI but does not yet call OpenAI from this milestone. Use the Paris-Brest fixture for the demo storyboard story.
 * TTS storyboard pitch (P1) is not implemented. The button is intentionally hidden.
 * Embedding-based RAG retrieval over feedback (P1) is not implemented. The `scene_feedbacks.embedding` column is nullable and reserved for the post-hackathon iteration.
-* Server-side Remotion render (Vercel Sandbox backup) is not implemented. The current export path is client-side; if rendering fails, fall back to demonstrating the Remotion preview only.
+* Cloud render is exercised end-to-end through Vercel Sandbox. Failure paths (snapshot unusable, cold-install failures, Remotion render exit ≠ 0) are documented in `docs/technical-contracts.md` → Cloud Render Pipeline. The Assembly page shows progress and ETA, and never silently retries.
 * `/active-generations` and `/settings` are read-only stubs at the time of the QA pass. Per-task retry, cancel, global pause, and writable settings live inside their parent flows.
 * The Cursor SDK recipe agent requires `CURSOR_API_KEY` and `CURSOR_AGENT_REPO_URL` for live operation. Without these, the agent panel shows "not configured" and the fixture path should be used.
 * Agent artifact sync is one-way (agent -> app). The agent does not read back from Supabase after sync.
@@ -547,11 +556,10 @@ Document these for judges. They are framed as roadmap items, not failures, in li
 This list mirrors **Phase 5** of `audit_critique_recipe2video_05cb7661.plan` and what the post-hackathon team should pick up next:
 
 * **TTS storyboard pitch.** The PRD lists "Optionally generate an audio pitch of the storyboard through Runway's ElevenLabs TTS model" as part of the storyboard tab. The button is intentionally hidden today and the workflow is not wired.
-* **Trim-lite per segment in assembly.** PRD Functional Requirements ("Trim-lite: Allow simple start/end selection for variants when feasible"). The current `AssemblySegmentClip` model has no `trimStart`/`trimEnd`; the Remotion composition uses the full duration of each clip.
-* **Server-side Remotion render.** `uploadFinalExportAction` accepts a user-uploaded MP4 today. A Phase 5 task is to wire either `@remotion/renderer` or a Vercel Sandbox worker to render the final master server-side, then store it in Supabase Storage and Mux as the contract requires.
+* **Trim-lite per segment in assembly.** The current `AssemblySegmentClip` model and Remotion composition do support per-placement `inSeconds` / `outSeconds` trims, but the UX could expose explicit start/end handles in a more discoverable way for the demo.
 * **Embedding-backed RAG memory.** `scene_feedbacks.embedding` is reserved as `vector(1536)` but no embedding pipeline runs yet. Phase 5 adds an ingest step that embeds each applied feedback and a retrieval helper that surfaces relevant prior diffs when the agent generates a new prompt.
 * **PostHog tracking plan.** PRD lists 30+ events (`auth_magic_link_requested`, `seedance_segment_generation_succeeded`, `cost_logged`, `budget_threshold_reached`, ...). None are emitted today. Phase 5 should pick the smallest-meaningful subset (auth, segment generation lifecycle, cost log, budget threshold) and instrument them through `@posthog/node`.
-* **`composition.render.requested` event.** Removed from `inngest/events.ts` because nothing handled it. Reintroduce when the server-side Remotion render is wired so the assembly screen can fire the event instead of waiting on a manual upload.
+* **Cloud render observability follow-ups.** The snapshot warm-start cache (`public.sandbox_snapshots`) has no admin UI yet: a small `/active-generations` panel listing snapshots, their cache key, age, and a manual "invalidate" button would make hackathon debugging easier.
 * **`/mux-test` route gating.** The route stays useful for verifying Mux ingest end-to-end, but should be hidden behind `process.env.NODE_ENV === "development"` (or a feature flag) before any public demo deploys it.
 * **Live recipe ingestion via vision when only photos are uploaded.** Today the wizard passes filenames as `photoDescriptions`. A Phase 5 task downloads each photo from Supabase Storage, sends them to GPT-5.5 vision, and persists the recipe normalized output.
 * **Project-scoped collaboration metadata.** When more than two internal users are active, surface `last actor` and a soft lock to avoid two users editing the same draft at the same time.
