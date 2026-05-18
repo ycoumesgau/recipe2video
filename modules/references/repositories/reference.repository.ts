@@ -384,31 +384,28 @@ export async function listPendingExtractedFramesForSegment(
   supabase: SupabaseDataClient,
   segmentId: string,
 ): Promise<PendingExtractedFrameDescriptor[]> {
-  const { data, error } = await supabase
+  // Two-step query: first list every recipe_reference_id wired to the
+  // segment, then re-fetch the matching reference_assets rows. We do
+  // not embed the relation in a single Supabase select because the FK
+  // type generator in CI does not always include
+  // `segment_references_recipe_reference_id_fkey`, which surfaces as a
+  // `SelectQueryError<"could not find the relation between
+  // segment_references and reference_assets">` at type-check time.
+  const { data: links, error: linksError } = await supabase
     .from("segment_references")
-    .select(
-      "recipe_reference_id, reference_assets:reference_assets!segment_references_recipe_reference_id_fkey(id, canonical_name)",
-    )
+    .select("recipe_reference_id")
     .eq("segment_id", segmentId)
     .not("recipe_reference_id", "is", null);
 
-  throwIfSupabaseError(error, "listPendingExtractedFramesForSegment failed");
+  throwIfSupabaseError(linksError, "listPendingExtractedFramesForSegment failed");
 
-  const rows = (data ?? []) as Array<{
-    recipe_reference_id: string | null;
-    reference_assets: { id: string; canonical_name: string } | null;
-  }>;
-
-  const referenceIds = rows
+  const referenceIds = (links ?? [])
     .map((row) => row.recipe_reference_id)
     .filter((id): id is string => Boolean(id));
   if (referenceIds.length === 0) {
     return [];
   }
 
-  // Second-pass select including the columns added by migration
-  // 20260518200000. We do this in a separate round-trip so the join
-  // stays readable and the cast through `unknown` is bounded.
   const { data: refs, error: refsError } = await supabase
     .from("reference_assets")
     .select("*")
