@@ -74,6 +74,9 @@ const DEFAULT_LIBRARY_ALIASES: Record<string, string[]> = {
   induction_wide: ["InductionWide"],
   oven_opened_wide: ["OvenWide"],
   oven_opened_closeup: ["OvenCloseup"],
+  silicone_spatula: ["SiliconeSpatula", "Maryse", "RubberSpatula", "Spatula"],
+  turning_spatula: ["TurningSpatula", "FishSpatula"],
+  offset_spatula: ["OffsetSpatula"],
   spider_skimmer: ["SpiderSkimmer"],
   tongs: ["Tongs"],
 };
@@ -132,6 +135,15 @@ function buildDescription(category: AssetCategory, canonicalName: string): strin
       }
       return `Canonical kitchen background (${canonicalName}). Choose by what the image actually frames, not by historical aliases.`;
     case "utensil":
+      if (canonicalName === "silicone_spatula") {
+        return "Flexible silicone spatula (French: maryse) for folding batters, scraping mixing bowls, stand-mixer bowls, and sauces in pans. Not for serving portions from baking dishes (@TurningSpatula) or lifting fragile pastry layers (@OffsetSpatula).";
+      }
+      if (canonicalName === "turning_spatula") {
+        return "Rigid turning spatula for sliding under lasagna, gratin, sheet cakes, or fish and lifting a supported serving.";
+      }
+      if (canonicalName === "offset_spatula") {
+        return "Offset pastry spatula for sliding under tart shells, cookies, or entremets and lifting delicate baked layers.";
+      }
       return `Canonical utensil (${canonicalName}). Attach only the exact variant identifier; never use generic family names.`;
     default:
       return null;
