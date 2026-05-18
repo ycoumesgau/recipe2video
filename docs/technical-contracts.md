@@ -524,6 +524,8 @@ export interface SeedanceSegment {
 
 ```
 
+For the default Runway model `seedance2`, `durationTarget` must be an **integer** number of seconds between **5** and **15** inclusive. The application enforces this in `SeedanceSegmentsEnvelopeSchema` (artifact sync) and again in `requestSegmentGenerationWorkflow` before calling Runway.
+
 ### Media asset
 
 ```ts

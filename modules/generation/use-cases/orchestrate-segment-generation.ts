@@ -22,17 +22,11 @@ import type { VideoStatus } from "@/modules/videos/video-status";
 import {
   RUNWAY_DEFAULT_VIDEO_RATIO,
   RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
+  RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS,
+  RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS,
 } from "../runway.constants";
 
 const MAX_SEEDANCE_REFERENCE_INPUTS = 9;
-/**
- * Seedance 2 only accepts integer durations between 5 and 15 seconds. Anything
- * outside that range is rejected by Runway with an opaque "Validation of body
- * failed" error, so we surface a precise message at the orchestrator boundary.
- * Source: https://docs.dev.runwayml.com/guides/seedance/#reference
- */
-const SEEDANCE2_MIN_DURATION_SECONDS = 5;
-const SEEDANCE2_MAX_DURATION_SECONDS = 15;
 /**
  * Per-reference size cap enforced by Runway's API:
  *   `Asset size exceeds 16.0MB.` (path: references[i].uri)
@@ -701,7 +695,8 @@ function assertReferencesUnderRunwaySizeLimit(
 
 /**
  * Pre-flight validation of `segment.durationTarget` against Seedance 2's
- * 5–15s integer window. Without this, an out-of-range duration is rejected by
+ * 5-15 second integer window (same bounds as `SeedanceSegmentsEnvelopeSchema`).
+ * Without this, an out-of-range duration is rejected by
  * Runway as a generic "Validation of body failed" error which is hard to
  * diagnose in the UI; surfacing the exact constraint here lets the operator
  * fix the storyboard before triggering Inngest.
@@ -710,12 +705,12 @@ function assertSeedance2DurationValid(segment: SeedanceSegment) {
   const duration = segment.durationTarget;
   const isInteger = Number.isInteger(duration);
   const inRange =
-    duration >= SEEDANCE2_MIN_DURATION_SECONDS &&
-    duration <= SEEDANCE2_MAX_DURATION_SECONDS;
+    duration >= RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS &&
+    duration <= RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS;
 
   if (!isInteger || !inRange) {
     throw new Error(
-      `Segment ${segment.id} has duration_target=${duration}s, but Seedance 2 only accepts integer durations between ${SEEDANCE2_MIN_DURATION_SECONDS}s and ${SEEDANCE2_MAX_DURATION_SECONDS}s. Adjust the storyboard before regenerating.`,
+      `Segment ${segment.id} has duration_target=${duration}s, but Seedance 2 only accepts integer durations between ${RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS}s and ${RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS}s. Adjust the storyboard before regenerating.`,
     );
   }
 }
