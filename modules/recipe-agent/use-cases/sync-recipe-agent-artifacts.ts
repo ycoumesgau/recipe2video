@@ -32,6 +32,10 @@ import {
   SeedanceSegmentsEnvelopeSchema,
 } from "@/modules/storyboard/services/planning-output-schemas";
 import type { RecipeAnalysisResult } from "@/modules/recipe-ingest/recipe.types";
+import {
+  applyOutroOverrideToSegments,
+  LICORN_OUTRO_REFERENCE_NAMES,
+} from "@/modules/storyboard/services/seedance-outro-template";
 import type {
   LogicalScene,
   SeedanceSegment,
@@ -155,6 +159,7 @@ export function buildRecipeAgentArtifactSyncPlan(
   let recipePatch: RecipeAgentArtifactSyncPlan["recipePatch"] = null;
   let logicalScenes: CreateLogicalSceneInput[] = [];
   let segments: RecipeAgentArtifactSyncPlan["segments"] = [];
+  let rawSegments: SeedanceSegment[] = [];
   let referencesRaw: ReferencePlanEntry[] = [];
   let sunoPrompt: string | null = null;
   let sunoPromptV2: SunoPromptV2 | null = null;
@@ -216,8 +221,10 @@ export function buildRecipeAgentArtifactSyncPlan(
     }
 
     if (artifact.name === "seedance-segments.json") {
-      segments = (validation.value as { seedanceSegments: SeedanceSegment[] })
-        .seedanceSegments.map((segment) => toCreateSegmentInput(input.videoId, segment));
+      // Persist the raw agent-emitted segments here; the outro override
+      // is applied below once we also have `referencesRaw` available.
+      rawSegments = (validation.value as { seedanceSegments: SeedanceSegment[] })
+        .seedanceSegments;
     }
 
     if (artifact.name === "reference-plan.json") {
@@ -229,6 +236,26 @@ export function buildRecipeAgentArtifactSyncPlan(
       sunoPrompt = content;
     }
   }
+
+  // Standardized outro override: any segment with
+  // `arc === licorn_celebration_outro` gets its prompt, references and
+  // duration rewritten to the canonical template. The dish description
+  // is sourced from `reference-plan.json[FinalDishVisual].prompt`. We do
+  // this AFTER the artifact loop so both inputs are in scope; if the
+  // agent emitted only `seedance-segments.json` (unlikely in practice)
+  // the override skips outro segments and surfaces an error.
+  const finalDishDescription =
+    referencesRaw.find(
+      (entry) => entry.canonicalName === LICORN_OUTRO_REFERENCE_NAMES.finalDishVisual,
+    )?.prompt ?? null;
+  const outroOutcome = applyOutroOverrideToSegments({
+    segments: rawSegments,
+    finalDishDescription,
+  });
+  errors.push(...outroOutcome.errors);
+  segments = outroOutcome.segments.map((segment) =>
+    toCreateSegmentInput(input.videoId, segment),
+  );
 
   return {
     valid: errors.length === 0,

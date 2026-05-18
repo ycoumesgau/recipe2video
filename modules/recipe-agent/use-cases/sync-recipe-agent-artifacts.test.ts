@@ -446,6 +446,274 @@ test("buildRecipeAgentArtifactSyncPlan rejects non-string conditioningReferences
   assert.equal(plan.referencesRaw.length, 0);
 });
 
+test("buildRecipeAgentArtifactSyncPlan rewrites the outro segment with the canonical Licorn template", () => {
+  // The agent only emits a placeholder for the outro segment
+  // (`prompt: "<APP_OVERRIDE>"`) and the app injects the real prompt +
+  // references at sync time. The dish description is sourced from
+  // `reference-plan.json[FinalDishVisual].prompt` so the outro is
+  // grounded on the same artwork as the rest of the storyboard.
+  const buildAgentSegment = (index: number) => ({
+    id: `segment-${index + 1}`,
+    videoId,
+    position: index + 1,
+    title: `Segment ${index + 1}`,
+    arc: "build_action",
+    mode: "References" as const,
+    logicalSceneIds: [`scene-${index + 1}`],
+    description: `Segment ${index + 1}`,
+    prompt:
+      "Use @KitchenIslandDefault as global kitchen. Generate exactly 2 short shots with hard cuts. Mandatory timing: 0.0-1.0s action. no speech, no voiceover, no music.",
+    promptInitial:
+      "Use @KitchenIslandDefault as global kitchen. Generate exactly 2 short shots with hard cuts. Mandatory timing: 0.0-1.0s action. no speech, no voiceover, no music.",
+    references: [
+      {
+        name: "KitchenIslandDefault",
+        label: "KitchenIslandDefault",
+        role: "global kitchen identity",
+        required: true,
+      },
+    ],
+    beats: ["beat"],
+    timing: ["0.0-1.0s: action"],
+    continuity: "stable",
+    risk: "n/a",
+    audioPrompt: "ambience",
+    negatives: ["no text"],
+    qaChecklist: {
+      referencesWithinLimit: true,
+      globalKitchenReferencePresent: true,
+      referenceRolesExplicit: true,
+      promptWithinPracticalLimit: true,
+      hardCutsSpecified: true,
+      mandatoryTimingSpecified: true,
+      noSpeechVoiceoverOrMusic: true,
+      fragileFoodPhysicsHandled: true,
+      nonStandardGeometryHandled: true,
+      sourcePoliciesApplied: [],
+    },
+    durationTarget: 5,
+    status: "ready" as const,
+  });
+
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "seedance-segments.json",
+        JSON.stringify({
+          seedanceSegments: [
+            ...Array.from({ length: 4 }, (_, index) => buildAgentSegment(index)),
+            {
+              id: "segment-outro",
+              videoId,
+              position: 5,
+              title: "Outro",
+              arc: "licorn_celebration_outro",
+              mode: "References",
+              logicalSceneIds: ["scene-outro"],
+              description: "Standardized Licorn celebration outro.",
+              prompt: "<APP_OVERRIDE>",
+              promptInitial: "<APP_OVERRIDE>",
+              references: [
+                {
+                  name: "KitchenLayoutContextWide",
+                  label: "KitchenLayoutContextWide",
+                  role: "structural kitchen context",
+                  required: true,
+                },
+                {
+                  name: "KitchenIslandDefault",
+                  label: "KitchenIslandDefault",
+                  role: "active hero island view",
+                  required: true,
+                },
+                {
+                  name: "LicornOutroVideo",
+                  label: "LicornOutroVideo",
+                  role: "Licorn celebration motion reference",
+                  required: true,
+                },
+                {
+                  name: "CharacterSheet",
+                  label: "CharacterSheet",
+                  role: "Licorn character identity lock",
+                  required: true,
+                },
+                {
+                  name: "FinalDishVisual",
+                  label: "FinalDishVisual",
+                  role: "finished dish identity",
+                  required: true,
+                },
+              ],
+              beats: ["explosion of joy"],
+              timing: ["0.0-1.0s calm", "1.0-5.0s explosion"],
+              continuity: "Dish stays untouched.",
+              risk: "Keep dish identical to N-1.",
+              audioPrompt: "soft whoosh + tada",
+              negatives: ["no text"],
+              qaChecklist: {
+                referencesWithinLimit: true,
+                globalKitchenReferencePresent: true,
+                referenceRolesExplicit: true,
+                promptWithinPracticalLimit: true,
+                hardCutsSpecified: true,
+                mandatoryTimingSpecified: true,
+                noSpeechVoiceoverOrMusic: true,
+                fragileFoodPhysicsHandled: true,
+                nonStandardGeometryHandled: true,
+                sourcePoliciesApplied: [],
+              },
+              durationTarget: 5,
+              status: "ready",
+            },
+          ],
+        }),
+      ),
+      artifact(
+        "reference-plan.json",
+        JSON.stringify({
+          references: [
+            {
+              type: "recipe_state",
+              canonicalName: "FinalDishVisual",
+              role: "finished dish identity",
+              priority: 1,
+              usedInSegmentIds: ["segment-outro"],
+              prompt:
+                "a glossy plated paris-brest crowned with caramelized hazelnut praline",
+            },
+          ],
+        }),
+      ),
+    ],
+  });
+
+  assert.deepEqual(plan.errors, []);
+  assert.equal(plan.valid, true);
+  assert.equal(plan.segments.length, 5);
+
+  const outro = plan.segments[4];
+  assert.equal(outro.arc, "licorn_celebration_outro");
+  assert.equal(outro.durationTarget, 5);
+  assert.notEqual(outro.prompt, "<APP_OVERRIDE>");
+  assert.equal(outro.prompt, outro.promptInitial);
+  assert.match(outro.prompt, /paris-brest crowned with caramelized hazelnut praline/);
+  assert.equal(outro.references.length, 5);
+  assert.deepEqual(
+    outro.references.map((reference) => reference.name),
+    [
+      "KitchenLayoutContextWide",
+      "KitchenIslandDefault",
+      "LicornOutroVideo",
+      "CharacterSheet",
+      "FinalDishVisual",
+    ],
+  );
+});
+
+test("buildRecipeAgentArtifactSyncPlan emits an actionable error when outro is declared without FinalDishVisual", () => {
+  const buildAgentSegment = (index: number) => ({
+    id: `segment-${index + 1}`,
+    videoId,
+    position: index + 1,
+    title: `Segment ${index + 1}`,
+    arc: "build_action",
+    mode: "References" as const,
+    logicalSceneIds: [`scene-${index + 1}`],
+    description: `Segment ${index + 1}`,
+    prompt:
+      "Use @KitchenIslandDefault as global kitchen. Generate exactly 2 short shots with hard cuts. Mandatory timing: 0.0-1.0s action. no speech, no voiceover, no music.",
+    promptInitial:
+      "Use @KitchenIslandDefault as global kitchen. Generate exactly 2 short shots with hard cuts. Mandatory timing: 0.0-1.0s action. no speech, no voiceover, no music.",
+    references: [
+      {
+        name: "KitchenIslandDefault",
+        label: "KitchenIslandDefault",
+        role: "global kitchen identity",
+        required: true,
+      },
+    ],
+    beats: ["beat"],
+    timing: ["0.0-1.0s: action"],
+    continuity: "stable",
+    risk: "n/a",
+    audioPrompt: "ambience",
+    negatives: ["no text"],
+    qaChecklist: {
+      referencesWithinLimit: true,
+      globalKitchenReferencePresent: true,
+      referenceRolesExplicit: true,
+      promptWithinPracticalLimit: true,
+      hardCutsSpecified: true,
+      mandatoryTimingSpecified: true,
+      noSpeechVoiceoverOrMusic: true,
+      fragileFoodPhysicsHandled: true,
+      nonStandardGeometryHandled: true,
+      sourcePoliciesApplied: [],
+    },
+    durationTarget: 5,
+    status: "ready" as const,
+  });
+
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "seedance-segments.json",
+        JSON.stringify({
+          seedanceSegments: [
+            ...Array.from({ length: 4 }, (_, index) => buildAgentSegment(index)),
+            {
+              id: "segment-outro",
+              videoId,
+              position: 5,
+              title: "Outro",
+              arc: "licorn_celebration_outro",
+              mode: "References",
+              logicalSceneIds: ["scene-outro"],
+              description: "Standardized Licorn celebration outro.",
+              prompt: "<APP_OVERRIDE>",
+              promptInitial: "<APP_OVERRIDE>",
+              references: [
+                {
+                  name: "KitchenIslandDefault",
+                  label: "KitchenIslandDefault",
+                  role: "active hero island view",
+                  required: true,
+                },
+              ],
+              beats: ["explosion"],
+              timing: ["0-5s"],
+              continuity: "stable dish",
+              risk: "n/a",
+              audioPrompt: "tada",
+              negatives: ["no text"],
+              qaChecklist: {
+                referencesWithinLimit: true,
+                globalKitchenReferencePresent: true,
+                referenceRolesExplicit: true,
+                promptWithinPracticalLimit: true,
+                hardCutsSpecified: true,
+                mandatoryTimingSpecified: true,
+                noSpeechVoiceoverOrMusic: true,
+                fragileFoodPhysicsHandled: true,
+                nonStandardGeometryHandled: true,
+                sourcePoliciesApplied: [],
+              },
+              durationTarget: 5,
+              status: "ready",
+            },
+          ],
+        }),
+      ),
+    ],
+  });
+
+  assert.equal(plan.valid, false);
+  assert.match(plan.errors.join("\n"), /FinalDishVisual/);
+});
+
 test("createArtifactContentHash is stable for unchanged content", () => {
   assert.equal(
     createArtifactContentHash("same content"),

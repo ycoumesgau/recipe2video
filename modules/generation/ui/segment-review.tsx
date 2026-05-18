@@ -38,9 +38,11 @@ import type { VideoProject } from "@/modules/videos/video.types";
 
 import {
   acceptSegmentVariantAction,
+  applyStandardOutroAction,
   rejectSegmentVariantAction,
   requestSegmentRegenerationAction,
 } from "../actions";
+import { FrameExtractionCard } from "./frame-extraction-card";
 import type { GenerationStatus } from "../generation-status";
 import type {
   SegmentReferenceResolutionItem,
@@ -79,6 +81,7 @@ const segmentStatusVariant: Record<
   rejected: "destructive",
   failed: "destructive",
   blocked: "destructive",
+  awaiting_upstream_frame: "destructive",
 };
 
 export function SegmentReview({
@@ -143,6 +146,15 @@ export function SegmentReview({
             segmentDisplayName={formatSegmentHeading(data.segment)}
             selectedVariant={selectedVariant}
           />
+          <FrameExtractionCard
+            durationSeconds={
+              selectedVariant?.mediaAsset?.durationSeconds ??
+              data.segment.durationTarget
+            }
+            muxPlaybackId={selectedVariant?.mediaAsset?.muxPlaybackId}
+            segmentId={segmentId}
+            videoId={videoId}
+          />
           <VariantList
             segmentId={segmentId}
             selectedGenerationId={data.segment.selectedGenerationId}
@@ -154,6 +166,7 @@ export function SegmentReview({
         <div className="space-y-4">
           <PromptPanel
             hasActiveGeneration={data.hasActiveGeneration}
+            isLastSegmentOfVideo={data.isLastSegmentOfVideo}
             project={data.project}
             segment={data.segment}
             variantCount={data.variants.length}
@@ -201,6 +214,7 @@ export function SegmentReview({
         <TabsContent value="prompt">
           <PromptPanel
             hasActiveGeneration={data.hasActiveGeneration}
+            isLastSegmentOfVideo={data.isLastSegmentOfVideo}
             project={data.project}
             segment={data.segment}
             variantCount={data.variants.length}
@@ -454,12 +468,14 @@ function VariantActionButton({
 
 function PromptPanel({
   hasActiveGeneration,
+  isLastSegmentOfVideo,
   project,
   segment,
   variantCount,
   videoId,
 }: {
   hasActiveGeneration: boolean;
+  isLastSegmentOfVideo: boolean;
   project: VideoProject | null;
   segment: NonNullable<SegmentReviewData["segment"]>;
   variantCount: number;
@@ -500,8 +516,50 @@ function PromptPanel({
           segmentId={segment.id}
           videoId={videoId}
         />
+        {isLastSegmentOfVideo ? (
+          <ApplyStandardOutroForm
+            hasActiveGeneration={hasActiveGeneration}
+            segmentId={segment.id}
+            videoId={videoId}
+          />
+        ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function ApplyStandardOutroForm({
+  hasActiveGeneration,
+  segmentId,
+  videoId,
+}: {
+  hasActiveGeneration: boolean;
+  segmentId: string;
+  videoId: string;
+}) {
+  return (
+    <form
+      action={applyStandardOutroAction}
+      className="space-y-2 rounded-lg border border-dashed bg-amber-500/5 p-3"
+    >
+      <input name="videoId" type="hidden" value={videoId} />
+      <input name="segmentId" type="hidden" value={segmentId} />
+      <p className="text-sm font-medium">Apply standard outro</p>
+      <p className="text-xs text-muted-foreground">
+        Replace this segment&apos;s prompt and references with the canonical
+        Licorn celebration outro template. The video&apos;s
+        recipe-specific FinalDishVisual reference must already exist with a
+        single-sentence dish description. The segment is reset to{" "}
+        <code>pending</code>; you generate it manually afterwards.
+      </p>
+      <Button
+        disabled={hasActiveGeneration}
+        type="submit"
+        variant="outline"
+      >
+        Apply standard outro
+      </Button>
+    </form>
   );
 }
 

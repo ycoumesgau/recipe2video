@@ -4,7 +4,10 @@ import { listSegmentFeedbacksBySegmentId } from "@/modules/feedback/repositories
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import { listMediaAssetsByGenerationIds } from "@/modules/media-assets/repositories/media-asset.repository";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
-import { getSegmentById } from "@/modules/storyboard/repositories/segment.repository";
+import {
+  getSegmentById,
+  listSegmentsByVideoId,
+} from "@/modules/storyboard/repositories/segment.repository";
 import { matchesReference } from "@/modules/references/reference-matching";
 import type { ReferenceStatus } from "@/modules/references/reference-status";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
@@ -73,6 +76,13 @@ export interface SegmentReviewData {
    * upload action that does not exist for library globals.
    */
   referenceResolutions: SegmentReferenceResolutionItem[];
+  /**
+   * True when this segment has the highest position in its video; used
+   * by the segment-review UI to gate the "Apply standard outro" backfill
+   * button so the operator cannot rewrite a creative middle segment by
+   * mistake.
+   */
+  isLastSegmentOfVideo: boolean;
 }
 
 export async function getSegmentReviewData(
@@ -93,15 +103,23 @@ export async function getSegmentReviewData(
       hasActiveReferenceImageGeneration: false,
       feedbacks: [],
       referenceResolutions: [],
+      isLastSegmentOfVideo: false,
     };
   }
 
-  const [project, generations, feedbacks, referenceResolutions] = await Promise.all([
+  const [project, generations, feedbacks, referenceResolutions, allSegments] = await Promise.all([
     getVideoProjectById(supabase, input.videoId),
     listGenerationsBySegmentId(supabase, input.segmentId),
     listSegmentFeedbacksBySegmentId(supabase, input.segmentId),
     resolveSegmentReferenceStatuses(supabase, segment),
+    listSegmentsByVideoId(supabase, input.videoId),
   ]);
+  const maxPosition = allSegments.reduce(
+    (acc, current) => Math.max(acc, current.position),
+    -Infinity,
+  );
+  const isLastSegmentOfVideo =
+    Number.isFinite(maxPosition) && segment.position === maxPosition;
   const mediaAssets = await listMediaAssetsByGenerationIds(
     supabase,
     generations.map((generation) => generation.id),
@@ -126,6 +144,7 @@ export async function getSegmentReviewData(
     hasActiveReferenceImageGeneration,
     feedbacks,
     referenceResolutions,
+    isLastSegmentOfVideo,
     variants: generations.map((generation) => ({
       generation,
       mediaAsset:

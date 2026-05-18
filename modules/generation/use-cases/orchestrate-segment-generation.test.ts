@@ -84,6 +84,81 @@ test("buildSeedanceGenerationInput maps every resolved JIT URL into Runway's ref
   ]);
 });
 
+test("buildSeedanceGenerationInput splits inputs by kind into references[] (images) and referenceVideos[] (videos)", () => {
+  // The standardized outro segment binds 4 image references AND a video
+  // reference (LicornOutroVideo) on the same Seedance request. The
+  // orchestrator must therefore route entries to the right Runway slot
+  // based on `kind`, ordered by `position`, and surface
+  // `durationSeconds` so the runway service can validate the combined
+  // 15s cap.
+  const input = buildSeedanceGenerationInput(
+    {
+      id: "segment-outro",
+      videoId: "video-x",
+      title: "Outro",
+      prompt: "Outro prompt",
+      durationTarget: 5,
+    } as unknown as SeedanceSegment,
+    [
+      seedanceRef("KitchenLayoutContextWide", "https://signed/kitchen-wide.png", {
+        position: 0,
+      }),
+      seedanceRef("KitchenIslandDefault", "https://signed/kitchen.png", {
+        position: 1,
+      }),
+      {
+        position: 2,
+        role: "Licorn celebration motion reference",
+        required: true,
+        canonicalName: "LicornOutroVideo",
+        aliases: ["LicornOutroVideo"],
+        uri: "https://signed/licorn-outro.mp4",
+        source: "asset_library",
+        kind: "video",
+        durationSeconds: 3,
+        mimeType: "video/mp4",
+      },
+      seedanceRef("CharacterSheet", "https://signed/character-sheet.png", {
+        position: 3,
+      }),
+      seedanceRef("FinalDishVisual", "https://signed/dish.png", {
+        position: 4,
+        source: "reference_assets",
+      }),
+    ],
+  );
+
+  assert.equal(input.promptImage, undefined);
+  assert.deepEqual(input.references, [
+    { type: "image", uri: "https://signed/kitchen-wide.png" },
+    { type: "image", uri: "https://signed/kitchen.png" },
+    { type: "image", uri: "https://signed/character-sheet.png" },
+    { type: "image", uri: "https://signed/dish.png" },
+  ]);
+  assert.deepEqual(input.referenceVideos, [
+    {
+      type: "video",
+      uri: "https://signed/licorn-outro.mp4",
+      durationSeconds: 3,
+    },
+  ]);
+});
+
+test("buildSeedanceGenerationInput omits referenceVideos[] when no video reference is wired", () => {
+  const input = buildSeedanceGenerationInput(
+    {
+      id: "segment-x",
+      videoId: "video-x",
+      title: "Hook",
+      prompt: "Generate a 5s hard cut",
+      durationTarget: 5,
+    } as unknown as SeedanceSegment,
+    [seedanceRef("KitchenIslandDefault", "https://signed/kitchen.png")],
+  );
+
+  assert.equal(input.referenceVideos, undefined);
+});
+
 test("buildSeedanceGenerationInput puts a single reference into references[] (not promptImage)", () => {
   const input = buildSeedanceGenerationInput(
     {
@@ -658,6 +733,175 @@ test("requestSegmentGenerationWorkflow blocks when Seedance reference limit is e
   );
 
   assert.deepEqual(segmentStatuses, ["blocked"]);
+});
+
+test("requestSegmentGenerationWorkflow blocks when more than 3 video references are wired", async () => {
+  // Runway Seedance 2 caps `referenceVideos[]` at 3 entries on
+  // text_to_video. We refuse upfront so the operator does not waste a
+  // round-trip and gets a precise message.
+  const segmentStatuses: string[] = [];
+
+  await assert.rejects(
+    () =>
+      requestSegmentGenerationWorkflow(
+        {
+          segmentId: "segment-1",
+          requestedByUserId: "user-1",
+          isAllowlisted: true,
+        },
+        {
+          isGenerationQueuePaused: () => false,
+          hasActiveGenerationForSegment: async () => false,
+          getSegmentById: async () => baseSegment,
+          getVideoProjectById: async () => baseVideo,
+          resolveSegmentSeedanceReferences: async () => [
+            seedanceRef("KitchenLayoutContextWide", "https://signed/kitchen-wide.png", {
+              position: 0,
+              aliases: ["KitchenLayoutContextWide"],
+            }),
+            seedanceRef("KitchenIslandDefault", "https://signed/kitchen.png", {
+              position: 1,
+            }),
+            ...Array.from({ length: 4 }, (_, index) => ({
+              position: 10 + index,
+              role: "Licorn celebration motion reference",
+              required: true,
+              canonicalName: `LicornVideo${index}`,
+              aliases: [],
+              uri: `https://signed/video-${index}.mp4`,
+              source: "asset_library" as const,
+              kind: "video" as const,
+              durationSeconds: 2,
+              mimeType: "video/mp4",
+            })),
+          ],
+          updateSegmentStatus: async (_segmentId, status) => {
+            segmentStatuses.push(status);
+            return { ...baseSegment, status };
+          },
+          createGeneration: async () => {
+            throw new Error("generation should not be created");
+          },
+          startSeedanceGeneration: async () => {
+            throw new Error("Runway should not be called");
+          },
+          logCost: async (input) => baseCostLog(input.operation),
+          sendEvent: async () => {},
+        },
+      ),
+    /at most 3 videos/,
+  );
+
+  assert.deepEqual(segmentStatuses, ["blocked"]);
+});
+
+test("requestSegmentGenerationWorkflow blocks when video references combined duration exceeds 15s", async () => {
+  const segmentStatuses: string[] = [];
+
+  await assert.rejects(
+    () =>
+      requestSegmentGenerationWorkflow(
+        {
+          segmentId: "segment-1",
+          requestedByUserId: "user-1",
+          isAllowlisted: true,
+        },
+        {
+          isGenerationQueuePaused: () => false,
+          hasActiveGenerationForSegment: async () => false,
+          getSegmentById: async () => baseSegment,
+          getVideoProjectById: async () => baseVideo,
+          resolveSegmentSeedanceReferences: async () => [
+            seedanceRef("KitchenLayoutContextWide", "https://signed/kitchen-wide.png", {
+              position: 0,
+              aliases: ["KitchenLayoutContextWide"],
+            }),
+            seedanceRef("KitchenIslandDefault", "https://signed/kitchen.png", {
+              position: 1,
+            }),
+            ...Array.from({ length: 3 }, (_, index) => ({
+              position: 10 + index,
+              role: "Licorn celebration motion reference",
+              required: true,
+              canonicalName: `LicornVideo${index}`,
+              aliases: [],
+              uri: `https://signed/video-${index}.mp4`,
+              source: "asset_library" as const,
+              kind: "video" as const,
+              durationSeconds: 6,
+              mimeType: "video/mp4",
+            })),
+          ],
+          updateSegmentStatus: async (_segmentId, status) => {
+            segmentStatuses.push(status);
+            return { ...baseSegment, status };
+          },
+          createGeneration: async () => {
+            throw new Error("generation should not be created");
+          },
+          startSeedanceGeneration: async () => {
+            throw new Error("Runway should not be called");
+          },
+          logCost: async (input) => baseCostLog(input.operation),
+          sendEvent: async () => {},
+        },
+      ),
+    /combined duration .* caps the total at 15s/,
+  );
+
+  assert.deepEqual(segmentStatuses, ["blocked"]);
+});
+
+test("requestSegmentGenerationWorkflow flips status to awaiting_upstream_frame when a pending frame placeholder is detected", async () => {
+  // When the planner declares an `extracted_frame_pending` reference,
+  // generation must wait until the operator extracts the upstream frame
+  // through the segment-review UI. The orchestrator surfaces a
+  // dedicated status + a precise message naming the source segment so
+  // the operator can act without digging through logs.
+  const segmentStatuses: string[] = [];
+
+  await assert.rejects(
+    () =>
+      requestSegmentGenerationWorkflow(
+        {
+          segmentId: "segment-1",
+          requestedByUserId: "user-1",
+          isAllowlisted: true,
+        },
+        {
+          isGenerationQueuePaused: () => false,
+          hasActiveGenerationForSegment: async () => false,
+          getSegmentById: async () => baseSegment,
+          getVideoProjectById: async () => baseVideo,
+          resolveSegmentSeedanceReferences: async () => {
+            throw new Error("resolver should not be called when frames are pending");
+          },
+          findPendingExtractedFrames: async () => [
+            {
+              referenceAssetId: "ref-pending-1",
+              canonicalName: "DishAfterSpoonDive",
+              sourceSegmentId: "segment-prev",
+              sourceTimestampSeconds: 4.5,
+            },
+          ],
+          updateSegmentStatus: async (_segmentId, status) => {
+            segmentStatuses.push(status);
+            return { ...baseSegment, status };
+          },
+          createGeneration: async () => {
+            throw new Error("generation should not be created while pending");
+          },
+          startSeedanceGeneration: async () => {
+            throw new Error("Runway should not be called while pending");
+          },
+          logCost: async (input) => baseCostLog(input.operation),
+          sendEvent: async () => {},
+        },
+      ),
+    /awaiting 1 upstream frame[\s\S]*DishAfterSpoonDive[\s\S]*segment segment-prev at 4\.50s/,
+  );
+
+  assert.deepEqual(segmentStatuses, ["awaiting_upstream_frame"]);
 });
 
 test("requestSegmentGenerationWorkflow blocks when a reference exceeds Runway's 16MB per-asset cap", async () => {

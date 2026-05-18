@@ -4,7 +4,10 @@ import { throwIfSupabaseError } from "@/shared/supabase/errors";
 
 import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
 
-import type { ReferenceAsset } from "../reference.types";
+import type {
+  ReferenceAsset,
+  ReferenceAssetKind,
+} from "../reference.types";
 import type { ReferenceStatus } from "../reference-status";
 
 type ReferenceAssetRow =
@@ -306,12 +309,48 @@ export async function updateReferenceAssetRunwayUri(
 }
 
 export function mapReferenceAsset(row: ReferenceAssetRow): ReferenceAsset {
+  // The `kind`, `source_segment_id`, and `source_timestamp_seconds`
+  // columns are added by migration 20260518200000. We cast through a
+  // partial extension so this maps cleanly even before
+  // `database.types.ts` has been regenerated; the runtime values are
+  // still validated against `ReferenceAssetKind` to surface schema drift.
+  const extendedRow = row as ReferenceAssetRow & {
+    kind?: string | null;
+    source_segment_id?: string | null;
+    source_timestamp_seconds?: number | string | null;
+  };
+
+  const kindValue = extendedRow.kind;
+  const allowedKinds: ReferenceAssetKind[] = [
+    "generated_image",
+    "extracted_frame",
+    "external_image",
+    "extracted_frame_pending",
+  ];
+  const kind: ReferenceAssetKind | undefined =
+    typeof kindValue === "string" &&
+    allowedKinds.includes(kindValue as ReferenceAssetKind)
+      ? (kindValue as ReferenceAssetKind)
+      : undefined;
+
+  const timestampRaw = extendedRow.source_timestamp_seconds;
+  const sourceTimestampSeconds: number | null =
+    timestampRaw === null || timestampRaw === undefined
+      ? null
+      : Number(timestampRaw);
+
   return {
     id: row.id,
     videoId: row.video_id,
     mediaAssetId: row.media_asset_id,
     type: row.type,
     canonicalName: row.canonical_name,
+    kind,
+    sourceSegmentId: extendedRow.source_segment_id ?? null,
+    sourceTimestampSeconds:
+      sourceTimestampSeconds !== null && Number.isFinite(sourceTimestampSeconds)
+        ? sourceTimestampSeconds
+        : null,
     source: row.source,
     runwayUri: row.runway_uri,
     prompt: row.prompt,
@@ -325,6 +364,112 @@ export function mapReferenceAsset(row: ReferenceAssetRow): ReferenceAsset {
         ? null
         : Number(row.runway_progress),
   };
+}
+
+export interface PendingExtractedFrameDescriptor {
+  referenceAssetId: string;
+  canonicalName: string;
+  sourceSegmentId: string | null;
+  sourceTimestampSeconds: number | null;
+}
+
+/**
+ * Return every `reference_assets` row tied to a segment via
+ * `segment_references` whose `kind` is `extracted_frame_pending`. Used
+ * by the orchestrator to refuse generation when an upstream frame has
+ * not been extracted yet, and by the segment-review UI to render the
+ * "awaiting frame from segment-X" banner.
+ */
+export async function listPendingExtractedFramesForSegment(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+): Promise<PendingExtractedFrameDescriptor[]> {
+  const { data, error } = await supabase
+    .from("segment_references")
+    .select(
+      "recipe_reference_id, reference_assets:reference_assets!segment_references_recipe_reference_id_fkey(id, canonical_name)",
+    )
+    .eq("segment_id", segmentId)
+    .not("recipe_reference_id", "is", null);
+
+  throwIfSupabaseError(error, "listPendingExtractedFramesForSegment failed");
+
+  const rows = (data ?? []) as Array<{
+    recipe_reference_id: string | null;
+    reference_assets: { id: string; canonical_name: string } | null;
+  }>;
+
+  const referenceIds = rows
+    .map((row) => row.recipe_reference_id)
+    .filter((id): id is string => Boolean(id));
+  if (referenceIds.length === 0) {
+    return [];
+  }
+
+  // Second-pass select including the columns added by migration
+  // 20260518200000. We do this in a separate round-trip so the join
+  // stays readable and the cast through `unknown` is bounded.
+  const { data: refs, error: refsError } = await supabase
+    .from("reference_assets")
+    .select("*")
+    .in("id", referenceIds);
+
+  throwIfSupabaseError(refsError, "listPendingExtractedFramesForSegment refs failed");
+
+  return (refs ?? [])
+    .map((row) => mapReferenceAsset(row as ReferenceAssetRow))
+    .filter((reference) => reference.kind === "extracted_frame_pending")
+    .map((reference) => ({
+      referenceAssetId: reference.id,
+      canonicalName: reference.canonicalName,
+      sourceSegmentId: reference.sourceSegmentId ?? null,
+      sourceTimestampSeconds: reference.sourceTimestampSeconds ?? null,
+    }));
+}
+
+export interface InsertExtractedFrameReferenceAssetInput {
+  videoId: string;
+  mediaAssetId: string;
+  canonicalName: string;
+  sourceSegmentId: string;
+  sourceTimestampSeconds: number;
+  prompt?: string | null;
+}
+
+/**
+ * Insert a recipe-specific reference asset that points at a frame
+ * extracted from another segment's render. The row is created with
+ * `kind = 'extracted_frame'` and `status = 'approved'` so it is
+ * immediately usable as a Seedance reference once linked to a
+ * `segment_references` row.
+ */
+export async function insertExtractedFrameReferenceAsset(
+  supabase: SupabaseDataClient,
+  input: InsertExtractedFrameReferenceAssetInput,
+): Promise<ReferenceAsset> {
+  const insertRow: Record<string, unknown> = {
+    video_id: input.videoId,
+    media_asset_id: input.mediaAssetId,
+    type: "recipe_extracted_frame",
+    canonical_name: input.canonicalName,
+    source: "extracted_frame",
+    prompt: input.prompt ?? null,
+    status: "approved" as ReferenceStatus,
+    kind: "extracted_frame" satisfies ReferenceAssetKind,
+    source_segment_id: input.sourceSegmentId,
+    source_timestamp_seconds: input.sourceTimestampSeconds,
+  };
+
+  const { data, error } = await supabase
+    .from("reference_assets")
+    // Cast through unknown because the generated Database types do not
+    // yet include the columns added by migration 20260518200000.
+    .insert(insertRow as unknown as Database["public"]["Tables"]["reference_assets"]["Insert"])
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "insertExtractedFrameReferenceAsset failed");
+  return mapReferenceAsset(data);
 }
 
 /**

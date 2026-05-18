@@ -526,5 +526,101 @@
     "createdBy": "fixture",
     "createdAt": "2026-05-08T18:00:00.000Z",
     "updatedAt": "2026-05-08T18:42:00.000Z"
+  },
+  {
+    "id": "demo-segment-outro",
+    "videoId": "paris-brest-demo",
+    "position": 7,
+    "title": "Standardized Licorn celebration outro",
+    "arc": "licorn_celebration_outro",
+    "mode": "References",
+    "logicalSceneIds": [
+      "demo-scene-31"
+    ],
+    "description": "Standardized Licorn celebration outro: finished Paris-Brest sits intact in the foreground while the Licorn explodes with joy mid-air with a vertical rainbow burst behind her. Static dish, no interaction. The app rewrites prompt + references at sync time via the seedance-outro-template module; the agent only commits to <APP_OVERRIDE>.",
+    "prompt": "<APP_OVERRIDE>",
+    "promptInitial": "<APP_OVERRIDE>",
+    "references": [
+      {
+        "id": "outro-kitchen-wide",
+        "role": "structural kitchen context",
+        "name": "KitchenLayoutContextWide",
+        "label": "KitchenLayoutContextWide",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "outro-kitchen-island",
+        "role": "active hero island view",
+        "name": "KitchenIslandDefault",
+        "label": "KitchenIslandDefault",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "outro-licorn-video",
+        "role": "Licorn celebration motion reference",
+        "name": "LicornOutroVideo",
+        "label": "LicornOutroVideo",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "outro-character-sheet",
+        "role": "Licorn character identity lock",
+        "name": "CharacterSheet",
+        "label": "CharacterSheet",
+        "runwayUri": null,
+        "required": true
+      },
+      {
+        "id": "outro-final-dish",
+        "role": "finished dish identity",
+        "name": "FinalDishVisual",
+        "label": "FinalDishVisual",
+        "runwayUri": null,
+        "required": true
+      }
+    ],
+    "beats": [
+      "Calm Licorn behind the island, dish intact in foreground",
+      "Hard cut to mid-air explosion with vertical rainbow"
+    ],
+    "timing": [
+      "0.0-1.0s: finished Paris-Brest sits intact in the foreground; Licorn calm behind the island.",
+      "1.0-5.0s: hard cut. Licorn explodes with joy mid-air, fists raised, vertical rainbow burst, dish unchanged."
+    ],
+    "continuity": "Dish state must match the end of the previous segment exactly. Zero interaction between Licorn and Paris-Brest inside this segment.",
+    "risk": "Standardized template; no creative deviation. The app overrides prompt and references at sync time.",
+    "audioPrompt": "Soft kitchen ambience, whoosh at 1.0s, celebratory tada burst from 1.0 to 2.0s. No speech, no voiceover, no music.",
+    "negatives": [
+      "no speech",
+      "no voiceover",
+      "no music",
+      "no character touching the dish",
+      "no dish modification",
+      "no character redesign"
+    ],
+    "qaChecklist": {
+      "referencesWithinLimit": true,
+      "globalKitchenReferencePresent": true,
+      "referenceRolesExplicit": true,
+      "promptWithinPracticalLimit": true,
+      "hardCutsSpecified": true,
+      "mandatoryTimingSpecified": true,
+      "noSpeechVoiceoverOrMusic": true,
+      "fragileFoodPhysicsHandled": true,
+      "nonStandardGeometryHandled": true,
+      "sourcePoliciesApplied": [
+        "fixture:paris-brest-public-safe",
+        "rule:.cursor/rules/seedance-outro.mdc"
+      ]
+    },
+    "durationTarget": 5,
+    "status": "ready",
+    "selectedGenerationId": null,
+    "createdBy": "fixture",
+    "createdAt": "2026-05-18T19:00:00.000Z",
+    "updatedAt": "2026-05-18T19:00:00.000Z"
   }
 ]

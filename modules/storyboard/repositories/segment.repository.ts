@@ -223,6 +223,42 @@ export async function updateSegmentPrompt(
   return mapSeedanceSegment(data);
 }
 
+/**
+ * Rewrite the segment's prompt + reference list + arc + duration + status
+ * in a single update. Used by the "Apply standard outro" backfill flow
+ * to swap an agent-authored outro for the canonical template without
+ * relying on a full storyboard re-sync.
+ */
+export async function rewriteSegmentForOutroOverride(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+  input: {
+    prompt: string;
+    promptInitial: string;
+    references: SegmentReference[];
+    durationTarget: number;
+    arc: string;
+    status: SegmentStatus;
+  },
+): Promise<SeedanceSegment> {
+  const { data, error } = await supabase
+    .from("segments")
+    .update({
+      prompt: input.prompt,
+      prompt_initial: input.promptInitial,
+      references: toJson(input.references),
+      duration_target: input.durationTarget,
+      arc: input.arc,
+      status: input.status,
+    })
+    .eq("id", segmentId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "rewriteSegmentForOutroOverride failed");
+  return mapSeedanceSegment(data);
+}
+
 export async function setSelectedGenerationForSegment(
   supabase: SupabaseDataClient,
   segmentId: string,

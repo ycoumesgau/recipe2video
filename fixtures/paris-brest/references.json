@@ -84,5 +84,20 @@
     "usedInSegments": [
       "S6"
     ]
+  },
+  {
+    "canonicalName": "FinalDishVisual",
+    "role": "Recipe-specific finished dish for the standardized Licorn outro segment.",
+    "type": "recipe_state",
+    "source": "fixture_public_safe",
+    "status": "uploaded_to_runway",
+    "prompt": "a glossy plated paris-brest crowned with caramelized hazelnut praline, presented intact on the kitchen island countertop, no character, no action, no setup, single-sentence dish-only description.",
+    "previewUrl": "/demo/paris-brest/reference-final.svg",
+    "storageBucket": "reference-images",
+    "storagePath": "paris-brest-demo/final-dish-visual.svg",
+    "runwayUri": "runway://fixture/paris-brest-final-dish-visual",
+    "usedInSegments": [
+      "S7"
+    ]
   }
 ]
