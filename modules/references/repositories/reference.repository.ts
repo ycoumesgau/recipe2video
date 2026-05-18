@@ -200,8 +200,8 @@ export async function listGeneratingReferenceAssets(
 
 /**
  * Recipe-specific reference rows shown on `/active-generations`: in-flight
- * GPT-Image 2 work plus recent failures the operator can retry. Excludes
- * `cancelled` (dropped from the queue once abandoned) and library globals.
+ * GPT-Image 2 work plus recent failures or operator-cancelled rows the user
+ * can retry. Excludes library globals.
  */
 export async function listRecipeReferenceImageQueueForDashboard(
   supabase: SupabaseDataClient,
@@ -212,7 +212,7 @@ export async function listRecipeReferenceImageQueueForDashboard(
     .select("*")
     .not("video_id", "is", null)
     .neq("source", "asset_library")
-    .in("status", ["generating", "failed"])
+    .in("status", ["generating", "failed", "cancelled"])
     .order("updated_at", { ascending: false });
 
   if (options.limit) {

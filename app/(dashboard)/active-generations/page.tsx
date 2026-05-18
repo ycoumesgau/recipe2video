@@ -531,7 +531,7 @@ function progressForReferenceImageRow(
   runwayProgress: number | null,
   runwayTaskStatus: RunwayTaskStatusValue | null,
 ): number {
-  if (referenceStatus === "failed") {
+  if (referenceStatus === "failed" || referenceStatus === "cancelled") {
     return 0;
   }
   if (typeof runwayProgress === "number") {
