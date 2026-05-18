@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.constants";
-import { createStorageSignedUrl } from "@/modules/media-assets/services/storage.service";
+import { tryCreateStorageSignedUrl } from "@/modules/media-assets/services/storage.service";
 import { listSegmentsByVideoId } from "@/modules/storyboard/repositories/segment.repository";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
@@ -412,7 +412,7 @@ async function resolveReferenceConditioning(
       : null;
     const previewUrl =
       storage?.storageBucket && storage.storagePath
-        ? await createStorageSignedUrl(supabase, {
+        ? await tryCreateStorageSignedUrl(supabase, {
             bucket: storage.storageBucket as MediaStorageBucket,
             path: storage.storagePath,
             expiresInSeconds: 60 * 15,
@@ -529,7 +529,7 @@ async function createPreviewUrl(
     return null;
   }
 
-  return createStorageSignedUrl(supabase, {
+  return tryCreateStorageSignedUrl(supabase, {
     bucket: mediaAsset.storageBucket as MediaStorageBucket,
     path: mediaAsset.storagePath,
     expiresInSeconds: 60 * 15,
