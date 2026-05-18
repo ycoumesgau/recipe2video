@@ -16,7 +16,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import type {
@@ -212,6 +211,8 @@ export function RecipeAgentChat({
   const [agentConversationTab, setAgentConversationTab] = useState("chat");
   const activityViewportRef = useRef<HTMLDivElement>(null);
   const activityStickBottomRef = useRef(true);
+  const rawViewportRef = useRef<HTMLDivElement>(null);
+  const rawStickBottomRef = useRef(true);
   const prevAgentConversationTabRef = useRef("chat");
 
   const scrollActivityToBottom = useCallback(() => {
@@ -222,23 +223,39 @@ export function RecipeAgentChat({
     el.scrollTo({ top: el.scrollHeight, behavior: "instant" });
   }, []);
 
+  const scrollRawToBottom = useCallback(() => {
+    const el = rawViewportRef.current;
+    if (!el) {
+      return;
+    }
+    el.scrollTo({ top: el.scrollHeight, behavior: "instant" });
+  }, []);
+
   useLayoutEffect(() => {
     const prev = prevAgentConversationTabRef.current;
     prevAgentConversationTabRef.current = agentConversationTab;
-    if (agentConversationTab !== "activity") {
-      return;
-    }
-    const justEntered = prev !== "activity";
-    if (justEntered) {
+
+    if (agentConversationTab === "activity" && prev !== "activity") {
       activityStickBottomRef.current = true;
       requestAnimationFrame(() => {
         scrollActivityToBottom();
         requestAnimationFrame(() => scrollActivityToBottom());
       });
     }
-  }, [agentConversationTab, scrollActivityToBottom]);
+
+    if (agentConversationTab === "raw" && prev !== "raw") {
+      rawStickBottomRef.current = true;
+      requestAnimationFrame(() => {
+        scrollRawToBottom();
+        requestAnimationFrame(() => scrollRawToBottom());
+      });
+    }
+  }, [agentConversationTab, scrollActivityToBottom, scrollRawToBottom]);
 
   useEffect(() => {
+    if (agentConversationTab !== "activity") {
+      return;
+    }
     const el = activityViewportRef.current;
     if (!el) {
       return;
@@ -251,7 +268,25 @@ export function RecipeAgentChat({
     el.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [agentConversationTab]);
+
+  useEffect(() => {
+    if (agentConversationTab !== "raw") {
+      return;
+    }
+    const el = rawViewportRef.current;
+    if (!el) {
+      return;
+    }
+    const threshold = 48;
+    const onScroll = () => {
+      rawStickBottomRef.current =
+        el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [agentConversationTab]);
 
   useEffect(() => {
     if (agentConversationTab !== "activity") {
@@ -262,6 +297,16 @@ export function RecipeAgentChat({
     }
     requestAnimationFrame(() => scrollActivityToBottom());
   }, [displaySteps, agentConversationTab, scrollActivityToBottom]);
+
+  useEffect(() => {
+    if (agentConversationTab !== "raw") {
+      return;
+    }
+    if (!rawStickBottomRef.current) {
+      return;
+    }
+    requestAnimationFrame(() => scrollRawToBottom());
+  }, [rawTimelineEvents, agentConversationTab, scrollRawToBottom]);
 
   if (displayMessages.length === 0 && !latestRunId) {
     return (
@@ -333,7 +378,10 @@ export function RecipeAgentChat({
           </div>
         </TabsContent>
         <TabsContent className="mt-3" value="raw">
-          <ScrollArea className="h-[min(280px,40vh)] rounded-lg border pr-3">
+          <div
+            className="h-[min(280px,40vh)] min-h-0 overflow-x-hidden overflow-y-auto rounded-lg border"
+            ref={rawViewportRef}
+          >
             <ul className="space-y-2 p-2 font-mono text-xs">
               {rawTimelineEvents.length === 0 ? (
                 <li className="text-muted-foreground">No raw stream events.</li>
@@ -352,7 +400,7 @@ export function RecipeAgentChat({
                 ))
               )}
             </ul>
-          </ScrollArea>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
