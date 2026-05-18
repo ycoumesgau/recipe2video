@@ -152,6 +152,62 @@ export async function listSegmentReferencesForVideo(
   return data.map((row) => mapSegmentReferenceRow(row as unknown as SegmentReferenceRow));
 }
 
+/**
+ * Append a single segment_reference link without touching the existing
+ * rows for the segment. Returns the new link's data; the position is
+ * computed as `max(existing.position) + 1` so the new entry is always
+ * appended to the end of the references list.
+ *
+ * Used by the frame extraction tool to wire a freshly extracted frame
+ * onto a downstream segment without disturbing already-validated rows.
+ */
+export async function appendSegmentReferenceLink(
+  supabase: SupabaseDataClient,
+  input: {
+    segmentId: string;
+    libraryAssetId?: string | null;
+    recipeReferenceId?: string | null;
+    role: string;
+    required?: boolean;
+  },
+): Promise<SegmentReferenceLink> {
+  const hasLibrary = Boolean(input.libraryAssetId);
+  const hasRecipe = Boolean(input.recipeReferenceId);
+  if (hasLibrary === hasRecipe) {
+    throw new Error(
+      `appendSegmentReferenceLink requires exactly one of libraryAssetId or recipeReferenceId (segment ${input.segmentId}, role ${input.role}).`,
+    );
+  }
+
+  const { data: maxRow, error: maxError } = await supabase
+    .from("segment_references")
+    .select("position")
+    .eq("segment_id", input.segmentId)
+    .order("position", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  throwIfSupabaseError(maxError, "appendSegmentReferenceLink position lookup failed");
+
+  const nextPosition = maxRow?.position == null ? 0 : maxRow.position + 1;
+
+  const { data, error } = await supabase
+    .from("segment_references")
+    .insert({
+      segment_id: input.segmentId,
+      library_asset_id: input.libraryAssetId ?? null,
+      recipe_reference_id: input.recipeReferenceId ?? null,
+      role: input.role,
+      position: nextPosition,
+      required: input.required ?? true,
+    })
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "appendSegmentReferenceLink insert failed");
+  return mapSegmentReferenceRow(data);
+}
+
 function assertMappingsAreValid(mappings: SegmentReferenceMapping[]) {
   for (const mapping of mappings) {
     const hasLibrary = Boolean(mapping.libraryAssetId);

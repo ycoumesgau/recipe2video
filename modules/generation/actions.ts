@@ -15,6 +15,7 @@ import {
   setSelectedGenerationForSegment,
   updateSegmentStatus,
 } from "@/modules/storyboard/repositories/segment.repository";
+import { applyStandardOutroToSegment } from "@/modules/storyboard/use-cases/apply-standard-outro-to-segment";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import { VIDEO_MODEL_OPTIONS } from "@/modules/videos/video.constants";
 
@@ -233,6 +234,51 @@ export async function launchSelectedSegmentsAction(formData: FormData) {
       )}`,
     );
   }
+}
+
+/**
+ * Backfill the canonical Licorn outro on the last segment of a video.
+ *
+ * Visible on the segment-review screen for the segment of the highest
+ * position. Rewrites prompt + references + duration + arc + status to
+ * the canonical template via `applyStandardOutroToSegment`. Status is
+ * reset to `pending` so the operator decides explicitly when to spend
+ * the ~200 Runway credits required to regenerate.
+ */
+export async function applyStandardOutroAction(formData: FormData) {
+  const ids = {
+    videoId: requireString(formData, "videoId"),
+    segmentId: requireString(formData, "segmentId"),
+  };
+
+  try {
+    await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const result = await applyStandardOutroToSegment(supabase, {
+      segmentId: ids.segmentId,
+    });
+
+    revalidateSegmentReviewPaths(ids.videoId, ids.segmentId);
+    redirect(
+      `/videos/${ids.videoId}/segments/${ids.segmentId}?notice=success&message=${encodeURIComponent(
+        `Standard outro applied (dish: ${truncate(result.finalDishDescription, 80)}). The segment is now in 'pending' — generate it when you're ready.`,
+      )}`,
+    );
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirect(
+      `/videos/${ids.videoId}/segments/${ids.segmentId}?notice=error&message=${encodeURIComponent(
+        getActionErrorMessage(error),
+      )}`,
+    );
+  }
+}
+
+function truncate(value: string, max: number) {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
 
 async function requireGenerationForSegment(

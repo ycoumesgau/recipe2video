@@ -15,6 +15,16 @@ export const RUNWAY_DEFAULT_REFERENCE_IMAGE_RATIO = "auto";
  */
 export const RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO = "1440:2560";
 export const RUNWAY_MAX_SEEDANCE_REFERENCES = 9;
+/**
+ * Seedance 2 `text_to_video` accepts up to 3 video references in
+ * `referenceVideos[]`, with a combined duration cap of 15 seconds. Used
+ * by the standardized outro segment to ground the Licorn celebration on
+ * the canonical CapCut video while staying within Runway's contract.
+ *
+ * Source: https://docs.dev.runwayml.com/guides/seedance/ (verified 2026-05-18).
+ */
+export const RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES = 3;
+export const RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES_TOTAL_SECONDS = 15;
 export const RUNWAY_SEEDANCE2_CREDITS_PER_SECOND = 40;
 /**
  * Runway Seedance 2 `duration_seconds` only accepts integer seconds in this

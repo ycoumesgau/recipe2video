@@ -89,6 +89,7 @@ async function loadSegmentReview(videoId: string, segmentId: string): Promise<{
         hasActiveReferenceImageGeneration: false,
         feedbacks: [],
         referenceResolutions: [],
+        isLastSegmentOfVideo: false,
       },
       dataError:
         error instanceof Error

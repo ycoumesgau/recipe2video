@@ -12,6 +12,8 @@ import {
   RUNWAY_DEFAULT_VIDEO_MODEL,
   RUNWAY_DEFAULT_VIDEO_RATIO,
   RUNWAY_MAX_SEEDANCE_REFERENCES,
+  RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES,
+  RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES_TOTAL_SECONDS,
   RUNWAY_POLL_INTERVAL_MS,
 } from "../runway.constants";
 import type {
@@ -20,6 +22,7 @@ import type {
   ReferenceImageInput,
   RunwayPromptImage,
   RunwaySeedanceReference,
+  RunwaySeedanceVideoReference,
   RunwayTask,
   RunwayTaskEndpoint,
   RunwayTaskStatus,
@@ -99,8 +102,16 @@ export async function startSeedanceGeneration(
       input.references,
     );
     const references = normalizeSeedanceReferences(input.references);
-    const endpoint = getSeedanceEndpoint(input, references);
-    const body = buildSeedanceRequestBody(input, endpoint, references);
+    const referenceVideos = normalizeSeedanceVideoReferences(
+      input.referenceVideos,
+    );
+    const endpoint = getSeedanceEndpoint(input, references, referenceVideos);
+    const body = buildSeedanceRequestBody(
+      input,
+      endpoint,
+      references,
+      referenceVideos,
+    );
     const task = await createRunwayClient().post<RunwayTaskCreationResponse>(
       `/v1/${endpoint}`,
       { body },
@@ -223,18 +234,21 @@ export function mapRunwayStatusToGenerationStatus(
 /**
  * Resolves the correct Seedance endpoint based on the input shape.
  *
- * Seedance 2 exposes the top-level `references[]` array EXCLUSIVELY on
- * `text_to_video` (up to 9 image references). The `image_to_video` endpoint
- * uses `promptImage` for first/last keyframes and rejects any extra
- * `references` field with `unrecognized_keys: ["references"]`. We therefore
- * route a `references[]`-only payload (Recipe2Video's standard mode) to
- * `text_to_video` regardless of how many references it carries.
+ * Seedance 2 exposes the top-level `references[]` (image, up to 9) and
+ * `referenceVideos[]` (video, up to 3, combined <= 15s) arrays
+ * EXCLUSIVELY on `text_to_video`. The `image_to_video` endpoint uses
+ * `promptImage` for first/last keyframes and rejects any extra
+ * `references` field; the `video_to_video` endpoint uses `promptVideo`
+ * as a source video to transform and likewise rejects the reference
+ * arrays. We therefore route any payload that carries top-level
+ * references (image or video) to `text_to_video`.
  *
- * Source: https://docs.dev.runwayml.com/guides/seedance/
+ * Source: https://docs.dev.runwayml.com/guides/seedance/ (verified 2026-05-18).
  */
 function getSeedanceEndpoint(
   input: SeedanceGenerationInput,
   references: RunwaySeedanceReference[],
+  referenceVideos: RunwaySeedanceVideoReference[],
 ): RunwayTaskEndpoint {
   if (input.promptImage && input.promptVideo) {
     throw new RunwayServiceError({
@@ -249,6 +263,24 @@ function getSeedanceEndpoint(
       code: "invalid_input",
       message:
         "Seedance image_to_video does not support a top-level references[] array; pass keyframes via promptImage only.",
+      retryable: false,
+    });
+  }
+
+  if (input.promptImage && referenceVideos.length > 0) {
+    throw new RunwayServiceError({
+      code: "invalid_input",
+      message:
+        "Seedance image_to_video does not support a top-level referenceVideos[] array; pass keyframes via promptImage only.",
+      retryable: false,
+    });
+  }
+
+  if (input.promptVideo && referenceVideos.length > 0) {
+    throw new RunwayServiceError({
+      code: "invalid_input",
+      message:
+        "Seedance video_to_video uses promptVideo as a source clip and does not accept a referenceVideos[] array. Move the video reference to a text_to_video request.",
       retryable: false,
     });
   }
@@ -268,6 +300,7 @@ function buildSeedanceRequestBody(
   input: SeedanceGenerationInput,
   endpoint: RunwayTaskEndpoint,
   references: RunwaySeedanceReference[],
+  referenceVideos: RunwaySeedanceVideoReference[],
 ) {
   const base = stripUndefined({
     model: input.model ?? RUNWAY_DEFAULT_VIDEO_MODEL,
@@ -296,13 +329,21 @@ function buildSeedanceRequestBody(
   }
 
   // text_to_video is Seedance 2's "References Pack" mode: up to 9 image
-  // references in `references[]`, no source frame. This is the path used by
-  // Recipe2Video's segment generator.
+  // references in `references[]` and up to 3 video references in
+  // `referenceVideos[]` (combined <= 15s), no source frame. This is the
+  // path used by Recipe2Video's segment generator.
   return stripUndefined({
     ...base,
     duration: input.durationSeconds,
     ratio: input.ratio ?? RUNWAY_DEFAULT_VIDEO_RATIO,
     references: references.length > 0 ? references : undefined,
+    referenceVideos:
+      referenceVideos.length > 0
+        ? referenceVideos.map((reference) => ({
+            type: reference.type ?? "video",
+            uri: reference.uri,
+          }))
+        : undefined,
   });
 }
 
@@ -336,6 +377,52 @@ function normalizeSeedanceReferences(
   return references.map((reference) => ({
     type: reference.type ?? "image",
     uri: normalizeRunwayUriOrHttpsUrl(reference.uri, "references.uri"),
+  }));
+}
+
+/**
+ * Validates and normalizes the `referenceVideos[]` array for Seedance 2
+ * `text_to_video`. The Runway contract caps the array at 3 entries with a
+ * combined duration <= 15s. We enforce both upfront so an oversized payload
+ * fails locally instead of after a Runway round-trip with an opaque error.
+ *
+ * `durationSeconds` is optional in the input shape: when callers do not
+ * surface it (e.g. the agent declared a video reference whose underlying
+ * `media_assets.duration_seconds` is null), we skip the combined-duration
+ * check and let Runway reject the request if the actual length is over.
+ */
+function normalizeSeedanceVideoReferences(
+  referenceVideos: RunwaySeedanceVideoReference[] = [],
+): RunwaySeedanceVideoReference[] {
+  if (referenceVideos.length > RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES) {
+    throw new RunwayServiceError({
+      code: "invalid_input",
+      message: `Seedance generation supports at most ${RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES} video references.`,
+      retryable: false,
+    });
+  }
+
+  const totalDurationSeconds = referenceVideos.reduce(
+    (acc, reference) =>
+      typeof reference.durationSeconds === "number"
+        ? acc + reference.durationSeconds
+        : acc,
+    0,
+  );
+  if (
+    totalDurationSeconds > RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES_TOTAL_SECONDS
+  ) {
+    throw new RunwayServiceError({
+      code: "invalid_input",
+      message: `Seedance video references combined duration is ${totalDurationSeconds.toFixed(2)}s but Runway caps the total at ${RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES_TOTAL_SECONDS}s.`,
+      retryable: false,
+    });
+  }
+
+  return referenceVideos.map((reference) => ({
+    type: reference.type ?? "video",
+    uri: normalizeRunwayUriOrHttpsUrl(reference.uri, "referenceVideos.uri"),
+    durationSeconds: reference.durationSeconds,
   }));
 }
 

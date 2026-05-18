@@ -31,6 +31,25 @@ export interface RunwaySeedanceReference {
   type?: "image";
 }
 
+/**
+ * Video reference shape accepted by Seedance 2's `text_to_video` endpoint
+ * (up to 3 entries, combined duration <= 15s). Image references and video
+ * references can coexist on the same request; the orchestrator splits the
+ * resolved inputs into `references[]` (images) and `referenceVideos[]`
+ * (videos) before calling Runway.
+ */
+export interface RunwaySeedanceVideoReference {
+  uri: string;
+  type?: "video";
+  /**
+   * Optional duration of the reference video in seconds, surfaced from
+   * `media_assets.duration_seconds`. When set, the service-side validator
+   * uses it to enforce the combined 15s cap; otherwise the call passes
+   * through and Runway is the source of truth.
+   */
+  durationSeconds?: number;
+}
+
 export interface RunwayPromptFrame {
   uri: string;
   position?: "first" | "last";
@@ -51,6 +70,13 @@ export interface SeedanceGenerationInput {
   promptImage?: RunwayPromptImage;
   promptVideo?: string;
   references?: RunwaySeedanceReference[];
+  /**
+   * Reference videos for the Seedance 2 `text_to_video` endpoint. Up to 3
+   * videos, combined duration <= 15s. Mutually exclusive with `promptImage`
+   * and `promptVideo`: those route to `image_to_video` / `video_to_video`
+   * which do not accept this field.
+   */
+  referenceVideos?: RunwaySeedanceVideoReference[];
   seed?: number;
 }
 

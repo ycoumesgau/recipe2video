@@ -21,6 +21,7 @@ import {
   updateReferenceAssetConditioning,
   updateReferenceAssetPrompt,
 } from "./repositories/reference.repository";
+import { appendSegmentReferenceLink } from "./repositories/segment-references.repository";
 import { getReferenceReviewData } from "./use-cases/get-reference-review";
 import { parseConditioningNames } from "./use-cases/parse-conditioning-names";
 import {
@@ -29,6 +30,7 @@ import {
   updateReferenceReviewStatus,
   uploadReferenceAssetToRunway,
 } from "./use-cases/manage-reference-review";
+import { extractSegmentFrameToReferenceAsset } from "./use-cases/extract-segment-frame";
 
 /**
  * Statuses that mean "this recipe-specific reference still needs (or could
@@ -429,6 +431,114 @@ export async function updateReferencePromptAction(formData: FormData) {
       videoId,
       "success",
       prompt ? "Reference prompt updated." : "Reference prompt cleared.",
+    );
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(videoId, "error", getActionErrorMessage(error));
+  }
+}
+
+/**
+ * Extract a single frame from a previously-rendered segment and persist
+ * it as a recipe-specific `reference_assets` row. Returns the new
+ * reference id via a redirect notice so the operator can attach it to a
+ * downstream segment in a follow-up action.
+ *
+ * Frame extraction is treated as a costly action because it does (small)
+ * Mux + Supabase Storage IO; the cost guard reuses the same allowlist
+ * used for Runway generations.
+ */
+export async function extractSegmentFrameAction(formData: FormData) {
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    const sourceSegmentId = requireString(formData, "sourceSegmentId");
+    const timestampSecondsRaw = requireString(formData, "timestampSeconds");
+    const timestampSeconds = Number(timestampSecondsRaw);
+    if (!Number.isFinite(timestampSeconds) || timestampSeconds < 0) {
+      throw new Error(
+        `Invalid timestamp '${timestampSecondsRaw}'; expected a non-negative number of seconds.`,
+      );
+    }
+    const canonicalNameRaw = getString(formData, "canonicalName");
+    const promptRaw = getString(formData, "prompt");
+
+    const result = await extractSegmentFrameToReferenceAsset(
+      createSupabaseAdminClient(),
+      {
+        sourceSegmentId,
+        timestampSeconds,
+        canonicalName: canonicalNameRaw.length > 0 ? canonicalNameRaw : undefined,
+        prompt: promptRaw.length > 0 ? promptRaw : null,
+        createdBy: profile.id,
+      },
+    );
+
+    revalidateReferencePath(videoId);
+    revalidatePath(`/videos/${videoId}/segments`);
+    redirectWithNotice(
+      videoId,
+      "success",
+      `Frame extracted at ${timestampSeconds.toFixed(2)}s as '${result.reference.canonicalName}'. Attach it to a downstream segment to consume it.`,
+    );
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(videoId, "error", getActionErrorMessage(error));
+  }
+}
+
+/**
+ * Combine extraction + attachment in a single round-trip. The new
+ * reference is created on the source segment and immediately linked to
+ * the target segment via `segment_references` with the supplied role.
+ */
+export async function extractSegmentFrameAndAttachAction(formData: FormData) {
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    const sourceSegmentId = requireString(formData, "sourceSegmentId");
+    const targetSegmentId = requireString(formData, "targetSegmentId");
+    const timestampSecondsRaw = requireString(formData, "timestampSeconds");
+    const timestampSeconds = Number(timestampSecondsRaw);
+    if (!Number.isFinite(timestampSeconds) || timestampSeconds < 0) {
+      throw new Error(
+        `Invalid timestamp '${timestampSecondsRaw}'; expected a non-negative number of seconds.`,
+      );
+    }
+    const role = getString(formData, "role") || "extracted continuity frame";
+    const canonicalNameRaw = getString(formData, "canonicalName");
+    const promptRaw = getString(formData, "prompt");
+
+    const supabase = createSupabaseAdminClient();
+    const result = await extractSegmentFrameToReferenceAsset(supabase, {
+      sourceSegmentId,
+      timestampSeconds,
+      canonicalName: canonicalNameRaw.length > 0 ? canonicalNameRaw : undefined,
+      prompt: promptRaw.length > 0 ? promptRaw : null,
+      createdBy: profile.id,
+    });
+
+    await appendSegmentReferenceLink(supabase, {
+      segmentId: targetSegmentId,
+      recipeReferenceId: result.reference.id,
+      role,
+      required: true,
+    });
+
+    revalidateReferencePath(videoId);
+    revalidatePath(`/videos/${videoId}/segments`);
+    redirectWithNotice(
+      videoId,
+      "success",
+      `Frame extracted at ${timestampSeconds.toFixed(2)}s and attached to the target segment as '${result.reference.canonicalName}'.`,
     );
   } catch (error) {
     if (isNextRedirectError(error)) {

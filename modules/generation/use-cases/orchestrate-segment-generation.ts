@@ -6,6 +6,7 @@ import type {
 } from "@/modules/generation/generation.types";
 import type {
   RunwaySeedanceReference,
+  RunwaySeedanceVideoReference,
   RunwayTask,
   RunwayTaskStatus,
   SeedanceGenerationInput,
@@ -21,6 +22,8 @@ import type { VideoProject } from "@/modules/videos/video.types";
 import type { VideoStatus } from "@/modules/videos/video-status";
 import {
   RUNWAY_DEFAULT_VIDEO_RATIO,
+  RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES,
+  RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES_TOTAL_SECONDS,
   RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
   RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS,
   RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS,
@@ -84,6 +87,20 @@ interface SegmentWorkflowBaseDeps {
   sendEvent(event: WorkflowEvent): Promise<void>;
 }
 
+/**
+ * Descriptor of a reference that the planner declared as
+ * `extracted_frame_pending`. The orchestrator refuses generation when
+ * any such row is wired to the segment until the operator extracts the
+ * upstream frame via the segment-review UI and the row is upgraded to
+ * `extracted_frame`.
+ */
+export interface PendingExtractedFrameDescriptor {
+  referenceAssetId: string;
+  canonicalName: string;
+  sourceSegmentId: string | null;
+  sourceTimestampSeconds: number | null;
+}
+
 export interface RequestSegmentGenerationDeps extends SegmentWorkflowBaseDeps {
   isGenerationQueuePaused(): boolean;
   hasActiveGenerationForSegment(segmentId: string): Promise<boolean>;
@@ -99,6 +116,17 @@ export interface RequestSegmentGenerationDeps extends SegmentWorkflowBaseDeps {
   resolveSegmentSeedanceReferences(
     segmentId: string,
   ): Promise<SegmentSeedanceReferenceInput[]>;
+  /**
+   * Returns the list of references this segment is still waiting on,
+   * because they were declared as `extracted_frame_pending` placeholders
+   * by the planner. When non-empty, the orchestrator flips the segment
+   * status to `awaiting_upstream_frame` and refuses generation.
+   * Optional so existing call sites (and unit tests) keep compiling
+   * without wiring new IO; defaults to "no pending frames" if omitted.
+   */
+  findPendingExtractedFrames?(
+    segmentId: string,
+  ): Promise<PendingExtractedFrameDescriptor[]>;
   startSeedanceGeneration(input: SeedanceGenerationInput): Promise<RunwayTask>;
   createGeneration(input: CreateGenerationInput): Promise<Generation>;
   logCost(input: CreateCostLogInput): Promise<CostLog>;
@@ -125,6 +153,20 @@ export interface SegmentSeedanceReferenceInput {
   aliases?: string[];
   uri: string;
   source: "asset_library" | "reference_assets";
+  /**
+   * Whether this reference is an image or a video. Drives the orchestrator
+   * split between Seedance `references[]` (images) and `referenceVideos[]`
+   * (videos) on `text_to_video`. Optional in the type so legacy/test
+   * inputs default to `image`; production resolver always sets it.
+   */
+  kind?: "image" | "video";
+  /**
+   * Duration of the underlying media in seconds, surfaced for video
+   * references so the validator can enforce the combined 15s cap.
+   * Optional/null for images and for video assets without a recorded
+   * duration.
+   */
+  durationSeconds?: number | null;
   /**
    * Stored byte size of the underlying media. Used by the pre-flight guard
    * to refuse generations whose references exceed Runway's 16 MB-per-asset
@@ -196,6 +238,33 @@ export async function requestSegmentGenerationWorkflow(
   }
 
   assertSeedance2Selected(video);
+
+  // Refuse generation when any reference is still an
+  // `extracted_frame_pending` placeholder. The operator must extract
+  // the upstream frame via the segment-review UI before this segment
+  // can render. We surface a precise error mentioning the source
+  // segment so the operator does not have to dig through logs.
+  const pendingFrames = deps.findPendingExtractedFrames
+    ? await deps.findPendingExtractedFrames(segment.id)
+    : [];
+  if (pendingFrames.length > 0) {
+    await deps.updateSegmentStatus(segment.id, "awaiting_upstream_frame");
+    const summary = pendingFrames
+      .map((frame) => {
+        const at =
+          typeof frame.sourceTimestampSeconds === "number"
+            ? ` at ${frame.sourceTimestampSeconds.toFixed(2)}s`
+            : "";
+        const source = frame.sourceSegmentId
+          ? `segment ${frame.sourceSegmentId}${at}`
+          : "an upstream segment";
+        return `${frame.canonicalName} (extract from ${source})`;
+      })
+      .join(", ");
+    throw new Error(
+      `Segment ${segment.id} is awaiting ${pendingFrames.length} upstream frame${pendingFrames.length === 1 ? "" : "s"}: ${summary}. Open the segment review for the source segment, scrub to the right timestamp, and click "Extract this frame as reference".`,
+    );
+  }
 
   // Resolve the references EVERY call: signed URLs are short-lived (15 min)
   // and the user explicitly asked that retries hours later not fail on an
@@ -434,14 +503,15 @@ export async function uploadSegmentMuxWorkflow(
 /**
  * Maps the JIT-resolved Seedance reference inputs into the Runway request shape.
  *
- * Seedance 2 exposes "image references" exclusively on the `text_to_video`
- * endpoint — up to 9 entries in the top-level `references[]` array. The
- * `image_to_video` endpoint expects `promptImage` to be a single source frame
- * or a `[first, last]` keyframe pair, and explicitly rejects a top-level
- * `references` field (`unrecognized_keys: ["references"]` 400 error from the
- * Runway API). Recipe2Video pipes 1..9 character/state/style references per
- * segment, so every reference goes into `references[]` and the orchestrator
- * always targets `text_to_video`.
+ * Seedance 2 exposes both "image references" (`references[]`, up to 9) and
+ * "video references" (`referenceVideos[]`, up to 3, combined <= 15s)
+ * exclusively on the `text_to_video` endpoint. The `image_to_video`
+ * endpoint expects `promptImage` to be a single source frame or a
+ * `[first, last]` keyframe pair, and rejects both `references[]` and
+ * `referenceVideos[]`. Recipe2Video pipes 1..9 character/state/style
+ * image references per segment, plus optionally one outro video reference
+ * (`@LicornOutroVideo`), so the orchestrator always targets
+ * `text_to_video` and splits the resolved inputs by kind.
  *
  * Reference order is preserved (sorted by `position`) because the Seedance
  * prompt template addresses them positionally (`@KitchenIslandDefault` first,
@@ -454,16 +524,29 @@ export function buildSeedanceGenerationInput(
   referenceInputs: SegmentSeedanceReferenceInput[],
 ): SeedanceGenerationInput {
   const sorted = [...referenceInputs].sort((a, b) => a.position - b.position);
+  const imageRefs = sorted.filter((reference) => (reference.kind ?? "image") === "image");
+  const videoRefs = sorted.filter((reference) => reference.kind === "video");
 
   return {
     promptText: segment.prompt,
     durationSeconds: segment.durationTarget,
     ratio: RUNWAY_DEFAULT_VIDEO_RATIO,
     references:
-      sorted.length > 0
-        ? sorted.map<RunwaySeedanceReference>((reference) => ({
+      imageRefs.length > 0
+        ? imageRefs.map<RunwaySeedanceReference>((reference) => ({
             type: "image",
             uri: reference.uri,
+          }))
+        : undefined,
+    referenceVideos:
+      videoRefs.length > 0
+        ? videoRefs.map<RunwaySeedanceVideoReference>((reference) => ({
+            type: "video",
+            uri: reference.uri,
+            durationSeconds:
+              typeof reference.durationSeconds === "number"
+                ? reference.durationSeconds
+                : undefined,
           }))
         : undefined,
   };
@@ -541,9 +624,38 @@ function assertSegmentReferencesReady(
   segment: SeedanceSegment,
   referenceInputs: SegmentSeedanceReferenceInput[],
 ) {
-  if (referenceInputs.length > MAX_SEEDANCE_REFERENCE_INPUTS) {
+  // Image and video references have separate Runway caps. The 9-reference
+  // limit only applies to `references[]` (images); `referenceVideos[]` has
+  // its own 3-entry / 15s combined cap.
+  const imageInputs = referenceInputs.filter(
+    (input) => (input.kind ?? "image") === "image",
+  );
+  const videoInputs = referenceInputs.filter((input) => input.kind === "video");
+
+  if (imageInputs.length > MAX_SEEDANCE_REFERENCE_INPUTS) {
     throw new Error(
-      `Segment ${segment.id} resolved ${referenceInputs.length} Seedance reference inputs; Seedance supports at most ${MAX_SEEDANCE_REFERENCE_INPUTS}.`,
+      `Segment ${segment.id} resolved ${imageInputs.length} Seedance image reference inputs; Seedance supports at most ${MAX_SEEDANCE_REFERENCE_INPUTS} images.`,
+    );
+  }
+
+  if (videoInputs.length > RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES) {
+    throw new Error(
+      `Segment ${segment.id} resolved ${videoInputs.length} Seedance video reference inputs; Seedance supports at most ${RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES} videos.`,
+    );
+  }
+
+  const totalVideoDurationSeconds = videoInputs.reduce(
+    (acc, input) =>
+      typeof input.durationSeconds === "number"
+        ? acc + input.durationSeconds
+        : acc,
+    0,
+  );
+  if (
+    totalVideoDurationSeconds > RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES_TOTAL_SECONDS
+  ) {
+    throw new Error(
+      `Segment ${segment.id} has video references with combined duration ${totalVideoDurationSeconds.toFixed(2)}s; Seedance caps the total at ${RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES_TOTAL_SECONDS}s.`,
     );
   }
 
@@ -646,7 +758,8 @@ function assertSegmentReferencesReady(
 function getSeedanceReferenceInputCount(input: SeedanceGenerationInput) {
   return (
     (typeof input.promptImage === "string" ? 1 : 0) +
-    (input.references?.length ?? 0)
+    (input.references?.length ?? 0) +
+    (input.referenceVideos?.length ?? 0)
   );
 }
 

@@ -40,6 +40,20 @@ export interface SeedanceReferenceInput {
   /** Source we resolved from, useful for logging and debugging. */
   source: "asset_library" | "reference_assets";
   /**
+   * Whether this reference is an image or a video, derived from
+   * `media_assets.mime_type`. Drives the orchestrator split between
+   * Seedance `references[]` (images, up to 9) and `referenceVideos[]`
+   * (videos, up to 3, combined <= 15s) on `text_to_video`.
+   */
+  kind: "image" | "video";
+  /**
+   * Duration of the underlying media in seconds, surfaced for video
+   * references so the service can enforce the combined 15s cap before
+   * the Runway round-trip. Null for images and for video assets whose
+   * row has no duration recorded yet.
+   */
+  durationSeconds: number | null;
+  /**
    * Stored size of the reference media in bytes. Surfaced so the orchestrator
    * can enforce Runway's 16 MB-per-reference cap before issuing a request:
    * we'd otherwise wait for Runway to download the asset and respond with a
@@ -83,7 +97,12 @@ type SegmentReferenceJoinRow = {
 
 type MediaAssetStoragePick = Pick<
   Database["public"]["Tables"]["media_assets"]["Row"],
-  "id" | "storage_bucket" | "storage_path" | "file_size_bytes" | "mime_type"
+  | "id"
+  | "storage_bucket"
+  | "storage_path"
+  | "file_size_bytes"
+  | "mime_type"
+  | "duration_seconds"
 >;
 
 /**
@@ -167,6 +186,19 @@ export async function resolveSegmentSeedanceReferences(
         : []
       : [];
 
+    const mimeType = storage.mime_type ?? null;
+    const kind: "image" | "video" =
+      typeof mimeType === "string" && mimeType.toLowerCase().startsWith("video/")
+        ? "video"
+        : "image";
+    const durationSecondsRaw = storage.duration_seconds;
+    const durationSeconds =
+      typeof durationSecondsRaw === "number"
+        ? durationSecondsRaw
+        : durationSecondsRaw == null
+          ? null
+          : Number(durationSecondsRaw);
+
     results.push({
       position: row.position,
       role: row.role,
@@ -175,8 +207,13 @@ export async function resolveSegmentSeedanceReferences(
       aliases,
       uri,
       source: isLibrary ? "asset_library" : "reference_assets",
+      kind,
+      durationSeconds:
+        typeof durationSeconds === "number" && !Number.isNaN(durationSeconds)
+          ? durationSeconds
+          : null,
       fileSizeBytes: storage.file_size_bytes ?? 0,
-      mimeType: storage.mime_type ?? null,
+      mimeType,
     });
   }
 
@@ -194,7 +231,9 @@ async function fetchMediaAssetStorageLocations(
 
   const { data, error } = await supabase
     .from("media_assets")
-    .select("id, storage_bucket, storage_path, file_size_bytes, mime_type")
+    .select(
+      "id, storage_bucket, storage_path, file_size_bytes, mime_type, duration_seconds",
+    )
     .in("id", mediaAssetIds);
 
   throwIfSupabaseError(error, "fetchMediaAssetStorageLocations failed");

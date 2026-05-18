@@ -48,7 +48,9 @@ export const FOOD_VIDEO_PROMPT_RULES = [
   "For non-standard shapes, describe what the dish is and what it is not.",
   "For repetitive structures, lock visible count/topology or require target state frames.",
   "For baking, raising, cracking, or filled-state transformations that change geometry, prefer raw/baked/filled/finished target frames and hard cuts.",
-  "End with the finished dish in the Licorn kitchen with the character visible and satisfied.",
+  "End with the standardized Licorn celebration outro segment as the LAST entry of seedance-segments.json: arc='licorn_celebration_outro', durationTarget=5, mode='References', prompt='<APP_OVERRIDE>', promptInitial='<APP_OVERRIDE>', references=[KitchenLayoutContextWide, KitchenIslandDefault, LicornOutroVideo, CharacterSheet, FinalDishVisual]. Do NOT write a custom prompt for the outro; the app injects the canonical template at sync time.",
+  "The recipe-specific FinalDishVisual entry MUST be declared in reference-plan.json with a single-sentence dish description in the `prompt` field; the app uses that description to ground the canonical outro prompt on the actual finished dish.",
+  "The segment immediately before the outro (position N-1) MUST end with the dish in its final visible state, intact and motionless on the foreground countertop. Any destructive food-porn beat (spoon dive, slice, drip onto the dish, garnish drop) belongs in segments 1..N-2, never in N-1.",
 ] as const;
 
 export const SEEDANCE_PROMPT_SKELETON = [
