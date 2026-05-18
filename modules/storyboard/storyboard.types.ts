@@ -57,7 +57,8 @@ export interface SeedanceSegment {
   risk: string;
   audioPrompt: string;
   negatives: string[];
-  qaChecklist: SeedancePromptQa;
+  qaChecklist: SeedancePromptQa,
+  /** Integer seconds; Runway Seedance 2 API accepts 5-15 inclusive for `seedance2`. */
   durationTarget: number;
   status: SegmentStatus;
   selectedGenerationId?: string | null;
@@ -103,6 +104,7 @@ export interface CreateSeedanceSegmentInput {
   prompt: string;
   promptInitial: string;
   references?: SegmentReference[];
+  /** Integer seconds; Runway Seedance 2 API accepts 5-15 inclusive for `seedance2`. */
   durationTarget: number;
   status?: SegmentStatus;
   createdBy?: string | null;

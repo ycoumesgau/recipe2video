@@ -1,0 +1,78 @@
+diff --git a/.cursor/agents/scene-verifier.md b/.cursor/agents/scene-verifier.md
+index e71e1f9..bc69048 100644
+--- a/.cursor/agents/scene-verifier.md
++++ b/.cursor/agents/scene-verifier.md
+@@ -15,6 +15,7 @@ Check:
+ - texture cadence every 3-5 scenes;
+ - one readable action per logical scene;
+ - Seedance segment compression and scene mapping;
++- each segment `durationTarget` is an integer from 5 to 15 seconds (Runway Seedance 2) and matches the prompt's stated total duration and timing bullets;
+ - reference count <= 9;
+ - global kitchen reference present;
+ - reference roles explicit;
+diff --git a/.cursor/rules/recipe-agent-core.mdc b/.cursor/rules/recipe-agent-core.mdc
+index 50e68d7..5578a1d 100644
+--- a/.cursor/rules/recipe-agent-core.mdc
++++ b/.cursor/rules/recipe-agent-core.mdc
+@@ -33,6 +33,7 @@ JSON files must be strict JSON, with no Markdown fences and no comments.
+ - Treat Recipe2Video as an internal Licorn production cockpit, not a generic creator tool.
+ - Use 30-48 logical scenes for editorial reasoning.
+ - Use about 5-10 Seedance segments for actual video generation.
++- Every Seedance segment `durationTarget` must be an integer number of seconds from 5 to 15 inclusive (Runway Seedance 2 API); align `prompt` / `promptInitial` timing to the same total.
+ - Preserve the mapping from each Seedance segment to its logical scene IDs.
+ - Keep the opening texture-first. Scene 2 must pay off or clarify scene 1.
+ - Avoid openings on mise en place, ingredients lined up, or finished-dish slicing.
+diff --git a/.cursor/rules/seedance-references.mdc b/.cursor/rules/seedance-references.mdc
+index 97680cb..5af2564 100644
+--- a/.cursor/rules/seedance-references.mdc
++++ b/.cursor/rules/seedance-references.mdc
+@@ -6,6 +6,7 @@ alwaysApply: true
+ # Seedance 2 References
+ 
+ - Default video model is `seedance2`.
++- Runway Seedance 2 accepts only **integer** clip lengths from **5** to **15** seconds inclusive. Never write a smaller `durationTarget` or a fractional value for segments synced to Recipe2Video.
+ - Default output ratio is `1080:1920` for 9:16 vertical 1080p.
+ - Product-side cost estimate is 40 credits per second.
+ - Use Seedance References mode as the primary workflow.
+diff --git a/.cursor/skills/seedance-workflow/SKILL.md b/.cursor/skills/seedance-workflow/SKILL.md
+index a96cbde..e5673df 100644
+--- a/.cursor/skills/seedance-workflow/SKILL.md
++++ b/.cursor/skills/seedance-workflow/SKILL.md
+@@ -18,6 +18,7 @@ Use when converting logical scenes into generated video segments.
+ - Prompt language: English.
+ - Keep prompts under about 3,500 characters.
+ - Use 5-10 Seedance segments for a 30-48 logical-scene storyboard.
++- **`durationTarget` (required):** integer seconds from **5** to **15** inclusive — this is the Runway Seedance 2 API window. Shorter totals (for example 4s) are rejected by the app before generation; align every segment's prompt timing bullets to the same total.
+ - Store logical scene IDs on every segment.
+ - Lock object scale for ambiguous shapes (diameter/thickness/count + relative kitchen anchor).
+ - Preserve scale continuity across adjacent segments when the same food state continues.
+@@ -44,7 +45,7 @@ Each `seedance-segments.json` segment should include:
+ - `audioPrompt`
+ - `negatives`
+ - `qaChecklist`
+-- `durationTarget`
++- `durationTarget` (integer seconds, 5-15 inclusive for Runway `seedance2`)
+ - `status`
+ 
+ Use `continuity` and `risk` to track proportion locks, for example:
+@@ -133,6 +134,7 @@ See `contracts/reference-image-generation.md` for the full policy and `.cursor/s
+ 
+ Before marking a segment ready:
+ 
++- `durationTarget` is an integer from 5 to 15 seconds and matches the prompt's total duration line and timing bullets;
+ - references <= 9;
+ - global kitchen reference present;
+ - kitchen continuity pair present (`@KitchenLayoutContextWide` + one shot-specific kitchen view);
+diff --git a/contracts/artifact-schemas.md b/contracts/artifact-schemas.md
+index 880f926..9a905a7 100644
+--- a/contracts/artifact-schemas.md
++++ b/contracts/artifact-schemas.md
+@@ -136,6 +136,8 @@ Scale guidance for `logical-scenes.json`:
+ 
+ The app requires 5-10 Seedance segments.
+ 
++**Runway Seedance 2 duration:** each segment's `durationTarget` must be an **integer** from **5** to **15** seconds inclusive. Values outside that range fail Recipe2Video validation (artifact sync) or pre-flight checks before Runway is called.
++
+ Scale guidance for `seedance-segments.json`:
+ 
+ - put size/proportion continuity in `continuity`;

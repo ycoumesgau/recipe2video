@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import {
+  RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS,
+  RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS,
+} from "@/modules/generation/runway.constants";
+import {
   MAX_LOGICAL_SCENES,
   MAX_SEEDANCE_REFERENCES,
   MIN_LOGICAL_SCENES,
@@ -165,7 +169,20 @@ const SeedanceSegmentSchema = z.object({
   audioPrompt: z.string(),
   negatives: z.array(z.string()),
   qaChecklist: SeedancePromptQaSchema,
-  durationTarget: z.number().positive(),
+  // Runway Seedance 2: integer seconds, 5-15 inclusive (see runway.constants).
+  durationTarget: z
+    .number()
+    .int(
+      `Seedance 2 (default model) requires an integer duration_target between ${RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS} and ${RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS} seconds inclusive.`,
+    )
+    .min(
+      RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS,
+      `duration_target must be at least ${RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS} seconds for Seedance 2.`,
+    )
+    .max(
+      RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS,
+      `duration_target must be at most ${RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS} seconds for Seedance 2.`,
+    ),
   status: z
     .enum([
       "pending",

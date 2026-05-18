@@ -8,6 +8,10 @@ import type {
   RecipeData,
 } from "@/modules/recipe-ingest/recipe.types";
 import {
+  RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS,
+  RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS,
+} from "@/modules/generation/runway.constants";
+import {
   DEFAULT_SEEDANCE_VIDEO_MODEL,
   DEFAULT_VERTICAL_RATIO,
   FOOD_VIDEO_PROMPT_RULES,
@@ -310,6 +314,7 @@ export function buildSeedanceSegmentationPrompt(input: SeedanceSegmentationInput
     `Default video model: ${DEFAULT_SEEDANCE_VIDEO_MODEL}`,
     `Default ratio: ${DEFAULT_VERTICAL_RATIO}`,
     "Return a JSON object with a `seedanceSegments` array only. Do not launch Runway generation.",
+    `Each segment's durationTarget MUST be an integer number of seconds from ${RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS} to ${RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS} inclusive (Runway Seedance 2 API); align prompt timing bullets to the same total.`,
     "Each segment must include mode References, references to load, 2-4 visual beats, continuity, risk, prompt, timing, audio, negatives, and QA checklist.",
     "Seedance prompt skeleton:",
     SEEDANCE_PROMPT_SKELETON.map((rule) => `- ${rule}`).join("\n"),
@@ -437,7 +442,11 @@ function stubSeedanceSegments(input: SeedanceSegmentationInput): SeedanceSegment
     const firstScene = scenes[0];
     const lastScene = scenes[scenes.length - 1] ?? firstScene;
     const references = buildSegmentReferences(position);
-    const durationTarget = Math.min(15, Math.max(2, Number((scenes.length * 2).toFixed(0))));
+    const heuristicSeconds = Number((scenes.length * 2).toFixed(0));
+    const durationTarget = Math.min(
+      RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS,
+      Math.max(RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS, heuristicSeconds),
+    );
     const beats = buildSegmentBeats(scenes);
     const timing = buildSegmentTiming(scenes, durationTarget);
     const risk = inferSegmentRisk(scenes);

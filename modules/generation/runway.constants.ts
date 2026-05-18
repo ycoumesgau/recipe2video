@@ -16,3 +16,10 @@ export const RUNWAY_DEFAULT_REFERENCE_IMAGE_RATIO = "auto";
 export const RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO = "1440:2560";
 export const RUNWAY_MAX_SEEDANCE_REFERENCES = 9;
 export const RUNWAY_SEEDANCE2_CREDITS_PER_SECOND = 40;
+/**
+ * Runway Seedance 2 `duration_seconds` only accepts integer seconds in this
+ * inclusive range. Values outside it fail API validation with an opaque body
+ * error; keep app-side checks aligned with this window.
+ */
+export const RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS = 5;
+export const RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS = 15;
