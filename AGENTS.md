@@ -21,10 +21,21 @@ A `.env.local` file is required for the dev server to start. Copy `.env.example`
 
 Required env vars for the server to boot: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`. All other env vars are needed only when exercising their respective features (Runway generation, OpenAI planning, Mux playback, Inngest workflows).
 
+### Dev auth bypass (cloud agent / local dev only)
+
+Set `DEV_AUTH_BYPASS_ALLOWLIST_EMAIL` to a valid allowlisted email (e.g. `yoann@licorn.org`) to skip Supabase Magic Link authentication. The bypass resolves the user via the `allowed_users` table and ensures a profile, so all auth-protected routes work without a browser session.
+
+**Constraints:**
+- Only active when `NODE_ENV !== "production"` — the app throws on startup if the variable is set in production.
+- The email must already exist in the `allowed_users` table or the request returns a 403.
+- Intended exclusively for Cursor Cloud Agents and local `npm run dev` testing. Never deploy with this variable set.
+
+Cloud agent secret: `DEV_AUTH_BYPASS_ALLOWLIST_EMAIL=yoann@licorn.org` (injected via Cursor Cloud Agents → Secrets).
+
 ### Gotchas
 
 - The Supabase config (`modules/auth/supabase/config.ts`) throws on missing env vars rather than returning undefined. The dashboard layout catches these at the page level, but without a `.env.local` the app will error on any route that touches auth.
-- All dashboard routes require authentication. Unauthenticated requests redirect to `/login`.
+- All dashboard routes require authentication. Unauthenticated requests redirect to `/login`. When `DEV_AUTH_BYPASS_ALLOWLIST_EMAIL` is set in dev, the bypass makes all auth-protected routes accessible without a session cookie.
 - Tests run with Node.js built-in test runner via `tsx --test "modules/**/*.test.ts"`. No Jest or Vitest.
 - ESLint uses flat config (`eslint.config.mjs`) with `eslint-config-next`.
 - The `@cursor/sdk` package is marked as `serverExternalPackages` in `next.config.ts` to avoid bundling issues.

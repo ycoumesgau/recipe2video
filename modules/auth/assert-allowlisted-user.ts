@@ -7,6 +7,7 @@ import {
   getAuthUserById,
 } from "./auth.repository";
 import { createSupabaseServerClient } from "./supabase/server";
+import { getDevBypassEmail } from "./dev-bypass";
 
 type AuthAccessCode = "unauthenticated" | "unauthorized";
 
@@ -24,7 +25,45 @@ export function isAuthAccessError(error: unknown): error is AuthAccessError {
   return error instanceof AuthAccessError;
 }
 
+export { getDevBypassEmail } from "./dev-bypass";
+
+async function resolveDevBypassProfile(): Promise<{
+  user: AuthUser;
+  allowedUser: AllowedUser;
+  profile: Profile;
+} | null> {
+  const email = getDevBypassEmail();
+  if (!email) return null;
+
+  const allowedUser = await getAllowedUserByEmail(email);
+  if (!allowedUser) {
+    throw new AuthAccessError(
+      "unauthorized",
+      `Dev bypass email "${email}" is not in the allowlist.`,
+    );
+  }
+
+  const user: AuthUser = { id: allowedUser.id, email: allowedUser.email };
+
+  // Skip ensureProfileForUser — it upserts into `profiles` which has a FK to
+  // auth.users. Without a real Supabase Auth session that row doesn't exist.
+  // Return a synthetic profile matching the allowlist entry instead.
+  const profile: Profile = {
+    id: allowedUser.id,
+    email: allowedUser.email,
+    role: allowedUser.role,
+    createdAt: allowedUser.createdAt,
+  };
+
+  return { user, allowedUser, profile };
+}
+
+// ---------------------------------------------------------------------------
+
 export async function assertAuthenticatedUser(): Promise<AuthUser> {
+  const bypass = await resolveDevBypassProfile();
+  if (bypass) return bypass.user;
+
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -47,6 +86,9 @@ export async function assertAuthenticatedUser(): Promise<AuthUser> {
 export async function assertAllowlistedUser(
   userId: string,
 ): Promise<AllowedUser> {
+  const bypass = await resolveDevBypassProfile();
+  if (bypass) return bypass.allowedUser;
+
   const user = await getAuthUserById(userId);
 
   if (!user) {
@@ -69,6 +111,9 @@ export async function assertAllowlistedUser(
 }
 
 export async function getCurrentProfile(): Promise<Profile | null> {
+  const bypass = await resolveDevBypassProfile();
+  if (bypass) return bypass.profile;
+
   try {
     const user = await assertAuthenticatedUser();
     const allowedUser = await assertAllowlistedUser(user.id);
@@ -87,6 +132,9 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 }
 
 export async function assertCostlyActionAllowed() {
+  const bypass = await resolveDevBypassProfile();
+  if (bypass) return bypass;
+
   const user = await assertAuthenticatedUser();
   const allowedUser = await assertAllowlistedUser(user.id);
   const profile = await ensureProfileForUser(user, allowedUser.role);
