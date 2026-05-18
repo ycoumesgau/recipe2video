@@ -44,7 +44,16 @@ async function resolveDevBypassProfile(): Promise<{
   }
 
   const user: AuthUser = { id: allowedUser.id, email: allowedUser.email };
-  const profile = await ensureProfileForUser(user, allowedUser.role);
+
+  // Skip ensureProfileForUser — it upserts into `profiles` which has a FK to
+  // auth.users. Without a real Supabase Auth session that row doesn't exist.
+  // Return a synthetic profile matching the allowlist entry instead.
+  const profile: Profile = {
+    id: allowedUser.id,
+    email: allowedUser.email,
+    role: allowedUser.role,
+    createdAt: allowedUser.createdAt,
+  };
 
   return { user, allowedUser, profile };
 }
