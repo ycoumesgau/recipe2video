@@ -64,7 +64,7 @@ function buildLogicalScenes(): FixtureLogicalScene[] {
     scene(4, "choux", "detail", "setup and preparation", "Butter melts into water and salt on induction with no flame or glow.", "close pan", "induction must stay clean"),
     scene(5, "choux", "detail", "setup and preparation", "Flour falls in one shot and turns the pan into a thick paste.", "macro pan", "single transformation"),
     scene(6, "choux", "context", "setup and preparation", "Licorn folds the panade confidently at the island, hands visible.", "medium kitchen", "context prepares egg mixing"),
-    scene(7, "choux", "detail", "setup and preparation", "Eggs blend into glossy choux paste with elastic ribbons stretching from the spatula.", "macro bowl", "texture contrast"),
+    scene(7, "choux", "detail", "setup and preparation", "Eggs blend into glossy choux paste with elastic ribbons stretching from the silicone spatula.", "macro bowl", "texture contrast"),
     scene(8, "choux", "detail", "setup and preparation", "Piping bag fills with choux paste, the nozzle kept clean and centered.", "macro bag", "tool readability"),
     scene(9, "choux", "detail", "setup and preparation", "A dotted Paris-Brest crown is piped as separate domes touching in a ring, not a smooth ring.", "top-down tray", "geometry lock"),
     scene(10, "choux", "context", "setup and preparation", "Licorn slides the tray toward the oven, crown topology still visible.", "medium oven", "oven loading separated"),

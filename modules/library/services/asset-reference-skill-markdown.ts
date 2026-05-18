@@ -38,7 +38,7 @@ Use whenever a scene, segment, or reference plan mentions kitchen, character, po
 - \`@KitchenLayoutContextWide\` is a context lock, not a camera framing requirement.
 - Do not force \`@KitchenIslandDefault\` when another kitchen angle is the active shot view; use it when needed for the actual shot or explicit terrazzo lock.
 - Keep kitchen invariants stable across segments: same light terrazzo countertop, same induction geometry, same cabinet layout.
-- Match utensil choice to action physics (for deep-fry retrieval, prefer \`@SpiderSkimmer\`; avoid near-miss substitutions like \`@Spatula\`).
+- Match utensil choice to action physics (for deep-fry retrieval, prefer \`@SpiderSkimmer\`; avoid \`@SiliconeSpatula\` for that. For lifting portions from baking dishes, prefer \`@TurningSpatula\`; for fragile pastry transfers, \`@OffsetSpatula\`).
 - Avoid cloth-in-hand hot transfer prompts due hand/cloth fusion risk.
 - Quantify side/garnish amounts in prompts and keep prop continuity when relevant.`;
 
