@@ -208,6 +208,56 @@ test("buildRecipeAgentArtifactSyncPlan accepts valid recipe-analysis alongside i
   assert.equal(plan.sunoPromptV2, null);
 });
 
+test("buildRecipeAgentArtifactSyncPlan tolerates unknown keys on recipe-analysis.json", () => {
+  // Regression test for the May 2026 sync drop: the Cursor agent started
+  // adding harmless descriptive fields (`servings`, `difficulty`,
+  // `stylePreset`, `productionDefaults`) to `recipe-analysis.json`. The strict
+  // Zod schema marked the artifact invalid and aborted the whole sync,
+  // leaving the project with zero logical scenes / segments / references in
+  // the database even though every other artifact validated cleanly.
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "recipe-analysis.json",
+        JSON.stringify({
+          recipe: {
+            title: "Lasagne dumpling",
+            sourceType: "url",
+            sourceUrl: "https://example.test/recipe",
+            servings: "4 portions",
+            difficulty: "Facile",
+            stylePreset: "asmr_food",
+            productionDefaults: {
+              videoModel: "seedance2",
+              imageModelForReferenceGeneration: "gpt_image_2",
+            },
+            ingredients: [],
+            steps: [],
+            subRecipes: [],
+            assumptions: [],
+            timing: null,
+            criticalTransformations: [],
+            visualTextureOpportunities: [],
+            possibleHooks: [],
+            promptPolicySources: [],
+          },
+          clarifyingQuestions: [],
+        }),
+      ),
+    ],
+  });
+
+  assert.equal(plan.valid, true);
+  assert.ok(plan.recipePatch);
+  assert.equal(plan.recipePatch?.normalized?.title, "Lasagne dumpling");
+  const record = plan.artifactRecords.find(
+    (entry) => entry.artifactName === "recipe-analysis.json",
+  );
+  assert.equal(record?.validationStatus, "valid");
+  assert.deepEqual(record?.validationErrors, []);
+});
+
 test("buildRecipeAgentArtifactSyncPlan keeps invalid artifacts out of sync plan", () => {
   const plan = buildRecipeAgentArtifactSyncPlan({
     videoId,
