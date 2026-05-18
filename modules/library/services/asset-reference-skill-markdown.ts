@@ -40,7 +40,40 @@ Use whenever a scene, segment, or reference plan mentions kitchen, character, po
 - Keep kitchen invariants stable across segments: same light terrazzo countertop, same induction geometry, same cabinet layout.
 - Match utensil choice to action physics (for deep-fry retrieval, prefer \`@SpiderSkimmer\`; avoid near-miss substitutions like \`@Spatula\`).
 - Avoid cloth-in-hand hot transfer prompts due hand/cloth fusion risk.
-- Quantify side/garnish amounts in prompts and keep prop continuity when relevant.`;
+- Quantify side/garnish amounts in prompts and keep prop continuity when relevant.
+
+## Conditioning recipe-specific references
+
+Recipe-specific references (e.g. \`FinishedDumplingLasagnaCutaway\`, \`ParisBrestBakedCrown\`) are produced by GPT-Image 2 inside Recipe2Video. Without explicit anchors the model invents the kitchen, pan, and mascot from scratch and breaks continuity with the Seedance segments that consume the reference.
+
+For every recipe-specific entry in \`reference-plan.json\`, declare a \`conditioningReferences\` array listing the library globals GPT-Image 2 should ground the image on. Names use the same form as Seedance \`@Tag\` references.
+
+Minimum coverage for a recipe-state reference:
+- one kitchen view (\`KitchenIslandDefault\` or the relevant overhead / induction / oven variant),
+- the cookware that holds the dish (\`SquareBakingDish\`, \`SaucepanLarge\`, …),
+- the mascot (\`Character-sheet\`) when hands or face are visible,
+- the dominant utensil when applicable.
+
+Example:
+
+\`\`\`json
+{
+  "type": "recipe_state",
+  "canonicalName": "FinishedDumplingLasagnaCutaway",
+  "role": "finished compact dumpling-lasagna top and cutaway geometry",
+  "priority": 1,
+  "usedInSegmentIds": ["segment-01", "segment-07", "segment-08"],
+  "prompt": "Generate one vertical-reference still of a compact 8 in / 20 cm square steamed dumpling lasagna…",
+  "conditioningReferences": [
+    "KitchenIslandDefault",
+    "SquareBakingDish",
+    "Character-sheet",
+    "Spatula"
+  ]
+}
+\`\`\`
+
+Do NOT include the recipe-specific reference itself in \`conditioningReferences\` — only library canonical names or aliases belong here.`;
 
 const SKILL_FOOTER = `If an object does not exist as an asset, describe it in the prompt but do not list it as a reference.`;
 

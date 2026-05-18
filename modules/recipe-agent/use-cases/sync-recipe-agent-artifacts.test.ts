@@ -297,6 +297,105 @@ test("buildRecipeAgentArtifactSyncPlan accepts case-insensitive duplicate detect
   assert.equal(plan.valid, false);
 });
 
+test("buildRecipeAgentArtifactSyncPlan accepts reference-plan.json entries with conditioningReferences", () => {
+  // Recipe-specific references must be able to declare which library
+  // globals they want as visual anchors for GPT-Image 2. The sync schema
+  // accepts the new field as a strict array of canonical names.
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "reference-plan.json",
+        JSON.stringify({
+          references: [
+            {
+              type: "recipe_state",
+              canonicalName: "FinishedDumplingLasagnaCutaway",
+              role: "finished compact dumpling-lasagna top and cutaway geometry",
+              priority: 1,
+              usedInSegmentIds: ["segment-01", "segment-07", "segment-08"],
+              prompt: "Steamed dumpling lasagna…",
+              conditioningReferences: [
+                "KitchenIslandDefault",
+                "SquareBakingDish",
+                "Character-sheet",
+                "Spatula",
+              ],
+            },
+          ],
+        }),
+      ),
+    ],
+  });
+
+  assert.equal(plan.valid, true);
+  assert.equal(plan.referencesRaw.length, 1);
+  assert.deepEqual(plan.referencesRaw[0]?.conditioningReferences, [
+    "KitchenIslandDefault",
+    "SquareBakingDish",
+    "Character-sheet",
+    "Spatula",
+  ]);
+});
+
+test("buildRecipeAgentArtifactSyncPlan still accepts entries without conditioningReferences", () => {
+  // Library globals do not need conditioning (they are not generated
+  // through GPT-Image 2), and legacy plans should keep working.
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "reference-plan.json",
+        JSON.stringify({
+          references: [
+            {
+              type: "kitchen",
+              canonicalName: "KitchenIslandDefault",
+              role: "global kitchen identity",
+              usedInSegmentIds: ["segment-1"],
+            },
+          ],
+        }),
+      ),
+    ],
+  });
+
+  assert.equal(plan.valid, true);
+  assert.equal(plan.referencesRaw.length, 1);
+  assert.equal(plan.referencesRaw[0]?.conditioningReferences, undefined);
+});
+
+test("buildRecipeAgentArtifactSyncPlan rejects non-string conditioningReferences entries", () => {
+  // A typo in the agent's plan (object instead of string) must fail
+  // validation rather than be silently dropped; the operator needs to know
+  // their anchor list will not work.
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "reference-plan.json",
+        JSON.stringify({
+          references: [
+            {
+              type: "recipe_state",
+              canonicalName: "FinishedDish",
+              role: "finished plating",
+              prompt: "Plating shot",
+              conditioningReferences: [
+                "KitchenIslandDefault",
+                { canonical: "WrongShape" } as unknown as string,
+              ],
+            },
+          ],
+        }),
+      ),
+    ],
+  });
+
+  assert.equal(plan.valid, false);
+  assert.equal(plan.referencesRaw.length, 0);
+});
+
 test("createArtifactContentHash is stable for unchanged content", () => {
   assert.equal(
     createArtifactContentHash("same content"),

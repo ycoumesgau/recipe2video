@@ -19,6 +19,15 @@ export interface ReferenceAsset {
   runwayUri?: string | null;
   prompt?: string | null;
   status: ReferenceStatus;
+  /**
+   * `asset_library` canonical_name or alias values to use as visual anchors
+   * (`referenceImages[]`) when generating this recipe-specific reference
+   * through `POST /v1/text_to_image`. Empty for library globals (their UI
+   * card is read-only) and for recipe-specific entries whose agent plan did
+   * not declare any conditioning. Resolved against the live library at
+   * generation time so the agent's stored plan stays portable.
+   */
+  conditioningCanonicalNames?: string[];
   createdAt: string;
 }
 
@@ -35,6 +44,33 @@ export interface ReferenceAssetReviewItem {
    * library is owned by the dedicated /library admin page.
    */
   isLibraryGlobal?: boolean;
+  /**
+   * Library globals that will be passed to GPT-Image 2 as `referenceImages`
+   * the next time this reference is generated. Resolved best-effort from
+   * `reference.conditioningCanonicalNames`: unknown names appear in
+   * `conditioningUnresolved` so the UI can warn the operator that an
+   * anchor was dropped silently. Empty for library globals.
+   */
+  conditioningAnchors?: ConditioningAnchorPreview[];
+  conditioningUnresolved?: string[];
+}
+
+export interface ConditioningAnchorPreview {
+  /** Canonical name of the matched library entry (snake_case storage key). */
+  canonicalName: string;
+  /** Friendly @-handle the prompt mentions (e.g. `KitchenIslandDefault`). */
+  tag: string;
+  /**
+   * Library category (`kitchen`, `character`, `utensil`, …) for grouping in
+   * the UI without re-querying the library.
+   */
+  category: string;
+  /**
+   * Short-lived signed URL for the anchor preview. May be null when the
+   * library entry has no stored media yet — the UI renders a placeholder
+   * instead of a broken image.
+   */
+  previewUrl: string | null;
 }
 
 export interface SegmentReferenceReadiness {

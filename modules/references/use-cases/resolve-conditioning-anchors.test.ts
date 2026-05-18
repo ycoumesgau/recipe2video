@@ -1,0 +1,311 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import type { SupabaseDataClient } from "@/shared/supabase/client.types";
+
+import { resolveConditioningAnchors } from "./resolve-conditioning-anchors";
+
+interface LibraryRow {
+  id: string;
+  canonical_name: string;
+  aliases: string[];
+  category: string;
+  media_asset_id: string | null;
+  status: "active" | "deprecated";
+}
+
+interface MediaRow {
+  id: string;
+  storage_bucket: string;
+  storage_path: string;
+}
+
+interface FakeData {
+  library: LibraryRow[];
+  media: MediaRow[];
+  signedUrls?: Map<string, string>;
+}
+
+/**
+ * Minimal Supabase stub that supports just enough of the Query Builder
+ * surface for `resolveConditioningAnchors` and its dependency
+ * `findAssetLibraryByCanonicalNames`:
+ *   - `from("asset_library").select("*").or(...).eq("status", "active")`
+ *   - `from("media_assets").select("...").in("id", ids)`
+ *   - `storage.from(bucket).createSignedUrl(path, ttl)`
+ *
+ * We rebuild the query builder per `from()` so each chain is isolated.
+ */
+function fakeSupabase(data: FakeData): SupabaseDataClient {
+  const signedUrls =
+    data.signedUrls ?? new Map<string, string>();
+
+  function libraryBuilder() {
+    let status: "active" | "deprecated" | null = null;
+    let nameFilter: ((row: LibraryRow) => boolean) | null = null;
+
+    const builder = {
+      select() {
+        return builder;
+      },
+      eq(column: string, value: unknown) {
+        if (column === "status") {
+          status = value as "active" | "deprecated";
+        }
+        return builder;
+      },
+      or(expression: string) {
+        // We accept the shape produced by `findAssetLibraryByCanonicalNames`:
+        //   canonical_name.in.("a","b"),aliases.ov.{"a","b"}
+        // For tests we resolve via the same predicate: row matches if
+        // canonical_name OR any alias is in the requested set.
+        const names = Array.from(expression.matchAll(/"([^"]+)"/g)).map(
+          (match) => match[1],
+        );
+        const lower = new Set(names.map((name) => name.toLowerCase()));
+        nameFilter = (row) => {
+          if (lower.has(row.canonical_name.toLowerCase())) return true;
+          return row.aliases.some((alias) => lower.has(alias.toLowerCase()));
+        };
+        return builder;
+      },
+      then(resolve: (value: { data: LibraryRow[]; error: null }) => void) {
+        const rows = data.library.filter((row) => {
+          if (status && row.status !== status) return false;
+          if (nameFilter && !nameFilter(row)) return false;
+          return true;
+        });
+        resolve({ data: rows, error: null });
+      },
+    };
+
+    return builder;
+  }
+
+  function mediaBuilder() {
+    let ids: string[] = [];
+    const builder = {
+      select() {
+        return builder;
+      },
+      in(column: string, values: string[]) {
+        if (column === "id") {
+          ids = values;
+        }
+        return builder;
+      },
+      then(resolve: (value: { data: MediaRow[]; error: null }) => void) {
+        resolve({
+          data: data.media.filter((row) => ids.includes(row.id)),
+          error: null,
+        });
+      },
+    };
+    return builder;
+  }
+
+  return {
+    from(table: string) {
+      if (table === "asset_library") return libraryBuilder();
+      if (table === "media_assets") return mediaBuilder();
+      throw new Error(`fakeSupabase: unexpected table ${table}`);
+    },
+    storage: {
+      // Bucket name is irrelevant for the fake: signed URLs are uniquely
+      // identified by `path`. We ignore the argument intentionally.
+      from() {
+        return {
+          createSignedUrl(path: string) {
+            const signed = signedUrls.get(path) ?? `https://signed.invalid/${path}`;
+            return Promise.resolve({
+              data: { signedUrl: signed },
+              error: null,
+            });
+          },
+        };
+      },
+    },
+  } as unknown as SupabaseDataClient;
+}
+
+const library: LibraryRow[] = [
+  {
+    id: "lib-kitchen",
+    canonical_name: "island_default",
+    aliases: ["KitchenIslandDefault"],
+    category: "kitchen",
+    media_asset_id: "media-kitchen",
+    status: "active",
+  },
+  {
+    id: "lib-baking",
+    canonical_name: "baking_dish",
+    aliases: ["SquareBakingDish"],
+    category: "utensil",
+    media_asset_id: "media-baking",
+    status: "active",
+  },
+  {
+    id: "lib-spatula-no-media",
+    canonical_name: "spatula_no_media",
+    aliases: ["SpatulaNoMedia"],
+    category: "utensil",
+    // No media_asset_id: resolved but unusable, so reported as unresolved.
+    media_asset_id: null,
+    status: "active",
+  },
+  {
+    id: "lib-deprecated",
+    canonical_name: "deprecated_island",
+    aliases: ["DeprecatedKitchen"],
+    category: "kitchen",
+    media_asset_id: "media-deprecated",
+    status: "deprecated",
+  },
+];
+
+const media: MediaRow[] = [
+  {
+    id: "media-kitchen",
+    storage_bucket: "reference-images",
+    storage_path: "library/kitchen/island_default.png",
+  },
+  {
+    id: "media-baking",
+    storage_bucket: "reference-images",
+    storage_path: "library/utensil/baking_dish.png",
+  },
+  {
+    id: "media-deprecated",
+    storage_bucket: "reference-images",
+    storage_path: "library/kitchen/deprecated_island.png",
+  },
+];
+
+test("resolveConditioningAnchors returns an anchor per resolved library entry with the alias as tag", async () => {
+  const supabase = fakeSupabase({ library, media });
+
+  const result = await resolveConditioningAnchors(supabase, [
+    "KitchenIslandDefault",
+    "SquareBakingDish",
+  ]);
+
+  assert.equal(result.anchors.length, 2);
+  assert.deepEqual(result.unresolvedNames, []);
+
+  const [first, second] = result.anchors;
+  assert.equal(first?.canonicalName, "island_default");
+  assert.equal(first?.tag, "KitchenIslandDefault");
+  assert.equal(first?.requestedName, "KitchenIslandDefault");
+  assert.ok(first?.uri.includes("library/kitchen/island_default.png"));
+  assert.equal(second?.canonicalName, "baking_dish");
+  assert.equal(second?.tag, "SquareBakingDish");
+});
+
+test("resolveConditioningAnchors falls back to the canonical name as tag when no alias exists", async () => {
+  const libraryWithoutAlias: LibraryRow[] = [
+    {
+      id: "lib-no-alias",
+      canonical_name: "tongs",
+      aliases: [],
+      category: "utensil",
+      media_asset_id: "media-tongs",
+      status: "active",
+    },
+  ];
+  const mediaWithTongs: MediaRow[] = [
+    {
+      id: "media-tongs",
+      storage_bucket: "reference-images",
+      storage_path: "library/utensil/tongs.png",
+    },
+  ];
+  const supabase = fakeSupabase({
+    library: libraryWithoutAlias,
+    media: mediaWithTongs,
+  });
+
+  const result = await resolveConditioningAnchors(supabase, ["tongs"]);
+
+  assert.equal(result.anchors[0]?.tag, "tongs");
+});
+
+test("resolveConditioningAnchors deduplicates two names that resolve to the same library entry", async () => {
+  // The agent (or the operator pasting from the skill) might write both
+  // `island_default` and `KitchenIslandDefault`. They point at the same
+  // library row; we MUST emit only one anchor so we don't waste a slot.
+  const supabase = fakeSupabase({ library, media });
+
+  const result = await resolveConditioningAnchors(supabase, [
+    "island_default",
+    "KitchenIslandDefault",
+  ]);
+
+  assert.equal(result.anchors.length, 1);
+  assert.equal(result.anchors[0]?.canonicalName, "island_default");
+  assert.deepEqual(result.unresolvedNames, []);
+});
+
+test("resolveConditioningAnchors reports unknown names as unresolved", async () => {
+  const supabase = fakeSupabase({ library, media });
+
+  const result = await resolveConditioningAnchors(supabase, [
+    "KitchenIslandDefault",
+    "DoesNotExist",
+  ]);
+
+  assert.equal(result.anchors.length, 1);
+  assert.deepEqual(result.unresolvedNames, ["DoesNotExist"]);
+});
+
+test("resolveConditioningAnchors reports library entries with no media as unresolved", async () => {
+  // A library row exists for the name but has no media_asset_id (rare,
+  // happens when the seed script created the row before uploading the
+  // image). We cannot generate a signed URL, so the anchor is dropped
+  // from the Runway payload AND surfaced to the operator.
+  const supabase = fakeSupabase({ library, media });
+
+  const result = await resolveConditioningAnchors(supabase, [
+    "SpatulaNoMedia",
+  ]);
+
+  assert.equal(result.anchors.length, 0);
+  assert.deepEqual(result.unresolvedNames, ["SpatulaNoMedia"]);
+});
+
+test("resolveConditioningAnchors excludes deprecated library entries", async () => {
+  const supabase = fakeSupabase({ library, media });
+
+  const result = await resolveConditioningAnchors(supabase, [
+    "DeprecatedKitchen",
+  ]);
+
+  assert.equal(result.anchors.length, 0);
+  assert.deepEqual(result.unresolvedNames, ["DeprecatedKitchen"]);
+});
+
+test("resolveConditioningAnchors handles an empty input list with no DB calls", async () => {
+  // The fake throws on unexpected tables. If we accidentally hit asset_library
+  // here, the test fails — codifying the empty-list short-circuit.
+  const supabase = {
+    from() {
+      throw new Error("resolveConditioningAnchors must short-circuit on empty input");
+    },
+  } as unknown as SupabaseDataClient;
+
+  const result = await resolveConditioningAnchors(supabase, []);
+  assert.deepEqual(result, { anchors: [], unresolvedNames: [] });
+});
+
+test("resolveConditioningAnchors trims whitespace before resolution", async () => {
+  const supabase = fakeSupabase({ library, media });
+
+  const result = await resolveConditioningAnchors(supabase, [
+    "  KitchenIslandDefault  ",
+    "",
+    "\tSquareBakingDish\n",
+  ]);
+
+  assert.deepEqual(result.unresolvedNames, []);
+  assert.equal(result.anchors.length, 2);
+});

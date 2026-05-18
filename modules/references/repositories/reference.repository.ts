@@ -18,6 +18,7 @@ export interface CreateReferenceAssetInput {
   runwayUri?: string | null;
   prompt?: string | null;
   status?: ReferenceStatus;
+  conditioningCanonicalNames?: string[];
 }
 
 /**
@@ -68,6 +69,7 @@ export async function insertReferenceAsset(
     runway_uri: input.runwayUri ?? null,
     prompt: input.prompt ?? null,
     status: input.status ?? "planned",
+    conditioning_canonical_names: input.conditioningCanonicalNames ?? [],
   };
 
   const { data, error } = await supabase
@@ -113,6 +115,8 @@ export async function replaceAgentReferenceAssetsForVideo(
         runway_uri: reference.runwayUri ?? null,
         prompt: reference.prompt ?? null,
         status: reference.status ?? "planned",
+        conditioning_canonical_names:
+          reference.conditioningCanonicalNames ?? [],
       })),
     )
     .select("*")
@@ -149,14 +153,28 @@ export async function updateReferenceAssetMedia(
     referenceId: string;
     mediaAssetId: string;
     status?: ReferenceStatus;
+    /**
+     * When true, clear `runway_uri` alongside the media update. Set on
+     * regeneration so the old ephemeral Runway upload (now pointing at a
+     * stale image) can never be reused for a Seedance call. The operator
+     * must re-approve and re-upload the new image explicitly.
+     */
+    clearRunwayUri?: boolean;
   },
 ): Promise<ReferenceAsset> {
+  const update: Database["public"]["Tables"]["reference_assets"]["Update"] = {
+    media_asset_id: input.mediaAssetId,
+  };
+  if (input.status !== undefined) {
+    update.status = input.status;
+  }
+  if (input.clearRunwayUri) {
+    update.runway_uri = null;
+  }
+
   const { data, error } = await supabase
     .from("reference_assets")
-    .update({
-      media_asset_id: input.mediaAssetId,
-      status: input.status,
-    })
+    .update(update)
     .eq("id", input.referenceId)
     .select("*")
     .single();
@@ -215,6 +233,35 @@ export function mapReferenceAsset(row: ReferenceAssetRow): ReferenceAsset {
     runwayUri: row.runway_uri,
     prompt: row.prompt,
     status: row.status as ReferenceStatus,
+    conditioningCanonicalNames: row.conditioning_canonical_names ?? [],
     createdAt: row.created_at,
   };
+}
+
+/**
+ * Update the conditioning anchors for a recipe-specific reference asset.
+ * Used by the references UI when the operator tweaks which library globals
+ * should ground the next GPT-Image 2 regeneration. The list is stored as
+ * given (no dedupe/casing) and resolved against `asset_library` at
+ * generation time, so the operator can paste either canonical names or
+ * aliases.
+ */
+export async function updateReferenceAssetConditioning(
+  supabase: SupabaseDataClient,
+  input: {
+    referenceId: string;
+    conditioningCanonicalNames: string[];
+  },
+): Promise<ReferenceAsset> {
+  const { data, error } = await supabase
+    .from("reference_assets")
+    .update({
+      conditioning_canonical_names: input.conditioningCanonicalNames,
+    })
+    .eq("id", input.referenceId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateReferenceAssetConditioning failed");
+  return mapReferenceAsset(data);
 }

@@ -324,6 +324,7 @@ export type Database = {
           runway_uri: string | null;
           prompt: string | null;
           status: string;
+          conditioning_canonical_names: string[];
           created_at: string;
         };
         Insert: {
@@ -337,6 +338,7 @@ export type Database = {
           runway_uri?: string | null;
           prompt?: string | null;
           status?: string;
+          conditioning_canonical_names?: string[];
           created_at?: string;
         };
         Update: {
@@ -350,6 +352,7 @@ export type Database = {
           runway_uri?: string | null;
           prompt?: string | null;
           status?: string;
+          conditioning_canonical_names?: string[];
           created_at?: string;
         };
         Relationships: [];

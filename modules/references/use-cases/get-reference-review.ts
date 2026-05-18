@@ -9,14 +9,16 @@ import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import type { Database } from "@/shared/supabase/database.types";
 
 import type {
+  ConditioningAnchorPreview,
   ReferenceAsset,
   ReferenceAssetReviewItem,
   ReferenceReviewData,
 } from "../reference.types";
 import { listReferenceAssetsForVideo } from "../repositories/reference.repository";
 import { listSegmentReferencesForVideo } from "../repositories/segment-references.repository";
-import type {
-  AssetLibraryEntry,
+import {
+  findAssetLibraryByCanonicalNames,
+  type AssetLibraryEntry,
 } from "../repositories/asset-library.repository";
 import { buildSegmentReadiness } from "./reference-readiness";
 
@@ -56,7 +58,7 @@ export async function getReferenceReviewData(
       .filter((id): id is string => Boolean(id)),
   );
 
-  const [libraryEntries, mediaAssets] = await Promise.all([
+  const [libraryEntries, mediaAssets, conditioningIndex] = await Promise.all([
     fetchAssetLibraryEntries(supabase, libraryAssetIds),
     fetchMediaAssetsForReferences({
       supabase,
@@ -64,6 +66,7 @@ export async function getReferenceReviewData(
       libraryAssetIds,
       recipeReferences,
     }),
+    resolveConditioningIndex(supabase, recipeReferences),
   ]);
 
   const segmentTitleById = new Map(segments.map((segment) => [segment.id, segment.title]));
@@ -96,6 +99,7 @@ export async function getReferenceReviewData(
         reference,
         mediaAsset: mediaAssets.get(reference.mediaAssetId ?? "") ?? null,
         usedInSegments: usageByRecipeReference.get(reference.id) ?? [],
+        conditioningIndex,
       }),
     ),
   );
@@ -266,6 +270,7 @@ async function buildRecipeReviewItem(input: {
   reference: ReferenceAsset;
   mediaAsset: MediaAsset | null;
   usedInSegments: string[];
+  conditioningIndex: ConditioningIndex;
 }): Promise<ReferenceAssetReviewItem> {
   const mediaAsset =
     input.mediaAsset ??
@@ -273,13 +278,138 @@ async function buildRecipeReviewItem(input: {
       ? await getMediaAssetByIdInline(input.supabase, input.reference.mediaAssetId)
       : null);
 
+  const conditioning = await resolveReferenceConditioning(
+    input.supabase,
+    input.reference,
+    input.conditioningIndex,
+  );
+
   return {
     reference: input.reference,
     mediaAsset,
     previewUrl: await createPreviewUrl(input.supabase, mediaAsset),
     usedInSegments: input.usedInSegments,
     isLibraryGlobal: false,
+    conditioningAnchors: conditioning.anchors,
+    conditioningUnresolved: conditioning.unresolved,
   };
+}
+
+interface ConditioningIndex {
+  /**
+   * Map from each name the agent referenced (canonical or alias) to the
+   * resolved library entry. Built once for the whole page so we don't make
+   * a library query per card.
+   */
+  libraryByName: Map<string, AssetLibraryEntry>;
+  /** Storage info per resolved library entry, keyed by `mediaAssetId`. */
+  mediaById: Map<string, { storageBucket: string | null; storagePath: string | null }>;
+}
+
+/**
+ * Pre-resolve every conditioning name across every recipe-specific
+ * reference of the video so we can render the anchor previews without
+ * issuing N additional queries. Misses are tolerated: an unresolved name
+ * just means the operator will see a "missing" badge on the card.
+ */
+async function resolveConditioningIndex(
+  supabase: SupabaseDataClient,
+  recipeReferences: ReferenceAsset[],
+): Promise<ConditioningIndex> {
+  const names = unique(
+    recipeReferences.flatMap(
+      (reference) => reference.conditioningCanonicalNames ?? [],
+    ),
+  );
+
+  if (names.length === 0) {
+    return {
+      libraryByName: new Map(),
+      mediaById: new Map(),
+    };
+  }
+
+  const libraryByName = await findAssetLibraryByCanonicalNames(supabase, names);
+
+  const mediaAssetIds = unique(
+    Array.from(new Set(libraryByName.values()))
+      .map((entry) => entry.mediaAssetId)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  const mediaById = new Map<
+    string,
+    { storageBucket: string | null; storagePath: string | null }
+  >();
+
+  if (mediaAssetIds.length > 0) {
+    const { data, error } = await supabase
+      .from("media_assets")
+      .select("id, storage_bucket, storage_path")
+      .in("id", mediaAssetIds);
+
+    throwIfSupabaseError(error, "resolveConditioningIndex media fetch failed");
+    for (const row of data ?? []) {
+      mediaById.set(row.id, {
+        storageBucket: row.storage_bucket ?? null,
+        storagePath: row.storage_path ?? null,
+      });
+    }
+  }
+
+  return { libraryByName, mediaById };
+}
+
+async function resolveReferenceConditioning(
+  supabase: SupabaseDataClient,
+  reference: ReferenceAsset,
+  index: ConditioningIndex,
+): Promise<{ anchors: ConditioningAnchorPreview[]; unresolved: string[] }> {
+  const requested = reference.conditioningCanonicalNames ?? [];
+  if (requested.length === 0) {
+    return { anchors: [], unresolved: [] };
+  }
+
+  const seenEntryIds = new Set<string>();
+  const anchors: ConditioningAnchorPreview[] = [];
+  const unresolved: string[] = [];
+
+  for (const requestedName of requested) {
+    const trimmed = requestedName.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    const entry = index.libraryByName.get(trimmed);
+    if (!entry) {
+      unresolved.push(trimmed);
+      continue;
+    }
+    if (seenEntryIds.has(entry.id)) {
+      continue;
+    }
+    seenEntryIds.add(entry.id);
+
+    const storage = entry.mediaAssetId
+      ? index.mediaById.get(entry.mediaAssetId)
+      : null;
+    const previewUrl =
+      storage?.storageBucket && storage.storagePath
+        ? await createStorageSignedUrl(supabase, {
+            bucket: storage.storageBucket as MediaStorageBucket,
+            path: storage.storagePath,
+            expiresInSeconds: 60 * 15,
+          })
+        : null;
+
+    anchors.push({
+      canonicalName: entry.canonicalName,
+      tag: entry.aliases[0]?.trim() || entry.canonicalName,
+      category: entry.category,
+      previewUrl,
+    });
+  }
+
+  return { anchors, unresolved };
 }
 
 /**
