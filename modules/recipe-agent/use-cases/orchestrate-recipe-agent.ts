@@ -417,6 +417,7 @@ async function enrichArtifactsWithGithub(input: {
   gitBranch: string | null;
   gitSha: string | null;
   hasAssistantCheckpoint: boolean;
+  resolvedWorkspacePath: string | null;
 }> {
   return fetchRecipeAgentArtifactsFromGithub({
     project: input.project,
