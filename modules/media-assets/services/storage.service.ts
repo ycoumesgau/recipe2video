@@ -54,4 +54,7 @@ export async function downloadStorageObject(
   return data;
 }
 
-export { createStorageSignedUrl } from "./storage-signed-url";
+export {
+  createStorageSignedUrl,
+  tryCreateStorageSignedUrl,
+} from "./storage-signed-url";

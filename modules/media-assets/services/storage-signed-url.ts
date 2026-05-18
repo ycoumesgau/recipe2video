@@ -35,3 +35,28 @@ export async function createStorageSignedUrl(
 
   return data.signedUrl;
 }
+
+/**
+ * Same as {@link createStorageSignedUrl}, but returns `null` when signing fails
+ * (e.g. object deleted from Storage while `media_assets` rows still point at it).
+ * Use for dashboard thumbnails and other non-critical previews.
+ */
+export async function tryCreateStorageSignedUrl(
+  supabase: SupabaseDataClient,
+  input: StoredStorageObjectForSigning & {
+    expiresInSeconds?: number;
+    download?: boolean | string;
+  },
+): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from(input.bucket)
+    .createSignedUrl(input.path, input.expiresInSeconds ?? 60 * 60, {
+      download: input.download,
+    });
+
+  if (error) {
+    return null;
+  }
+
+  return data.signedUrl;
+}
