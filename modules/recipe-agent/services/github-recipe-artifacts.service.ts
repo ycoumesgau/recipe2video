@@ -1,9 +1,11 @@
 import { z } from "zod";
 
+import { buildRecipeAgentWorkspace } from "../recipe-agent.workspace";
 import type { RecipeAgentArtifact } from "../recipe-agent.types";
 import {
   RECIPE_AGENT_ARTIFACT_NAMES,
   RECIPE_AGENT_CHECKPOINT_MANIFEST,
+  RECIPE_AGENT_WORKSPACE_ROOT,
 } from "../recipe-agent.constants";
 
 const ManifestArtifactListEntrySchema = z.union([
@@ -125,6 +127,237 @@ export async function fetchGithubRepositoryFileText(input: {
   }
 
   return Buffer.from(json.content, "base64").toString("utf8");
+}
+
+interface GithubDirectoryEntry {
+  name: string;
+  path: string;
+  type: string;
+}
+
+/**
+ * Lists immediate children of a directory in the repo at `ref` (branch name
+ * or commit SHA). Returns an empty array on 404.
+ */
+export async function fetchGithubDirectoryEntries(input: {
+  owner: string;
+  repo: string;
+  path: string;
+  ref: string;
+  token: string;
+}): Promise<GithubDirectoryEntry[]> {
+  const slug = `${input.owner}/${input.repo}`;
+  const encodedPath = input.path
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  const url = `https://api.github.com/repos/${slug}/contents/${encodedPath}?ref=${encodeURIComponent(
+    input.ref,
+  )}`;
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${input.token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "recipe2video-agent-sync",
+    },
+    next: { revalidate: 0 },
+  });
+
+  if (response.status === 404) {
+    return [];
+  }
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `GitHub directory listing failed (${response.status}): ${body.slice(0, 500)}`,
+    );
+  }
+
+  const json = (await response.json()) as unknown;
+
+  if (!Array.isArray(json)) {
+    return [];
+  }
+
+  return json
+    .filter(
+      (entry): entry is GithubDirectoryEntry =>
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof (entry as GithubDirectoryEntry).name === "string" &&
+        typeof (entry as GithubDirectoryEntry).path === "string" &&
+        typeof (entry as GithubDirectoryEntry).type === "string",
+    )
+    .map((entry) => ({
+      name: entry.name,
+      path: entry.path,
+      type: entry.type,
+    }));
+}
+
+/**
+ * ISO timestamp of the latest commit touching `path` on `ref`, or null when
+ * GitHub has no history for that path at this ref.
+ */
+export async function fetchLatestCommitIsoDateForRepoPath(input: {
+  owner: string;
+  repo: string;
+  path: string;
+  ref: string;
+  token: string;
+}): Promise<string | null> {
+  const slug = `${input.owner}/${input.repo}`;
+  const params = new URLSearchParams({
+    path: input.path,
+    sha: input.ref,
+    per_page: "1",
+  });
+  const url = `https://api.github.com/repos/${slug}/commits?${params.toString()}`;
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${input.token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "recipe2video-agent-sync",
+    },
+    next: { revalidate: 0 },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const json = (await response.json()) as unknown;
+
+  if (!Array.isArray(json) || json.length === 0) {
+    return null;
+  }
+
+  const first = json[0] as {
+    commit?: { committer?: { date?: string }; author?: { date?: string } };
+  };
+
+  return (
+    first.commit?.committer?.date ??
+    first.commit?.author?.date ??
+    null
+  );
+}
+
+const MAX_AGENT_RECIPE_SUBDIRS_TO_SCORE = 24;
+
+/**
+ * Builds an ordered list of workspace roots under `agent-recipes/` to try when
+ * pulling artifacts from GitHub. Prefers the canonical `agent-recipes/{videoId}`
+ * path, then other recipe folders ordered by latest Git activity on
+ * `seedance-segments.json` (fallback: checkpoint manifest, then recipe
+ * analysis), then legacy stored / session paths. Avoids stale slug folders when
+ * the agent moved work into a UUID directory on the same branch.
+ */
+export async function buildAgentRecipeWorkspacePathCandidatesForGithub(input: {
+  videoId: string;
+  storedWorkspacePath?: string | null;
+  cursorSessionWorkspacePath?: string | null;
+  owner: string;
+  repo: string;
+  token: string;
+  discoveryRef: string;
+}): Promise<string[]> {
+  const ordered: string[] = [];
+  const pushUnique = (path: string | null | undefined) => {
+    const trimmed = path?.trim();
+    if (!trimmed || ordered.includes(trimmed)) {
+      return;
+    }
+    ordered.push(trimmed);
+  };
+
+  const canonical = buildRecipeAgentWorkspace(input.videoId).workspacePath;
+  pushUnique(canonical);
+
+  const discoveryRef = input.discoveryRef.trim();
+
+  if (!discoveryRef) {
+    pushUnique(input.storedWorkspacePath);
+    pushUnique(input.cursorSessionWorkspacePath);
+    return ordered;
+  }
+
+  let subdirs: GithubDirectoryEntry[] = [];
+
+  try {
+    subdirs = await fetchGithubDirectoryEntries({
+      owner: input.owner,
+      repo: input.repo,
+      path: RECIPE_AGENT_WORKSPACE_ROOT,
+      ref: discoveryRef,
+      token: input.token,
+    });
+  } catch {
+    subdirs = [];
+  }
+
+  const recipeDirs = subdirs
+    .filter((entry) => entry.type === "dir" && entry.path.startsWith(`${RECIPE_AGENT_WORKSPACE_ROOT}/`))
+    .filter((entry) => entry.path !== canonical)
+    .slice(0, MAX_AGENT_RECIPE_SUBDIRS_TO_SCORE);
+
+  const scored = await Promise.all(
+    recipeDirs.map(async (entry) => {
+      const candidates = [
+        `${entry.path}/seedance-segments.json`,
+        `${entry.path}/${RECIPE_AGENT_CHECKPOINT_MANIFEST}`,
+        `${entry.path}/recipe-analysis.json`,
+      ];
+
+      let best: string | null = null;
+
+      for (const path of candidates) {
+        const iso = await fetchLatestCommitIsoDateForRepoPath({
+          owner: input.owner,
+          repo: input.repo,
+          path,
+          ref: discoveryRef,
+          token: input.token,
+        });
+
+        if (iso && (!best || iso > best)) {
+          best = iso;
+        }
+      }
+
+      return { path: entry.path, activityIso: best };
+    }),
+  );
+
+  scored.sort((a, b) => {
+    if (a.activityIso && b.activityIso) {
+      return a.activityIso < b.activityIso ? 1 : a.activityIso > b.activityIso ? -1 : 0;
+    }
+
+    if (a.activityIso) {
+      return -1;
+    }
+
+    if (b.activityIso) {
+      return 1;
+    }
+
+    return a.path.localeCompare(b.path);
+  });
+
+  for (const row of scored) {
+    pushUnique(row.path);
+  }
+
+  pushUnique(input.storedWorkspacePath);
+  pushUnique(input.cursorSessionWorkspacePath);
+
+  return ordered;
 }
 
 export async function fetchGithubBranchHeadSha(input: {

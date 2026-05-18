@@ -233,6 +233,9 @@ export async function sendRecipeAgentMessage(
       needsUserInput,
     });
 
+    const nextAgentWorkspacePath =
+      enriched.resolvedWorkspacePath ?? result.workspacePath?.trim() ?? undefined;
+
     await deps.updateVideoAgentSession(input.videoId, {
       lastAgentRunId: result.runId,
       lastAgentSyncAt: new Date().toISOString(),
@@ -243,6 +246,9 @@ export async function sendRecipeAgentMessage(
         : syncPlan.valid
           ? "idle"
           : "validation_failed",
+      ...(nextAgentWorkspacePath
+        ? { agentWorkspacePath: nextAgentWorkspacePath }
+        : {}),
     });
 
     if (input.supabase && chatAssistantMessageId) {
@@ -411,10 +417,11 @@ async function enrichArtifactsWithGithub(input: {
   gitBranch: string | null;
   gitSha: string | null;
   hasAssistantCheckpoint: boolean;
+  resolvedWorkspacePath: string | null;
 }> {
   return fetchRecipeAgentArtifactsFromGithub({
     project: input.project,
-    workspacePath: input.result.workspacePath,
+    cursorSessionWorkspacePath: input.result.workspacePath,
     seedArtifacts: input.result.artifacts,
     assistantResultText: input.result.result,
   });

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fetchCheckpointManifestFromGithub } from "./github-recipe-artifacts.service";
+import {
+  buildAgentRecipeWorkspacePathCandidatesForGithub,
+  fetchCheckpointManifestFromGithub,
+} from "./github-recipe-artifacts.service";
 
 test("fetchCheckpointManifestFromGithub parses latestPushedCommitSha manifests", async () => {
   const originalFetch = global.fetch;
@@ -152,6 +155,81 @@ test("fetchCheckpointManifestFromGithub accepts checkpointCommitSha alias", asyn
       manifest?.commitSha,
       "645681eb711a57589673b0f78567c80a60bb2eac",
     );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("buildAgentRecipeWorkspacePathCandidatesForGithub prefers canonical path then newer slug dirs", async () => {
+  const originalFetch = global.fetch;
+  const videoId = "f3e5a9b8-dbc2-4131-9946-9292b128b6f4";
+
+  global.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+
+    if (url.includes("/contents/agent-recipes?")) {
+      return new Response(
+        JSON.stringify([
+          {
+            name: "lasagne-dumpling",
+            path: "agent-recipes/lasagne-dumpling",
+            type: "dir",
+          },
+          {
+            name: videoId,
+            path: `agent-recipes/${videoId}`,
+            type: "dir",
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (url.includes("/commits?")) {
+      const pathParam = new URL(url).searchParams.get("path") ?? "";
+
+      if (pathParam.includes("lasagne-dumpling")) {
+        return new Response(
+          JSON.stringify([
+            {
+              commit: { committer: { date: "2026-05-18T08:00:00Z" } },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (pathParam.includes(videoId)) {
+        return new Response(
+          JSON.stringify([
+            {
+              commit: { committer: { date: "2026-05-18T12:00:00Z" } },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+    }
+
+    return new Response("unexpected url", { status: 500 });
+  }) as typeof fetch;
+
+  try {
+    const paths = await buildAgentRecipeWorkspacePathCandidatesForGithub({
+      videoId,
+      storedWorkspacePath: "agent-recipes/legacy-slug",
+      cursorSessionWorkspacePath: null,
+      owner: "o",
+      repo: "r",
+      token: "t",
+      discoveryRef: "main",
+    });
+
+    assert.deepEqual(paths, [
+      `agent-recipes/${videoId}`,
+      "agent-recipes/lasagne-dumpling",
+      "agent-recipes/legacy-slug",
+    ]);
   } finally {
     global.fetch = originalFetch;
   }

@@ -10,6 +10,7 @@ import { resolveRecipeAgentConfig } from "../recipe-agent.config";
 import { updateVideoAgentSession } from "../repositories/recipe-agent.repository";
 import { extractAssistantCheckpoint } from "../services/checkpoint-parse";
 import {
+  buildAgentRecipeWorkspacePathCandidatesForGithub,
   fetchGithubBranchHeadSha,
   fetchCheckpointManifestFromGithub,
   parseGithubRepoFromUrl,
@@ -27,10 +28,16 @@ import {
 /**
  * Loads recipe workspace artifacts from GitHub using the same ref + manifest
  * resolution as post-agent runs. Does not call Cursor.
+ *
+ * Tries multiple `agent-recipes/...` roots when needed (canonical video id path,
+ * then other folders by recent Git activity, then stored / session paths) so
+ * Git-only sync does not keep reading a stale slug directory after the agent
+ * moved artifacts under `agent-recipes/{videoId}`.
  */
 export async function fetchRecipeAgentArtifactsFromGithub(input: {
   project: VideoProject;
-  workspacePath: string;
+  /** Last workspace path reported by the Cursor SDK for this run (optional). */
+  cursorSessionWorkspacePath?: string | null;
   seedArtifacts?: RecipeAgentArtifact[];
   assistantResultText?: string | undefined;
 }): Promise<{
@@ -38,6 +45,7 @@ export async function fetchRecipeAgentArtifactsFromGithub(input: {
   gitBranch: string | null;
   gitSha: string | null;
   hasAssistantCheckpoint: boolean;
+  resolvedWorkspacePath: string | null;
 }> {
   let artifacts = input.seedArtifacts?.length
     ? input.seedArtifacts.map((artifact) => ({ ...artifact }))
@@ -65,6 +73,7 @@ export async function fetchRecipeAgentArtifactsFromGithub(input: {
       gitBranch,
       gitSha,
       hasAssistantCheckpoint,
+      resolvedWorkspacePath: null,
     };
   }
 
@@ -77,10 +86,51 @@ export async function fetchRecipeAgentArtifactsFromGithub(input: {
       gitBranch,
       gitSha,
       hasAssistantCheckpoint,
+      resolvedWorkspacePath: null,
     };
   }
 
-  const workspacePath = input.workspacePath;
+  const gitBranchTrimmed = gitBranch?.trim() ?? "";
+  const gitShaTrimmed = gitSha?.trim() ?? "";
+
+  let discoveryRef = gitShaTrimmed;
+
+  if (gitBranchTrimmed) {
+    try {
+      const branchHeadSha = await fetchGithubBranchHeadSha({
+        owner: repo.owner,
+        repo: repo.repo,
+        branch: gitBranchTrimmed,
+        token,
+      });
+
+      if (branchHeadSha) {
+        discoveryRef = branchHeadSha;
+      }
+    } catch (error) {
+      console.warn(
+        "[recipe-agent] Unable to resolve branch HEAD for workspace discovery:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  if (!discoveryRef && gitBranchTrimmed) {
+    discoveryRef = gitBranchTrimmed;
+  }
+
+  const refForWorkspaceDiscovery = discoveryRef || gitBranchTrimmed || gitShaTrimmed;
+
+  const workspacePathCandidates = await buildAgentRecipeWorkspacePathCandidatesForGithub({
+    videoId: input.project.id,
+    storedWorkspacePath: input.project.agentWorkspacePath,
+    cursorSessionWorkspacePath: input.cursorSessionWorkspacePath,
+    owner: repo.owner,
+    repo: repo.repo,
+    token,
+    discoveryRef: refForWorkspaceDiscovery,
+  });
+
   const candidateRefs = await buildGithubArtifactRefs({
     gitBranch,
     gitSha,
@@ -95,90 +145,95 @@ export async function fetchRecipeAgentArtifactsFromGithub(input: {
       gitBranch,
       gitSha,
       hasAssistantCheckpoint,
+      resolvedWorkspacePath: null,
     };
   }
 
-  for (const candidate of candidateRefs) {
-    const retryDelaysMs = getGithubRetryDelaysMs();
-    let lastError: unknown;
+  for (const workspacePath of workspacePathCandidates) {
+    for (const candidate of candidateRefs) {
+      const retryDelaysMs = getGithubRetryDelaysMs();
+      let lastError: unknown;
 
-    for (let attempt = 0; attempt < retryDelaysMs.length; attempt += 1) {
-      try {
-        const manifest = await fetchCheckpointManifestFromGithub({
-          owner: repo.owner,
-          repo: repo.repo,
-          workspacePath,
-          ref: candidate.ref,
-          token,
-        });
+      for (let attempt = 0; attempt < retryDelaysMs.length; attempt += 1) {
+        try {
+          const manifest = await fetchCheckpointManifestFromGithub({
+            owner: repo.owner,
+            repo: repo.repo,
+            workspacePath,
+            ref: candidate.ref,
+            token,
+          });
 
-        if (!manifest) {
-          throw new Error(`Checkpoint manifest not found at ref ${candidate.ref}`);
-        }
+          if (!manifest) {
+            throw new Error(`Checkpoint manifest not found at ref ${candidate.ref}`);
+          }
 
-        const supplementRef = candidate.preferRefOverManifestSha
-          ? candidate.ref
-          : manifest?.commitSha ?? candidate.ref;
+          const supplementRef = candidate.preferRefOverManifestSha
+            ? candidate.ref
+            : manifest?.commitSha ?? candidate.ref;
 
-        const supplemented = await supplementRecipeAgentArtifactsFromGithub({
-          workspacePath,
-          artifacts,
-          artifactPaths: manifest?.artifactPaths,
-          preferGithub: true,
-          owner: repo.owner,
-          repo: repo.repo,
-          ref: supplementRef,
-          token,
-        });
+          const supplemented = await supplementRecipeAgentArtifactsFromGithub({
+            workspacePath,
+            artifacts,
+            artifactPaths: manifest?.artifactPaths,
+            preferGithub: true,
+            owner: repo.owner,
+            repo: repo.repo,
+            ref: supplementRef,
+            token,
+          });
 
-        const hasGithubArtifact = supplemented.some(
-          (artifact) => artifact.source === "github",
-        );
+          const hasGithubArtifact = supplemented.some(
+            (artifact) => artifact.source === "github",
+          );
 
-        if (!hasGithubArtifact) {
-          throw new Error(`No GitHub artifacts found at ref ${candidate.ref}`);
-        }
+          if (!hasGithubArtifact) {
+            throw new Error(`No GitHub artifacts found at ref ${candidate.ref}`);
+          }
 
-        artifacts = supplemented;
+          artifacts = supplemented;
 
-        if (manifest?.branch) {
-          gitBranch = manifest.branch;
-        }
+          if (manifest?.branch) {
+            gitBranch = manifest.branch;
+          }
 
-        if (manifest?.commitSha) {
-          gitSha = manifest.commitSha;
-        }
+          if (manifest?.commitSha) {
+            gitSha = manifest.commitSha;
+          }
 
-        if (candidate.persistedSha) {
-          gitSha = candidate.persistedSha;
-        }
+          if (candidate.persistedSha) {
+            gitSha = candidate.persistedSha;
+          }
 
-        return {
-          artifacts,
-          gitBranch,
-          gitSha,
-          hasAssistantCheckpoint,
-        };
-      } catch (error) {
-        lastError = error;
-        const delayMs = retryDelaysMs[attempt] ?? 0;
-        const isLastAttempt = attempt === retryDelaysMs.length - 1;
+          return {
+            artifacts,
+            gitBranch,
+            gitSha,
+            hasAssistantCheckpoint,
+            resolvedWorkspacePath: workspacePath,
+          };
+        } catch (error) {
+          lastError = error;
+          const delayMs = retryDelaysMs[attempt] ?? 0;
+          const isLastAttempt = attempt === retryDelaysMs.length - 1;
 
-        if (!isLastAttempt && delayMs > 0) {
-          await sleep(delayMs);
+          if (!isLastAttempt && delayMs > 0) {
+            await sleep(delayMs);
+          }
         }
       }
-    }
 
-    console.warn(
-      "[recipe-agent] GitHub artifact sync failed for ref; trying next fallback:",
-      candidate.ref,
-      lastError instanceof Error ? lastError.message : lastError,
-    );
+      console.warn(
+        "[recipe-agent] GitHub artifact sync failed for ref; trying next fallback:",
+        candidate.ref,
+        workspacePath,
+        lastError instanceof Error ? lastError.message : lastError,
+      );
+    }
   }
 
   console.warn(
-    "[recipe-agent] GitHub artifact sync failed for all refs; falling back to Cursor SDK artifacts.",
+    "[recipe-agent] GitHub artifact sync failed for all refs and workspace paths; falling back to Cursor SDK artifacts.",
   );
 
   return {
@@ -186,6 +241,7 @@ export async function fetchRecipeAgentArtifactsFromGithub(input: {
     gitBranch,
     gitSha,
     hasAssistantCheckpoint,
+    resolvedWorkspacePath: null,
   };
 }
 
@@ -203,14 +259,6 @@ export async function syncRecipeAgentArtifactsFromGithubOnly(
     throw new Error(`Video ${input.videoId} not found.`);
   }
 
-  const workspacePath = project.agentWorkspacePath?.trim();
-
-  if (!workspacePath) {
-    throw new Error(
-      "This project has no agent workspace yet. Initialize the recipe agent first.",
-    );
-  }
-
   if (!project.agentGitBranch?.trim() && !project.agentGitCommitSha?.trim()) {
     throw new Error(
       "No Git branch or commit is stored for this project. Run the recipe agent once so a checkpoint branch or SHA is recorded.",
@@ -219,7 +267,6 @@ export async function syncRecipeAgentArtifactsFromGithubOnly(
 
   const enriched = await fetchRecipeAgentArtifactsFromGithub({
     project,
-    workspacePath,
     seedArtifacts: [],
     assistantResultText: undefined,
   });
@@ -241,6 +288,9 @@ export async function syncRecipeAgentArtifactsFromGithubOnly(
     agentGitBranch: enriched.gitBranch ?? null,
     agentGitCommitSha: enriched.gitSha ?? null,
     agentStatus: syncPlan.valid ? "idle" : "validation_failed",
+    ...(enriched.resolvedWorkspacePath
+      ? { agentWorkspacePath: enriched.resolvedWorkspacePath }
+      : {}),
   });
 
   const nextVideoStatus = resolveVideoStatusAfterAgentSync({
