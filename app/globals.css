@@ -174,6 +174,26 @@
   h1 {
     @apply font-heading text-balance font-bold tracking-tight;
   }
+
+  /**
+   * Curseur « main » sur les actions : sans règle explicite, beaucoup de navigateurs
+   * laissent la flèche sur `<button>` et certains contrôles.
+   */
+  button:not(:disabled):not([aria-disabled="true"]),
+  input[type="submit"]:not(:disabled),
+  input[type="button"]:not(:disabled),
+  input[type="reset"]:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href]:not([aria-disabled="true"]),
+  summary {
+    @apply cursor-pointer;
+  }
+
+  ::file-selector-button {
+    cursor: pointer;
+  }
 }
 
 @layer components {

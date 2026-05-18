@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils"
 const buttonVariants = cva(
   [
     "group/button inline-flex shrink-0 items-center justify-center",
+    "cursor-pointer",
     "rounded-full border-2 border-sticker-edge",
     "bg-clip-padding text-sm font-semibold whitespace-nowrap",
     "transition-all duration-150 outline-none select-none",
