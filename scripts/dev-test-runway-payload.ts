@@ -35,11 +35,8 @@ if (!process.env.RUNWAYML_API_SECRET) {
 }
 
 const referenceId = "779d4be1-3868-43ac-aab7-29d4439153c9";
-const conditioningCandidates = [
-  "KitchenIslandDefault",
-  "baking_dish",
-  "Character-sheet",
-];
+// Recipe-state policy: no character anchors. Kitchen + cookware only.
+const conditioningCandidates = ["KitchenIslandDefault", "baking_dish"];
 
 async function main() {
   const admin = createClient(url!, serviceKey!, {

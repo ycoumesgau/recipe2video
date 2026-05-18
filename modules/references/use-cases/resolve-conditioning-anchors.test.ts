@@ -162,6 +162,22 @@ const library: LibraryRow[] = [
     media_asset_id: "media-deprecated",
     status: "deprecated",
   },
+  {
+    id: "lib-character",
+    canonical_name: "Character-sheet",
+    aliases: ["CharacterSheet"],
+    category: "character",
+    media_asset_id: "media-character",
+    status: "active",
+  },
+  {
+    id: "lib-pose",
+    canonical_name: "Luma-front-pose",
+    aliases: ["LumaFrontPose"],
+    category: "character_pose",
+    media_asset_id: "media-pose",
+    status: "active",
+  },
 ];
 
 const media: MediaRow[] = [
@@ -179,6 +195,16 @@ const media: MediaRow[] = [
     id: "media-deprecated",
     storage_bucket: "reference-images",
     storage_path: "library/kitchen/deprecated_island.png",
+  },
+  {
+    id: "media-character",
+    storage_bucket: "reference-images",
+    storage_path: "library/character/Character-sheet.png",
+  },
+  {
+    id: "media-pose",
+    storage_bucket: "reference-images",
+    storage_path: "library/character/Luma-front-pose.png",
   },
 ];
 
@@ -301,7 +327,67 @@ test("resolveConditioningAnchors handles an empty input list with no DB calls", 
   } as unknown as SupabaseDataClient;
 
   const result = await resolveConditioningAnchors(supabase, []);
-  assert.deepEqual(result, { anchors: [], unresolvedNames: [] });
+  assert.deepEqual(result, {
+    anchors: [],
+    unresolvedNames: [],
+    excludedAnchors: [],
+  });
+});
+
+test("resolveConditioningAnchors drops character-class entries even when they resolve", async () => {
+  // Hard policy: the mascot character sheet, character poses, and
+  // character expressions are NEVER used as anchors for recipe-state
+  // images. They add noise to the dish frame; the kitchen anchor already
+  // carries the Licorn visual identity. The resolver MUST silently skip
+  // them and surface them on `excludedAnchors` so the operator can see
+  // the policy was applied (rather than thinking their alias was a typo).
+  const supabase = fakeSupabase({ library, media });
+
+  const result = await resolveConditioningAnchors(supabase, [
+    "KitchenIslandDefault",
+    "CharacterSheet",
+    "Luma-front-pose",
+    "baking_dish",
+  ]);
+
+  // Two anchors actually go to Runway: kitchen + cookware. Character +
+  // pose are dropped.
+  assert.equal(result.anchors.length, 2);
+  assert.deepEqual(
+    result.anchors.map((anchor) => anchor.canonicalName),
+    ["island_default", "baking_dish"],
+  );
+  assert.deepEqual(result.unresolvedNames, []);
+
+  // Both character-class entries surface in `excludedAnchors` with their
+  // category, so the UI can render a "skipped on purpose" alert.
+  assert.equal(result.excludedAnchors.length, 2);
+  assert.deepEqual(
+    result.excludedAnchors.map((entry) => entry.category).sort(),
+    ["character", "character_pose"],
+  );
+  const excludedNames = result.excludedAnchors.map(
+    (entry) => entry.canonicalName,
+  );
+  assert.ok(excludedNames.includes("Character-sheet"));
+  assert.ok(excludedNames.includes("Luma-front-pose"));
+});
+
+test("resolveConditioningAnchors never returns a referenceImages payload pointing at a character asset", async () => {
+  // Defense-in-depth: even if the agent's plan ONLY contains character
+  // entries (a misconfig), the resolver must return zero anchors so
+  // Runway never receives a character-class signed URL. This protects
+  // against accidental mascot tiling that the production user observed
+  // on 2026-05-18.
+  const supabase = fakeSupabase({ library, media });
+
+  const result = await resolveConditioningAnchors(supabase, [
+    "CharacterSheet",
+    "Luma-front-pose",
+  ]);
+
+  assert.equal(result.anchors.length, 0);
+  assert.equal(result.excludedAnchors.length, 2);
 });
 
 test("resolveConditioningAnchors trims whitespace before resolution", async () => {

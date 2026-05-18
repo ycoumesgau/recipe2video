@@ -81,6 +81,11 @@ export async function generateReferenceImage(
 
   let anchors: ConditioningAnchor[] = [];
   let unresolvedAnchorNames: string[] = [];
+  let excludedAnchors: Array<{
+    canonicalName: string;
+    requestedName: string;
+    category: string;
+  }> = [];
 
   try {
     const resolution = await resolveConditioningAnchors(
@@ -89,6 +94,7 @@ export async function generateReferenceImage(
     );
     anchors = resolution.anchors;
     unresolvedAnchorNames = resolution.unresolvedNames;
+    excludedAnchors = resolution.excludedAnchors;
 
     const { promptText } = buildReferenceImagePrompt({
       storedPrompt: reference.prompt,
@@ -121,6 +127,11 @@ export async function generateReferenceImage(
         conditioningRequested: reference.conditioningCanonicalNames ?? [],
         conditioningResolvedTags: anchors.map((anchor) => anchor.tag),
         conditioningUnresolved: unresolvedAnchorNames,
+        // Explicitly traced so a future debugger can see "we dropped
+        // `Character-sheet` from the anchors even though the agent / the
+        // operator wrote it down — that's intentional per the
+        // recipe-state conditioning policy".
+        conditioningExcluded: excludedAnchors,
       },
       createdBy: requestedByUserId,
     });
@@ -161,6 +172,7 @@ export async function generateReferenceImage(
           requestedName: anchor.requestedName,
         })),
         conditioningUnresolved: unresolvedAnchorNames,
+        conditioningExcluded: excludedAnchors,
       },
       createdBy: requestedByUserId,
     });

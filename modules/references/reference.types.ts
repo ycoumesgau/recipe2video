@@ -53,6 +53,18 @@ export interface ReferenceAssetReviewItem {
    */
   conditioningAnchors?: ConditioningAnchorPreview[];
   conditioningUnresolved?: string[];
+  /**
+   * Library entries that DID resolve but were dropped on purpose because
+   * their category is excluded by the recipe-state conditioning policy
+   * (currently: the mascot character sheet and any pose/expression
+   * variant — the kitchen already carries the Licorn visual identity).
+   * Surfaced so the UI can show "these were skipped intentionally,
+   * that's not a typo".
+   */
+  conditioningExcluded?: Array<{
+    canonicalName: string;
+    category: string;
+  }>;
 }
 
 export interface ConditioningAnchorPreview {

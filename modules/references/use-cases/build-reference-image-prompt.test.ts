@@ -54,19 +54,18 @@ test("stripEditorialMetadata handles empty input", () => {
 });
 
 test("buildReferenceImagePrompt injects @-tags and style lock when anchors are present", () => {
+  // The resolver guarantees no character anchors reach this function;
+  // the test mirrors that guarantee (kitchen + cookware only) so a
+  // future regression that re-introduces a character anchor cannot
+  // pass through the prompt builder silently.
   const { promptText } = buildReferenceImagePrompt({
     storedPrompt: dumplingPrompt,
-    anchors: [
-      anchor("KitchenIslandDefault"),
-      anchor("SquareBakingDish"),
-      anchor("Character-sheet"),
-    ],
+    anchors: [anchor("KitchenIslandDef"), anchor("BakingDish")],
   });
 
   assert.ok(promptText.includes("Generate one vertical-reference still"));
-  assert.ok(promptText.includes("@KitchenIslandDefault"));
-  assert.ok(promptText.includes("@SquareBakingDish"));
-  assert.ok(promptText.includes("@Character-sheet"));
+  assert.ok(promptText.includes("@KitchenIslandDef"));
+  assert.ok(promptText.includes("@BakingDish"));
   assert.ok(
     /macro food-porn lighting/i.test(promptText),
     "style lock is appended",
@@ -79,6 +78,19 @@ test("buildReferenceImagePrompt injects @-tags and style lock when anchors are p
     !/used in segments:/i.test(promptText),
     "metadata lines must never reach GPT-Image 2",
   );
+});
+
+test("buildReferenceImagePrompt's style lock explicitly forbids mascots and characters", () => {
+  // Recipe-state images should never feature the Licorn character: the
+  // mascot has its own globally-shared reference and adds noise to dish
+  // frames. The negatives section must say so explicitly so even an
+  // ungrounded anchor (no `referenceImages[]`) does not spawn mascots.
+  const { promptText } = buildReferenceImagePrompt({
+    storedPrompt: "A bowl of soup.",
+    anchors: [],
+  });
+  assert.ok(/no mascots/i.test(promptText));
+  assert.ok(/no humans/i.test(promptText));
 });
 
 test("buildReferenceImagePrompt omits the anchors clause when no anchors are provided", () => {

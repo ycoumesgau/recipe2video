@@ -17,6 +17,7 @@ import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.cons
 import { createStorageSignedUrl } from "@/modules/media-assets/services/storage-signed-url";
 
 import { findAssetLibraryByCanonicalNames } from "../repositories/asset-library.repository";
+import { isConditioningExcludedCategory } from "./conditioning-category-policy";
 import { deriveRunwayTag, makeRunwayTagsUnique } from "./derive-runway-tag";
 
 type MediaAssetStoragePick = Pick<
@@ -72,6 +73,22 @@ export interface ResolveConditioningAnchorsResult {
    * anchor in `reference-plan.json` does not block the whole regen.
    */
   unresolvedNames: string[];
+  /**
+   * Names that DID resolve against the library but were intentionally
+   * dropped because their category is not allowed as a recipe-state
+   * anchor (see `conditioning-category-policy.ts`). Surfaced so the UI
+   * and cost logs can show "we silently excluded these for being
+   * mascot/character entries — that's intentional, not a typo".
+   *
+   * Distinct from `unresolvedNames` so callers can give the operator a
+   * useful "did you mean to drop the character anchors?" message instead
+   * of a generic "name not found" error.
+   */
+  excludedAnchors: Array<{
+    canonicalName: string;
+    requestedName: string;
+    category: string;
+  }>;
 }
 
 /**
@@ -99,7 +116,7 @@ export async function resolveConditioningAnchors(
     .filter((name) => name.length > 0);
 
   if (trimmed.length === 0) {
-    return { anchors: [], unresolvedNames: [] };
+    return { anchors: [], unresolvedNames: [], excludedAnchors: [] };
   }
 
   const libraryIndex = await findAssetLibraryByCanonicalNames(
@@ -132,6 +149,7 @@ export async function resolveConditioningAnchors(
     uri: string;
   }> = [];
   const unresolvedNames: string[] = [];
+  const excludedAnchors: ResolveConditioningAnchorsResult["excludedAnchors"] = [];
 
   for (const requestedName of trimmed) {
     const entry = libraryIndex.get(requestedName);
@@ -146,6 +164,23 @@ export async function resolveConditioningAnchors(
     // include it once. We do NOT touch `unresolvedNames` here — the entry
     // is fine, it's just a duplicate request.
     if (seenEntryIds.has(entry.id)) {
+      continue;
+    }
+
+    // Hard policy: character-class entries (mascot sheet, poses,
+    // expressions) are never used as visual anchors for recipe-specific
+    // images. They add noise to the dish frame and the kitchen/utensil
+    // anchors already carry the Licorn visual identity. Reported on the
+    // dedicated `excludedAnchors` list so the UI can show the operator
+    // "we kept your declared anchor but skipped this one on purpose"
+    // rather than a generic "not found".
+    if (isConditioningExcludedCategory(entry.category)) {
+      seenEntryIds.add(entry.id);
+      excludedAnchors.push({
+        canonicalName: entry.canonicalName,
+        requestedName,
+        category: entry.category,
+      });
       continue;
     }
 
@@ -184,8 +219,9 @@ export async function resolveConditioningAnchors(
     uri: entry.uri,
   }));
 
-  return { anchors, unresolvedNames };
+  return { anchors, unresolvedNames, excludedAnchors };
 }
+
 
 async function fetchMediaAssetStorageLocations(
   supabase: SupabaseDataClient,

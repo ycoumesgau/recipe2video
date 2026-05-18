@@ -441,6 +441,7 @@ function ReferenceCard({
           <>
             <ConditioningPanel
               anchors={item.conditioningAnchors ?? []}
+              excluded={item.conditioningExcluded ?? []}
               unresolved={item.conditioningUnresolved ?? []}
               reference={reference}
               videoId={videoId}
@@ -541,11 +542,13 @@ function ReferenceCard({
  */
 function ConditioningPanel({
   anchors,
+  excluded,
   reference,
   unresolved,
   videoId,
 }: {
   anchors: ConditioningAnchorPreview[];
+  excluded: Array<{ canonicalName: string; category: string }>;
   reference: ReferenceAssetReviewItem["reference"];
   unresolved: string[];
   videoId: string;
@@ -562,12 +565,19 @@ function ConditioningPanel({
             · {unresolved.length} unresolved
           </span>
         ) : null}
+        {excluded.length > 0 ? (
+          <span className="ml-2 text-muted-foreground">
+            · {excluded.length} skipped on purpose
+          </span>
+        ) : null}
       </summary>
       <p className="mt-2 text-muted-foreground">
         Library globals passed to GPT-Image 2 as `referenceImages[]` when
         (re)generating this reference. Each anchor is invoked from the prompt
         via its `@Tag` so the model grounds geometry, color, and palette on
-        them instead of inventing from scratch.
+        them instead of inventing from scratch. Character anchors
+        (mascot, poses, expressions) are intentionally skipped — the kitchen
+        already carries the Licorn visual identity for dish-state frames.
       </p>
 
       {anchors.length > 0 ? (
@@ -600,10 +610,10 @@ function ConditioningPanel({
         </div>
       ) : (
         <p className="mt-3 rounded-md border border-dashed p-2 text-muted-foreground">
-          No anchors declared. GPT-Image 2 will invent the kitchen, pan, and
-          mascot from scratch. Add canonical names below (e.g.
-          `KitchenIslandDefault, SquareBakingDish, Character-sheet`) before
-          regenerating to keep the anchor in the Licorn visual identity.
+          No anchors declared. GPT-Image 2 will invent the kitchen and pan
+          from scratch. Add canonical names below (e.g.
+          `KitchenIslandDefault, baking_dish`) before regenerating to keep
+          the anchor in the Licorn visual identity.
         </p>
       )}
 
@@ -615,6 +625,22 @@ function ConditioningPanel({
             These names do not match any active library entry and will be
             ignored at generation time: {unresolved.join(", ")}. Fix the
             spelling below or add the missing asset under /library.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {excluded.length > 0 ? (
+        <Alert className="mt-3">
+          <AlertTitle className="text-xs">
+            Skipped on purpose
+          </AlertTitle>
+          <AlertDescription className="text-[11px]">
+            {excluded
+              .map((entry) => `${entry.canonicalName} (${entry.category})`)
+              .join(", ")}{" "}
+            were declared but excluded because character-class entries
+            cannot be sent as anchors for recipe-state images. Remove
+            them from the list below to keep the plan clean.
           </AlertDescription>
         </Alert>
       ) : null}

@@ -44,15 +44,16 @@ Use whenever a scene, segment, or reference plan mentions kitchen, character, po
 
 ## Conditioning recipe-specific references
 
-Recipe-specific references (e.g. \`FinishedDumplingLasagnaCutaway\`, \`ParisBrestBakedCrown\`) are produced by GPT-Image 2 inside Recipe2Video. Without explicit anchors the model invents the kitchen, pan, and mascot from scratch and breaks continuity with the Seedance segments that consume the reference.
+Recipe-specific references (e.g. \`FinishedDumplingLasagnaCutaway\`, \`ParisBrestBakedCrown\`) are produced by GPT-Image 2 inside Recipe2Video. Without explicit anchors the model invents the kitchen and pan from scratch and breaks continuity with the Seedance segments that consume the reference.
 
 For every recipe-specific entry in \`reference-plan.json\`, declare a \`conditioningReferences\` array listing the library globals GPT-Image 2 should ground the image on. Names use the same form as Seedance \`@Tag\` references.
 
 Minimum coverage for a recipe-state reference:
 - one kitchen view (\`KitchenIslandDefault\` or the relevant overhead / induction / oven variant),
-- the cookware that holds the dish (\`SquareBakingDish\`, \`SaucepanLarge\`, …),
-- the mascot (\`Character-sheet\`) when hands or face are visible,
+- the cookware that holds the dish (\`baking_dish\`, \`SaucepanLarge\`, …),
 - the dominant utensil when applicable.
+
+**Do NOT include character anchors** (\`Character-sheet\`, character poses like \`Luma-front-pose\`, expressions like \`Facial-expressions\`) — they are filtered out at generation time because the mascot adds noise to dish frames. The kitchen anchor alone carries the Licorn visual identity for recipe-state images.
 
 Example:
 
@@ -66,8 +67,7 @@ Example:
   "prompt": "Generate one vertical-reference still of a compact 8 in / 20 cm square steamed dumpling lasagna…",
   "conditioningReferences": [
     "KitchenIslandDefault",
-    "SquareBakingDish",
-    "Character-sheet",
+    "baking_dish",
     "Spatula"
   ]
 }

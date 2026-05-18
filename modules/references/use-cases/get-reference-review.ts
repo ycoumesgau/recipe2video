@@ -20,6 +20,7 @@ import {
   findAssetLibraryByCanonicalNames,
   type AssetLibraryEntry,
 } from "../repositories/asset-library.repository";
+import { isConditioningExcludedCategory } from "./conditioning-category-policy";
 import { buildSegmentReadiness } from "./reference-readiness";
 
 type MediaAssetRow = Database["public"]["Tables"]["media_assets"]["Row"];
@@ -292,6 +293,7 @@ async function buildRecipeReviewItem(input: {
     isLibraryGlobal: false,
     conditioningAnchors: conditioning.anchors,
     conditioningUnresolved: conditioning.unresolved,
+    conditioningExcluded: conditioning.excluded,
   };
 }
 
@@ -364,15 +366,20 @@ async function resolveReferenceConditioning(
   supabase: SupabaseDataClient,
   reference: ReferenceAsset,
   index: ConditioningIndex,
-): Promise<{ anchors: ConditioningAnchorPreview[]; unresolved: string[] }> {
+): Promise<{
+  anchors: ConditioningAnchorPreview[];
+  unresolved: string[];
+  excluded: Array<{ canonicalName: string; category: string }>;
+}> {
   const requested = reference.conditioningCanonicalNames ?? [];
   if (requested.length === 0) {
-    return { anchors: [], unresolved: [] };
+    return { anchors: [], unresolved: [], excluded: [] };
   }
 
   const seenEntryIds = new Set<string>();
   const anchors: ConditioningAnchorPreview[] = [];
   const unresolved: string[] = [];
+  const excluded: Array<{ canonicalName: string; category: string }> = [];
 
   for (const requestedName of requested) {
     const trimmed = requestedName.trim();
@@ -388,6 +395,17 @@ async function resolveReferenceConditioning(
       continue;
     }
     seenEntryIds.add(entry.id);
+
+    // Mirror the resolver's category policy so the UI shows the operator
+    // exactly which anchors will be sent to GPT-Image 2 vs which were
+    // silently dropped on purpose.
+    if (isConditioningExcludedCategory(entry.category)) {
+      excluded.push({
+        canonicalName: entry.canonicalName,
+        category: entry.category,
+      });
+      continue;
+    }
 
     const storage = entry.mediaAssetId
       ? index.mediaById.get(entry.mediaAssetId)
@@ -409,7 +427,7 @@ async function resolveReferenceConditioning(
     });
   }
 
-  return { anchors, unresolved };
+  return { anchors, unresolved, excluded };
 }
 
 /**

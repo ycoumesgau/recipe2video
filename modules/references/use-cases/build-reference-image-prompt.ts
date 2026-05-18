@@ -110,9 +110,15 @@ function renderStyleLock(): string {
   // This lock mirrors the kitchen-invariant rules from the recipe agent's
   // instructions so that even reference images generated outside the
   // segment context inherit the same visual identity as Seedance outputs.
+  //
+  // The negatives explicitly exclude humans and mascots: recipe-state
+  // anchors are about the dish in its environment, not about the
+  // Licorn character (which has its own globally-shared reference). When
+  // the model tries to also place the mascot it usually ends up tiled in
+  // the background or duplicated, breaking the dish frame.
   return [
     "Style: macro food-porn lighting, light terrazzo countertop, neutral kitchen palette, soft window light, shallow depth of field.",
     "Framing: vertical 9:16 composition matching the surrounding Seedance segments.",
-    "Negatives: no on-image text or watermarks, no extra cookware, no humans not declared in the anchors.",
+    "Negatives: no on-image text or watermarks, no extra cookware, no humans, no mascots, no character figurines, no anthropomorphic creatures.",
   ].join("\n");
 }

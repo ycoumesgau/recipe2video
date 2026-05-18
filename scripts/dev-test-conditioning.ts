@@ -24,13 +24,17 @@ if (!url || !serviceKey) {
 }
 
 const referenceId = "779d4be1-3868-43ac-aab7-29d4439153c9";
-// Mix valid aliases, valid canonical_name, an unknown name, and a deprecated
-// (if any) so we exercise every resolver branch.
+// Mix valid aliases, valid canonical_name, an unknown name, and a
+// character-class entry to exercise every resolver branch:
+//   - kitchen alias → resolves
+//   - cookware canonical_name → resolves
+//   - character → resolves-but-excluded (the policy drops it)
+//   - garbage name → unresolved
 const conditioningCandidates = [
-  "KitchenIslandDefault", // alias → resolves
-  "baking_dish", // canonical_name → resolves
-  "Character-sheet", // alias → resolves
-  "DoesNotExistAnywhere", // unresolved
+  "KitchenIslandDefault",
+  "baking_dish",
+  "Character-sheet",
+  "DoesNotExistAnywhere",
 ];
 
 async function main() {
@@ -83,6 +87,9 @@ async function main() {
       );
     }
     console.log(`  unresolved: ${JSON.stringify(resolution.unresolvedNames)}`);
+    console.log(
+      `  excluded (character-class, dropped by policy): ${JSON.stringify(resolution.excludedAnchors)}`,
+    );
 
     console.log("\n=== Step 5: build the GPT-Image 2 prompt ===");
     const { data: refRow, error: refErr } = await admin
@@ -105,20 +112,47 @@ async function main() {
     console.log("\n=== Step 6: contract checks ===");
     const expectations: { name: string; pass: boolean }[] = [];
     expectations.push({
-      name: "resolver returned at least 3 anchors",
-      pass: resolution.anchors.length >= 3,
+      name: "resolver returned exactly 2 anchors (kitchen + cookware, character dropped)",
+      pass: resolution.anchors.length === 2,
+    });
+    expectations.push({
+      name: "no resolved anchor has a character-class category",
+      pass: resolution.anchors.every(
+        (anchor) =>
+          !anchor.canonicalName.toLowerCase().includes("character") &&
+          !anchor.tag.toLowerCase().includes("character"),
+      ),
+    });
+    expectations.push({
+      name: "Character-sheet is reported on excludedAnchors with category=character",
+      pass: resolution.excludedAnchors.some(
+        (entry) =>
+          entry.canonicalName === "Character-sheet" &&
+          entry.category === "character",
+      ),
     });
     expectations.push({
       name: "DoesNotExistAnywhere is reported as unresolved",
       pass: resolution.unresolvedNames.includes("DoesNotExistAnywhere"),
     });
     expectations.push({
-      name: "prompt contains @KitchenIslandDefault",
-      pass: promptText.includes("@KitchenIslandDefault"),
+      name: "prompt mentions kitchen anchor @-tag",
+      pass: /@\w*Kitchen/i.test(promptText),
+    });
+    expectations.push({
+      name: "prompt does NOT mention any character/mascot tag",
+      pass:
+        !/@\w*[Cc]haracter/.test(promptText) &&
+        !/@\w*[Mm]ascot/.test(promptText) &&
+        !/@\w*[Ll]uma/.test(promptText),
     });
     expectations.push({
       name: "prompt does NOT contain `Used in segments:` metadata",
       pass: !/used in segments:/i.test(promptText),
+    });
+    expectations.push({
+      name: "prompt style lock forbids mascots and humans",
+      pass: /no mascots/i.test(promptText) && /no humans/i.test(promptText),
     });
     expectations.push({
       name: "prompt includes vertical 9:16 style lock",
