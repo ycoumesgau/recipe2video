@@ -30,6 +30,15 @@ const RecipeIngredientSchema = z.object({
   note: z.string().nullable().optional(),
 });
 
+// `recipe-analysis.json` is produced by an LLM (Cursor agent in the
+// recipe_ingest stage, or OpenAI in the planning engine). Both have
+// historically drifted by adding harmless descriptive fields such as
+// `servings`, `difficulty`, `stylePreset`, or `productionDefaults`. A single
+// unrecognized key on the strict schema would mark the artifact invalid and
+// abort the entire `syncRecipeAgentArtifacts` pipeline, dropping logical
+// scenes, segments, references and Suno prompts on the floor even though
+// those artifacts validated cleanly. We therefore allow unknown keys here
+// while still enforcing the shape of every required field.
 const RecipeDataSchema = z
   .object({
     title: z.string().min(1),
@@ -52,7 +61,7 @@ const RecipeDataSchema = z
     possibleHooks: z.array(z.string()),
     promptPolicySources: z.array(z.string()),
   })
-  .strict();
+  .passthrough();
 
 const ClarifyingQuestionSchema = z.object({
   id: z.string().min(1),
@@ -65,7 +74,7 @@ export const RecipeAnalysisResultSchema = z
     recipe: RecipeDataSchema,
     clarifyingQuestions: z.array(ClarifyingQuestionSchema),
   })
-  .strict();
+  .passthrough();
 
 const RunwaySafeScoreSchema = z.object({
   stillImageReadable: z.boolean(),
