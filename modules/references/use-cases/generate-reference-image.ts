@@ -7,6 +7,7 @@ import {
   pollRunwayTask,
   startReferenceImageGeneration,
 } from "@/modules/generation/services/runway.service";
+import { RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO } from "@/modules/generation/runway.constants";
 import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
 
 import {
@@ -15,9 +16,13 @@ import {
   updateReferenceAssetStatus,
 } from "../repositories/reference.repository";
 import type { ReferenceAsset } from "../reference.types";
+import { buildReferenceImagePrompt } from "./build-reference-image-prompt";
+import {
+  resolveConditioningAnchors,
+  type ConditioningAnchor,
+} from "./resolve-conditioning-anchors";
 
 const REFERENCE_IMAGE_GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
-const REFERENCE_IMAGE_RATIO = "1024:1024";
 const REFERENCE_IMAGE_MODEL = "gpt_image_2";
 
 export interface GenerateReferenceImageInput {
@@ -27,10 +32,22 @@ export interface GenerateReferenceImageInput {
 }
 
 /**
- * Generate one missing reference image with GPT-Image 2 through the Runway
- * API, persist the original to Supabase Storage, link it to the
- * `reference_assets` row, and log the Runway cost. The reference must already
- * exist in the database with a non-empty prompt.
+ * Generate one recipe-specific reference image with GPT-Image 2 through
+ * Runway, persist the original to Supabase Storage, link it to the
+ * `reference_assets` row, and log the Runway cost. The reference must
+ * already exist in the database with a non-empty prompt.
+ *
+ * Conditioning:
+ *   - The reference's `conditioning_canonical_names` array is resolved
+ *     against `asset_library` to fetch up to 16 visual anchors (kitchen,
+ *     character sheet, cookware, utensils). Each anchor is exposed to
+ *     Runway as a `referenceImages[]` entry with a `tag` matching the
+ *     library's @-handle, AND the prompt is rewritten to explicitly invoke
+ *     those tags so GPT-Image 2 does not silently drop them.
+ *   - Anchors that cannot be resolved (typo, deprecated library entry,
+ *     missing media) are recorded in the cost metadata for debugging but do
+ *     not block the generation: a single bad anchor must not freeze the
+ *     whole regen workflow.
  *
  * On Runway failure or timeout, the reference is marked as `failed`. The
  * caller is responsible for surfacing the failure in the UI.
@@ -62,11 +79,36 @@ export async function generateReferenceImage(
     status: "generating",
   });
 
+  let anchors: ConditioningAnchor[] = [];
+  let unresolvedAnchorNames: string[] = [];
+  let excludedAnchors: Array<{
+    canonicalName: string;
+    requestedName: string;
+    category: string;
+  }> = [];
+
   try {
+    const resolution = await resolveConditioningAnchors(
+      supabase,
+      reference.conditioningCanonicalNames ?? [],
+    );
+    anchors = resolution.anchors;
+    unresolvedAnchorNames = resolution.unresolvedNames;
+    excludedAnchors = resolution.excludedAnchors;
+
+    const { promptText } = buildReferenceImagePrompt({
+      storedPrompt: reference.prompt,
+      anchors,
+    });
+
     const task = await startReferenceImageGeneration({
-      promptText: reference.prompt,
-      ratio: REFERENCE_IMAGE_RATIO,
+      promptText,
+      ratio: RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
       model: REFERENCE_IMAGE_MODEL,
+      referenceImages:
+        anchors.length > 0
+          ? anchors.map((anchor) => ({ uri: anchor.uri, tag: anchor.tag }))
+          : undefined,
     });
 
     await logCost(supabase, {
@@ -81,6 +123,15 @@ export async function generateReferenceImage(
         runwayTaskId: task.id,
         endpoint: task.endpoint,
         estimated: true,
+        ratio: RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+        conditioningRequested: reference.conditioningCanonicalNames ?? [],
+        conditioningResolvedTags: anchors.map((anchor) => anchor.tag),
+        conditioningUnresolved: unresolvedAnchorNames,
+        // Explicitly traced so a future debugger can see "we dropped
+        // `Character-sheet` from the anchors even though the agent / the
+        // operator wrote it down — that's intentional per the
+        // recipe-state conditioning policy".
+        conditioningExcluded: excludedAnchors,
       },
       createdBy: requestedByUserId,
     });
@@ -113,15 +164,29 @@ export async function generateReferenceImage(
         source: "runway_text_to_image",
         runwayTaskId: task.id,
         model: REFERENCE_IMAGE_MODEL,
-        prompt: reference.prompt,
+        ratio: RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+        prompt: promptText,
+        conditioningAnchors: anchors.map((anchor) => ({
+          canonicalName: anchor.canonicalName,
+          tag: anchor.tag,
+          requestedName: anchor.requestedName,
+        })),
+        conditioningUnresolved: unresolvedAnchorNames,
+        conditioningExcluded: excludedAnchors,
       },
       createdBy: requestedByUserId,
     });
 
+    // The reference may have been approved/uploaded on a previous round and
+    // is now being regenerated. We always reset both the runway URI and the
+    // status: the old `runway://` upload is gone (or stale) once we swap
+    // the media asset, and we want the operator to re-approve + re-upload
+    // the new image before it can ride into Seedance.
     const updated = await updateReferenceAssetMedia(supabase, {
       referenceId,
       mediaAssetId: mediaAsset.id,
       status: "generated",
+      clearRunwayUri: true,
     });
 
     await logCost(supabase, {
@@ -135,6 +200,7 @@ export async function generateReferenceImage(
         referenceId,
         runwayTaskId: task.id,
         mediaAssetId: mediaAsset.id,
+        conditioningAnchorCount: anchors.length,
       },
       createdBy: requestedByUserId,
     });

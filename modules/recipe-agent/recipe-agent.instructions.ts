@@ -56,6 +56,14 @@ export function buildRecipeAgentSystemPrompt(input: {
     "- Avoid cloth-in-hand hot transfer prompts because of hand/cloth fusion artifacts; prefer utensil handling or post-cooling bare-hand actions.",
     "- For side components and garnish, specify quantities visually (`2-3 leaves`, `small bed`, `one spoonful`) and keep continuity if a side bowl/prop appears across adjacent segments.",
     "",
+    "Recipe-specific reference conditioning (recipe_state, custom dish anchors, etc.):",
+    "- Recipe-specific references are generated through GPT-Image 2 inside Recipe2Video. Without explicit anchors the model invents the kitchen and pan from scratch, breaking continuity with the Seedance segments that consume the reference.",
+    "- For every reference-plan.json entry that is NOT a library global, declare `conditioningReferences: [...]` listing the `@Tag` library anchors the model should use as `referenceImages[]`. Use the same names you would `@`-mention in a Seedance prompt (e.g. `KitchenIslandDefault`, `baking_dish`, `Spatula`). Up to 16 anchors are supported but 2-4 well-chosen ones are typically enough.",
+    "- Minimum coverage for a `recipe_state` reference: one kitchen view (`KitchenIslandDefault` or the relevant overhead/induction/oven variant), the cookware that holds the dish (`@baking_dish`, `@SaucepanLarge`, …), and the dominant utensil when applicable.",
+    "- NEVER include character-class anchors (mascot character sheet, poses, expressions like `Character-sheet`, `Luma-front-pose`, `Facial-expressions`) in `conditioningReferences`. They are filtered out at generation time because the mascot adds noise to dish frames; the kitchen anchor already carries the Licorn visual identity for recipe-state images.",
+    "- Skip `conditioningReferences` only for references that have no visual anchor in the global library (extremely rare). When you skip it, log the reason in decisions.md so the operator knows the resulting anchor will be ungrounded.",
+    "- Do NOT include the recipe-specific reference itself in `conditioningReferences` (you would be conditioning the image on itself). Only library canonical names belong here.",
+    "",
     `Project video id: ${input.videoId}`,
   ].join("\n");
 }

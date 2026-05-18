@@ -60,6 +60,16 @@ const ReferencePlanEntrySchema = z
     runwayUri: z.string().nullable().optional(),
     mediaAssetId: z.string().nullable().optional(),
     usedInSegmentIds: z.array(z.string()).optional(),
+    /**
+     * Names of `asset_library` canonical entries (or aliases) that GPT-Image
+     * 2 should use as visual anchors when generating this recipe-specific
+     * reference. The agent declares them by the same `@Tag` form used in
+     * the asset-reference-system skill (e.g. `KitchenIslandDefault`,
+     * `SquareBakingDish`, `Character-sheet`). Resolved at generation time;
+     * unknown names are logged and skipped so a single typo never aborts a
+     * regen.
+     */
+    conditioningReferences: z.array(z.string().min(1)).optional(),
     status: z
       .enum([
         "planned",
@@ -334,6 +344,7 @@ export async function syncRecipeAgentArtifacts(
       runwayUri: entry.runwayUri ?? null,
       prompt: buildReferencePrompt(entry),
       status: entry.status ?? "planned",
+      conditioningCanonicalNames: entry.conditioningReferences ?? [],
     }));
 
   const persistedRecipeRefs = await replaceAgentReferenceAssetsForVideo(

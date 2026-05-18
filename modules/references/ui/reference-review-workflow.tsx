@@ -4,7 +4,7 @@ import {
   ArrowRight,
   CheckCircle2,
   ImageIcon,
-  RefreshCcw,
+  Sparkles,
   Upload,
 } from "lucide-react";
 
@@ -34,14 +34,17 @@ import type { VideoStatus } from "@/modules/videos/video-status";
 
 import {
   approveReferenceAction,
+  generateAllMissingReferencesAction,
+  generateReferenceImageAction,
   markReferencesReadyAction,
   rejectReferenceAction,
-  requestReferenceRegenerationAction,
+  updateReferenceConditioningAction,
   updateReferencePromptAction,
   uploadManualReferenceAction,
   uploadReferenceToRunwayAction,
 } from "../actions";
 import type {
+  ConditioningAnchorPreview,
   ReferenceAssetReviewItem,
   ReferenceReviewData,
   SegmentReferenceReadiness,
@@ -61,6 +64,14 @@ const statusBadgeVariant: Record<
   failed: "destructive",
 };
 
+/**
+ * Statuses that mean "this card is asking GPT-Image 2 to (re)produce the
+ * image". When in either of these states the operator cannot click
+ * Generate / Regenerate again — the per-reference Inngest worker is
+ * already running. Must mirror the filter on the server-side action.
+ */
+const PENDING_GENERATION_STATUSES: ReferenceStatus[] = ["planned", "failed"];
+
 export function ReferenceReviewWorkflow({
   data,
   notice,
@@ -72,6 +83,12 @@ export function ReferenceReviewWorkflow({
   projectStatus?: VideoStatus | null;
   videoId: string;
 }) {
+  const pendingRecipeReferenceCount = data.recipeReferences.filter(
+    (item) =>
+      Boolean(item.reference.prompt) &&
+      PENDING_GENERATION_STATUSES.includes(item.reference.status),
+  ).length;
+
   return (
     <div className="space-y-6">
       {notice ? (
@@ -121,6 +138,10 @@ export function ReferenceReviewWorkflow({
         </div>
 
         <div className="space-y-4">
+          <BulkGenerateCard
+            pendingCount={pendingRecipeReferenceCount}
+            videoId={videoId}
+          />
           <ContinueToSegmentsCard
             projectStatus={projectStatus}
             readiness={data.segmentReadiness}
@@ -131,6 +152,52 @@ export function ReferenceReviewWorkflow({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Top-right card that kicks GPT-Image 2 for every recipe-specific
+ * reference whose status is `planned` or `failed`. Independent from the
+ * "Mark references ready" button so the operator can iterate on anchors
+ * before flipping the project status.
+ */
+function BulkGenerateCard({
+  pendingCount,
+  videoId,
+}: {
+  pendingCount: number;
+  videoId: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4" />
+          Generate recipe-specific anchors
+        </CardTitle>
+        <CardDescription>
+          Runs GPT-Image 2 on every recipe-specific reference that has a
+          prompt and is still `planned` or `failed`. Project status is NOT
+          changed — use this freely while iterating on anchors.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <form action={generateAllMissingReferencesAction}>
+          <input name="videoId" type="hidden" value={videoId} />
+          <Button disabled={pendingCount === 0} type="submit">
+            <Sparkles className="h-4 w-4" />
+            {pendingCount === 0
+              ? "Nothing to generate"
+              : `Generate ${pendingCount} pending reference${pendingCount === 1 ? "" : "s"}`}
+          </Button>
+        </form>
+        <p className="text-xs text-muted-foreground">
+          Each anchor is generated as a vertical 9:16 still grounded on the
+          library globals declared in its conditioning list. Approve and
+          upload to Runway from the card once you are happy with the result.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -154,7 +221,13 @@ function ContinueToSegmentsCard({
       segment.missingRunwayUploads.length > 0,
   );
 
-  if (projectStatus === "references_ready" || projectStatus === "generating" || projectStatus === "review" || projectStatus === "assembling" || projectStatus === "exported") {
+  if (
+    projectStatus === "references_ready" ||
+    projectStatus === "generating" ||
+    projectStatus === "review" ||
+    projectStatus === "assembling" ||
+    projectStatus === "exported"
+  ) {
     return (
       <Card>
         <CardHeader>
@@ -172,7 +245,6 @@ function ContinueToSegmentsCard({
   }
 
   if (projectStatus !== "storyboard_approved") {
-    // Earlier in the pipeline: nothing to surface here yet.
     return null;
   }
 
@@ -228,9 +300,9 @@ function ContinueToSegmentsCard({
           </Button>
         </form>
         <p className="text-xs text-muted-foreground">
-          Sends a `video.references.generate.requested` event so any planned
-          recipe-specific image is generated first; the project flips to
-          `references_ready` automatically once every reference is resolved.
+          Auto-generates any planned recipe reference that still has a prompt,
+          then flips the project to `references_ready`. Use the bulk
+          Generate button above to iterate on anchors without committing.
         </p>
       </CardContent>
     </Card>
@@ -297,6 +369,11 @@ function ReferenceCard({
   // or rejecting from here would silently change the library for every
   // future recipe.
   const isReadOnly = item.isLibraryGlobal === true;
+  const hasImage = Boolean(item.previewUrl);
+  const isPendingGeneration = PENDING_GENERATION_STATUSES.includes(
+    reference.status,
+  );
+  const isGenerating = reference.status === "generating";
 
   return (
     <Card size="sm">
@@ -361,58 +438,89 @@ function ReferenceCard({
             you want this video to pick a different one.
           </div>
         ) : (
-          <details className="rounded-lg border bg-background/60 p-3 text-xs">
-            <summary className="cursor-pointer font-medium">
-              Prompt {reference.prompt ? "(edit)" : "(missing — set to enable agent regeneration)"}
-            </summary>
-            <p className="mt-2 text-muted-foreground">
-              {reference.prompt ?? "No prompt set yet."}
-            </p>
-            <form
-              action={updateReferencePromptAction}
-              className="mt-3 space-y-2"
-            >
-              <input name="videoId" type="hidden" value={videoId} />
-              <input name="referenceId" type="hidden" value={reference.id} />
-              <Textarea
-                defaultValue={reference.prompt ?? ""}
-                name="prompt"
-                placeholder="Describe what this reference must preserve in the Seedance prompt."
-                rows={3}
-              />
-              <Button size="sm" type="submit" variant="outline">
-                Save prompt
-              </Button>
-            </form>
-          </details>
+          <>
+            <ConditioningPanel
+              anchors={item.conditioningAnchors ?? []}
+              excluded={item.conditioningExcluded ?? []}
+              unresolved={item.conditioningUnresolved ?? []}
+              reference={reference}
+              videoId={videoId}
+            />
+            <details className="rounded-lg border bg-background/60 p-3 text-xs">
+              <summary className="cursor-pointer font-medium">
+                Prompt {reference.prompt ? "(edit)" : "(missing — set to enable agent regeneration)"}
+              </summary>
+              <p className="mt-2 text-muted-foreground">
+                {reference.prompt ?? "No prompt set yet."}
+              </p>
+              <form
+                action={updateReferencePromptAction}
+                className="mt-3 space-y-2"
+              >
+                <input name="videoId" type="hidden" value={videoId} />
+                <input name="referenceId" type="hidden" value={reference.id} />
+                <Textarea
+                  defaultValue={reference.prompt ?? ""}
+                  name="prompt"
+                  placeholder="Describe what this reference must preserve in the Seedance prompt."
+                  rows={3}
+                />
+                <Button size="sm" type="submit" variant="outline">
+                  Save prompt
+                </Button>
+              </form>
+            </details>
+          </>
         )}
 
         {isReadOnly ? null : (
           <div className="flex flex-wrap gap-2">
+            {/*
+              Generation flow:
+                - When the card has no image yet (or the last try failed),
+                  surface "Generate image" prominently — this is the new
+                  primary action that actually calls GPT-Image 2.
+                - When an image exists, the same call is rendered as
+                  "Regenerate (new image)" so the operator knows clicking
+                  it overwrites the current preview AND clears the Runway
+                  URI (forcing a re-approve + re-upload before Seedance).
+                - We disable the button while a generation is already in
+                  flight to prevent a duplicate Runway charge from a
+                  double-click.
+            */}
             <ReferenceActionButton
-              action={approveReferenceAction}
-              label="Approve"
+              action={generateReferenceImageAction}
+              disabled={isGenerating || !reference.prompt}
+              icon={<Sparkles className="h-4 w-4" />}
+              label={
+                isGenerating
+                  ? "Generating…"
+                  : hasImage
+                    ? "Regenerate (new image)"
+                    : "Generate image"
+              }
               referenceId={reference.id}
               videoId={videoId}
             />
             <ReferenceActionButton
+              action={approveReferenceAction}
+              disabled={!hasImage || reference.status === "approved"}
+              label="Approve"
+              referenceId={reference.id}
+              variant="outline"
+              videoId={videoId}
+            />
+            <ReferenceActionButton
               action={rejectReferenceAction}
+              disabled={reference.status === "rejected"}
               label="Reject"
               referenceId={reference.id}
               variant="outline"
               videoId={videoId}
             />
             <ReferenceActionButton
-              action={requestReferenceRegenerationAction}
-              icon={<RefreshCcw className="h-4 w-4" />}
-              label="Regenerate"
-              referenceId={reference.id}
-              variant="outline"
-              videoId={videoId}
-            />
-            <ReferenceActionButton
               action={uploadReferenceToRunwayAction}
-              disabled={!mediaAsset?.storagePath}
+              disabled={!mediaAsset?.storagePath || isPendingGeneration}
               icon={<Upload className="h-4 w-4" />}
               label="Upload to Runway"
               referenceId={reference.id}
@@ -423,6 +531,144 @@ function ReferenceCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Surface the conditioning anchors (library globals that GPT-Image 2 will
+ * consume as `referenceImages[]`) so the operator can audit them before
+ * clicking Generate. Includes an inline editor: paste a comma-separated
+ * list of canonical names or @-handles to override the agent's plan.
+ */
+function ConditioningPanel({
+  anchors,
+  excluded,
+  reference,
+  unresolved,
+  videoId,
+}: {
+  anchors: ConditioningAnchorPreview[];
+  excluded: Array<{ canonicalName: string; category: string }>;
+  reference: ReferenceAssetReviewItem["reference"];
+  unresolved: string[];
+  videoId: string;
+}) {
+  const requested = reference.conditioningCanonicalNames ?? [];
+  const defaultValue = requested.join(", ");
+
+  return (
+    <details className="rounded-lg border bg-background/60 p-3 text-xs">
+      <summary className="cursor-pointer font-medium">
+        Visual anchors ({anchors.length})
+        {unresolved.length > 0 ? (
+          <span className="ml-2 text-destructive">
+            · {unresolved.length} unresolved
+          </span>
+        ) : null}
+        {excluded.length > 0 ? (
+          <span className="ml-2 text-muted-foreground">
+            · {excluded.length} skipped on purpose
+          </span>
+        ) : null}
+      </summary>
+      <p className="mt-2 text-muted-foreground">
+        Library globals passed to GPT-Image 2 as `referenceImages[]` when
+        (re)generating this reference. Each anchor is invoked from the prompt
+        via its `@Tag` so the model grounds geometry, color, and palette on
+        them instead of inventing from scratch. Character anchors
+        (mascot, poses, expressions) are intentionally skipped — the kitchen
+        already carries the Licorn visual identity for dish-state frames.
+      </p>
+
+      {anchors.length > 0 ? (
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {anchors.map((anchor) => (
+            <div
+              key={anchor.canonicalName}
+              className="rounded-md border bg-background/40 p-1 text-[10px]"
+            >
+              {anchor.previewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt={anchor.tag}
+                  className="aspect-square w-full rounded object-cover"
+                  src={anchor.previewUrl}
+                />
+              ) : (
+                <div className="flex aspect-square w-full items-center justify-center rounded bg-muted/40">
+                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                </div>
+              )}
+              <p className="mt-1 truncate font-medium" title={anchor.tag}>
+                @{anchor.tag}
+              </p>
+              <p className="truncate text-muted-foreground" title={anchor.category}>
+                {anchor.category}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 rounded-md border border-dashed p-2 text-muted-foreground">
+          No anchors declared. GPT-Image 2 will invent the kitchen and pan
+          from scratch. Add canonical names below (e.g.
+          `KitchenIslandDefault, baking_dish`) before regenerating to keep
+          the anchor in the Licorn visual identity.
+        </p>
+      )}
+
+      {unresolved.length > 0 ? (
+        <Alert className="mt-3" variant="destructive">
+          <AlertTriangle className="h-3 w-3" />
+          <AlertTitle className="text-xs">Unresolved anchors</AlertTitle>
+          <AlertDescription className="text-[11px]">
+            These names do not match any active library entry and will be
+            ignored at generation time: {unresolved.join(", ")}. Fix the
+            spelling below or add the missing asset under /library.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {excluded.length > 0 ? (
+        <Alert className="mt-3">
+          <AlertTitle className="text-xs">
+            Skipped on purpose
+          </AlertTitle>
+          <AlertDescription className="text-[11px]">
+            {excluded
+              .map((entry) => `${entry.canonicalName} (${entry.category})`)
+              .join(", ")}{" "}
+            were declared but excluded because character-class entries
+            cannot be sent as anchors for recipe-state images. Remove
+            them from the list below to keep the plan clean.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <form
+        action={updateReferenceConditioningAction}
+        className="mt-3 space-y-2"
+      >
+        <input name="videoId" type="hidden" value={videoId} />
+        <input name="referenceId" type="hidden" value={reference.id} />
+        <Label
+          className="text-[11px] uppercase text-muted-foreground"
+          htmlFor={`conditioning-${reference.id}`}
+        >
+          Anchor canonical names
+        </Label>
+        <Textarea
+          defaultValue={defaultValue}
+          id={`conditioning-${reference.id}`}
+          name="conditioningCanonicalNames"
+          placeholder="KitchenIslandDefault, SquareBakingDish, Character-sheet"
+          rows={2}
+        />
+        <Button size="sm" type="submit" variant="outline">
+          Save anchors
+        </Button>
+      </form>
+    </details>
   );
 }
 

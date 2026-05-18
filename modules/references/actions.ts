@@ -15,14 +15,28 @@ import {
   updateVideoProjectStatus,
 } from "@/modules/videos/repositories/video.repository";
 
-import { updateReferenceAssetPrompt } from "./repositories/reference.repository";
+import {
+  getReferenceAssetById,
+  listReferenceAssetsForVideo,
+  updateReferenceAssetConditioning,
+  updateReferenceAssetPrompt,
+} from "./repositories/reference.repository";
 import { getReferenceReviewData } from "./use-cases/get-reference-review";
+import { parseConditioningNames } from "./use-cases/parse-conditioning-names";
 import {
   approveReferenceAsset,
   createManualReferenceUpload,
   updateReferenceReviewStatus,
   uploadReferenceAssetToRunway,
 } from "./use-cases/manage-reference-review";
+
+/**
+ * Statuses that mean "this recipe-specific reference still needs (or could
+ * use) a GPT-Image 2 pass". Must match the filter in
+ * `generateReferencesWorkflow` so the operator's "Generate all missing"
+ * click and the workflow agree on what counts as "missing".
+ */
+const PENDING_GENERATION_STATUSES = new Set(["planned", "failed"]);
 
 export async function uploadManualReferenceAction(formData: FormData) {
   const videoId = requireString(formData, "videoId");
@@ -97,21 +111,165 @@ export async function rejectReferenceAction(formData: FormData) {
   }
 }
 
-export async function requestReferenceRegenerationAction(formData: FormData) {
+/**
+ * Trigger a real GPT-Image 2 (re)generation for ONE recipe-specific
+ * reference. Replaces the previous `requestReferenceRegenerationAction`
+ * which only flipped status back to `planned` without ever calling Runway
+ * — that was the source of the "I clicked Regenerate but nothing
+ * happened" confusion.
+ *
+ * The image generation runs asynchronously through Inngest so the request
+ * does not block the browser; the UI will re-render with the new image
+ * after the worker persists it.
+ */
+export async function generateReferenceImageAction(formData: FormData) {
   const videoId = requireString(formData, "videoId");
 
   try {
-    await assertCostlyActionAllowed();
-    await updateReferenceReviewStatus(createSupabaseAdminClient(), {
-      referenceId: requireString(formData, "referenceId"),
-      status: "planned",
+    const { profile } = await assertCostlyActionAllowed();
+    const referenceId = requireString(formData, "referenceId");
+    const supabase = createSupabaseAdminClient();
+    const reference = await getReferenceAssetById(supabase, referenceId);
+
+    if (!reference) {
+      throw new Error("Reference asset not found.");
+    }
+
+    if (reference.videoId !== videoId) {
+      throw new Error(
+        "Reference does not belong to this project; refusing to generate.",
+      );
+    }
+
+    if (!reference.prompt || reference.prompt.trim().length === 0) {
+      throw new Error(
+        "Set a prompt on this reference before requesting generation, or upload a manual image instead.",
+      );
+    }
+
+    if (reference.status === "generating") {
+      // Idempotent: a second click while the first task is still running
+      // would create a duplicate Runway charge. Surface the in-flight
+      // state instead.
+      revalidateReferencePath(videoId);
+      redirectWithNotice(
+        videoId,
+        "success",
+        "A generation is already running for this reference.",
+      );
+    }
+
+    await inngest.send({
+      name: INNGEST_EVENTS.videoReferenceGenerateRequested,
+      data: {
+        videoId,
+        referenceId,
+        requestedByUserId: profile.id,
+        isAllowlisted: true,
+      },
     });
 
     revalidateReferencePath(videoId);
     redirectWithNotice(
       videoId,
       "success",
-      "Reference marked for regeneration. Image generation remains a separate workflow.",
+      "Generation queued. The image will appear on this card once Runway finishes.",
+    );
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(videoId, "error", getActionErrorMessage(error));
+  }
+}
+
+/**
+ * Trigger GPT-Image 2 generation for every recipe-specific reference of a
+ * project that is still `planned` or `failed` and has a prompt. Lets the
+ * operator kick off all pending images in one click without committing to
+ * the storyboard sign-off / project-status flip (that's still the job of
+ * `markReferencesReadyAction`).
+ */
+export async function generateAllMissingReferencesAction(formData: FormData) {
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const references = await listReferenceAssetsForVideo(supabase, videoId);
+
+    const candidates = references.filter(
+      (reference) =>
+        Boolean(reference.prompt && reference.prompt.trim().length > 0) &&
+        PENDING_GENERATION_STATUSES.has(reference.status),
+    );
+
+    if (candidates.length === 0) {
+      revalidateReferencePath(videoId);
+      redirectWithNotice(
+        videoId,
+        "success",
+        "No recipe-specific references are waiting for generation right now.",
+      );
+    }
+
+    await inngest.send({
+      name: INNGEST_EVENTS.videoReferencesGenerateRequested,
+      data: {
+        videoId,
+        requestedByUserId: profile.id,
+        isAllowlisted: true,
+        generateAllMissing: true,
+        flipStatusOnCompletion: false,
+      },
+    });
+
+    revalidateReferencePath(videoId);
+    redirectWithNotice(
+      videoId,
+      "success",
+      `Generation queued for ${candidates.length} reference${candidates.length === 1 ? "" : "s"}. Project status is unchanged.`,
+    );
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(videoId, "error", getActionErrorMessage(error));
+  }
+}
+
+/**
+ * Update the list of `asset_library` canonical names used as visual anchors
+ * when (re)generating this reference. Stored verbatim; resolution against
+ * the live library happens at generation time.
+ *
+ * The form posts the names as a single newline- or comma-separated string
+ * so the textarea stays small and friendly. We normalize to a unique,
+ * trimmed array here.
+ */
+export async function updateReferenceConditioningAction(formData: FormData) {
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    await assertCostlyActionAllowed();
+    const referenceId = requireString(formData, "referenceId");
+    const raw = getString(formData, "conditioningCanonicalNames");
+    const conditioningCanonicalNames = parseConditioningNames(raw);
+
+    await updateReferenceAssetConditioning(createSupabaseAdminClient(), {
+      referenceId,
+      conditioningCanonicalNames,
+    });
+
+    revalidateReferencePath(videoId);
+    redirectWithNotice(
+      videoId,
+      "success",
+      conditioningCanonicalNames.length > 0
+        ? `Conditioning updated (${conditioningCanonicalNames.length} anchor${conditioningCanonicalNames.length === 1 ? "" : "s"}). Regenerate to apply.`
+        : "Conditioning cleared. Regenerate to apply.",
     );
   } catch (error) {
     if (isNextRedirectError(error)) {
@@ -218,6 +376,8 @@ export async function markReferencesReadyAction(formData: FormData) {
         videoId,
         requestedByUserId: profile.id,
         isAllowlisted: true,
+        generateAllMissing: false,
+        flipStatusOnCompletion: true,
       },
     });
 
