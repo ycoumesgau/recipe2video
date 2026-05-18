@@ -17,6 +17,7 @@ import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.cons
 import { createStorageSignedUrl } from "@/modules/media-assets/services/storage-signed-url";
 
 import { findAssetLibraryByCanonicalNames } from "../repositories/asset-library.repository";
+import { deriveRunwayTag, makeRunwayTagsUnique } from "./derive-runway-tag";
 
 type MediaAssetStoragePick = Pick<
   Database["public"]["Tables"]["media_assets"]["Row"],
@@ -119,7 +120,17 @@ export async function resolveConditioningAnchors(
   );
 
   const seenEntryIds = new Set<string>();
-  const anchors: ConditioningAnchor[] = [];
+  // We first build the anchors with a raw tag derived from each entry's
+  // alias / canonical_name, then call `makeRunwayTagsUnique` to enforce
+  // the 16-char limit AND ensure uniqueness across the batch in a single
+  // deterministic pass. Doing it after dedupe-by-entry-id keeps the
+  // mapping from `requested` to final tag stable across reruns.
+  const pending: Array<{
+    canonicalName: string;
+    requestedName: string;
+    rawTag: string;
+    uri: string;
+  }> = [];
   const unresolvedNames: string[] = [];
 
   for (const requestedName of trimmed) {
@@ -156,13 +167,22 @@ export async function resolveConditioningAnchors(
     });
 
     seenEntryIds.add(entry.id);
-    anchors.push({
+    const sourceForTag = entry.aliases[0]?.trim() || entry.canonicalName;
+    pending.push({
       canonicalName: entry.canonicalName,
       requestedName,
-      tag: entry.aliases[0]?.trim() || entry.canonicalName,
+      rawTag: deriveRunwayTag(sourceForTag),
       uri,
     });
   }
+
+  const uniqueTags = makeRunwayTagsUnique(pending.map((entry) => entry.rawTag));
+  const anchors: ConditioningAnchor[] = pending.map((entry, index) => ({
+    canonicalName: entry.canonicalName,
+    requestedName: entry.requestedName,
+    tag: uniqueTags[index]!,
+    uri: entry.uri,
+  }));
 
   return { anchors, unresolvedNames };
 }

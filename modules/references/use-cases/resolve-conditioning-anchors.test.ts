@@ -182,7 +182,7 @@ const media: MediaRow[] = [
   },
 ];
 
-test("resolveConditioningAnchors returns an anchor per resolved library entry with the alias as tag", async () => {
+test("resolveConditioningAnchors returns an anchor per resolved library entry with a Runway-safe tag", async () => {
   const supabase = fakeSupabase({ library, media });
 
   const result = await resolveConditioningAnchors(supabase, [
@@ -194,8 +194,11 @@ test("resolveConditioningAnchors returns an anchor per resolved library entry wi
   assert.deepEqual(result.unresolvedNames, []);
 
   const [first, second] = result.anchors;
+  // `KitchenIslandDefault` is 20 chars — Runway's 16-char tag cap forces
+  // truncation. We keep the alphanumeric prefix so the @-mention stays
+  // recognizable.
   assert.equal(first?.canonicalName, "island_default");
-  assert.equal(first?.tag, "KitchenIslandDefault");
+  assert.equal(first?.tag, "KitchenIslandDef");
   assert.equal(first?.requestedName, "KitchenIslandDefault");
   assert.ok(first?.uri.includes("library/kitchen/island_default.png"));
   assert.equal(second?.canonicalName, "baking_dish");
@@ -227,7 +230,11 @@ test("resolveConditioningAnchors falls back to the canonical name as tag when no
 
   const result = await resolveConditioningAnchors(supabase, ["tongs"]);
 
-  assert.equal(result.anchors[0]?.tag, "tongs");
+  // Canonical names are usually snake_case but `deriveRunwayTag` strips
+  // the underscores to keep `referenceImages.tag` aligned with the
+  // identifier-like form GPT-Image 2 expects in `@Mentions`. The first
+  // letter is also promoted to upper-case for readability in Runway logs.
+  assert.equal(result.anchors[0]?.tag, "Tongs");
 });
 
 test("resolveConditioningAnchors deduplicates two names that resolve to the same library entry", async () => {
