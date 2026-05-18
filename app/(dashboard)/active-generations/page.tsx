@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Film,
+  ImageIcon,
   PauseCircle,
   PlayCircle,
   RefreshCcw,
@@ -51,6 +52,9 @@ import type { Generation } from "@/modules/generation/generation.types";
 import type { GenerationStatus } from "@/modules/generation/generation-status";
 import { getGenerationQueuePaused } from "@/modules/generation/repositories/queue-state.repository";
 import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
+import { RUNWAY_DEFAULT_REFERENCE_IMAGE_MODEL } from "@/modules/generation/runway.constants";
+import type { ReferenceAsset } from "@/modules/references/reference.types";
+import { listGeneratingReferenceAssets } from "@/modules/references/repositories/reference.repository";
 import { getSegmentById } from "@/modules/storyboard/repositories/segment.repository";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
@@ -72,6 +76,18 @@ interface ActiveTaskRow {
   runwayProgress: number | null;
 }
 
+interface ActiveReferenceImageRow {
+  referenceId: string;
+  videoId: string;
+  videoTitle: string;
+  canonicalName: string;
+  model: string;
+  runwayTaskId: string | null;
+  runwayTaskStatus: RunwayTaskStatusValue | null;
+  runwayProgress: number | null;
+  startedAt: string;
+}
+
 interface ActiveCloudRenderRow {
   compositionId: string;
   videoId: string;
@@ -81,7 +97,8 @@ interface ActiveCloudRenderRow {
 }
 
 export default async function ActiveGenerationsPage() {
-  const { rows, paused, error, cloudRenders } = await loadActiveGenerations();
+  const { rows, referenceRows, paused, error, cloudRenders } =
+    await loadActiveGenerations();
 
   return (
     <div className="space-y-6">
@@ -147,11 +164,90 @@ export default async function ActiveGenerationsPage() {
       ) : null}
 
       <GenerationRscSync
-        enabled={rows.length > 0 || cloudRenders.length > 0}
+        enabled={
+          rows.length > 0 ||
+          referenceRows.length > 0 ||
+          cloudRenders.length > 0
+        }
       />
 
       {cloudRenders.length > 0 ? (
         <CloudRendersCard renders={cloudRenders} />
+      ) : null}
+
+      {referenceRows.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ImageIcon className="h-5 w-5" />
+              Recipe reference images
+            </CardTitle>
+            <CardDescription>
+              GPT-Image 2 tasks for recipe-specific anchors (`text_to_image`).
+              Progress mirrors Runway polling, same as Seedance rows above.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Reference</TableHead>
+                  <TableHead>Model</TableHead>
+                  <TableHead>Runway</TableHead>
+                  <TableHead>Progress</TableHead>
+                  <TableHead>Started</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {referenceRows.map((task) => (
+                  <TableRow key={task.referenceId}>
+                    <TableCell className="font-medium">
+                      {task.videoTitle}
+                    </TableCell>
+                    <TableCell>{task.canonicalName}</TableCell>
+                    <TableCell>{task.model}</TableCell>
+                    <TableCell>
+                      {task.runwayTaskStatus ? (
+                        <Badge
+                          variant={
+                            task.runwayTaskStatus === "THROTTLED"
+                              ? "destructive"
+                              : "outline"
+                          }
+                        >
+                          {task.runwayTaskStatus}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="min-w-32">
+                      <Progress
+                        value={progressForReferenceImageRow(
+                          task.runwayProgress,
+                          task.runwayTaskStatus,
+                        )}
+                      />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDateTime(task.startedAt)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/videos/${task.videoId}/references`}>
+                          Open references
+                          <ChevronRight className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       ) : null}
 
       <Card>
@@ -292,15 +388,23 @@ export default async function ActiveGenerationsPage() {
 async function loadActiveGenerations() {
   try {
     const supabase = createSupabaseAdminClient();
-    const [generations, paused, compositions] = await Promise.all([
-      listActiveGenerations(supabase, { limit: 50 }),
-      getGenerationQueuePaused(supabase),
-      listInFlightCompositionRenders(supabase, { limit: 20 }),
-    ]);
+    const [generations, paused, compositions, generatingRefs] =
+      await Promise.all([
+        listActiveGenerations(supabase, { limit: 50 }),
+        getGenerationQueuePaused(supabase),
+        listInFlightCompositionRenders(supabase, { limit: 20 }),
+        listGeneratingReferenceAssets(supabase, { limit: 50 }),
+      ]);
 
     const rows = await Promise.all(
       generations.map(async (generation) =>
         decorateGeneration(supabase, generation),
+      ),
+    );
+
+    const referenceRows = await Promise.all(
+      generatingRefs.map(async (reference) =>
+        decorateReferenceImageTask(supabase, reference),
       ),
     );
 
@@ -312,6 +416,9 @@ async function loadActiveGenerations() {
 
     return {
       rows: rows.filter((row): row is ActiveTaskRow => Boolean(row)),
+      referenceRows: referenceRows.filter(
+        (row): row is ActiveReferenceImageRow => Boolean(row),
+      ),
       paused,
       error: null as string | null,
       cloudRenders,
@@ -319,6 +426,7 @@ async function loadActiveGenerations() {
   } catch (error) {
     return {
       rows: [] as ActiveTaskRow[],
+      referenceRows: [] as ActiveReferenceImageRow[],
       paused: false,
       error:
         error instanceof Error
@@ -327,6 +435,48 @@ async function loadActiveGenerations() {
       cloudRenders: [] as ActiveCloudRenderRow[],
     };
   }
+}
+
+async function decorateReferenceImageTask(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  reference: ReferenceAsset,
+): Promise<ActiveReferenceImageRow | null> {
+  if (!reference.videoId) {
+    return null;
+  }
+
+  const video = await getVideoProjectById(supabase, reference.videoId);
+
+  return {
+    referenceId: reference.id,
+    videoId: reference.videoId,
+    videoTitle: video?.title ?? "Untitled project",
+    canonicalName: reference.canonicalName,
+    model: RUNWAY_DEFAULT_REFERENCE_IMAGE_MODEL,
+    runwayTaskId: reference.runwayTaskId ?? null,
+    runwayTaskStatus: reference.runwayTaskStatus ?? null,
+    runwayProgress: reference.runwayProgress ?? null,
+    startedAt: reference.createdAt,
+  };
+}
+
+function progressForReferenceImageRow(
+  runwayProgress: number | null,
+  runwayTaskStatus: RunwayTaskStatusValue | null,
+): number {
+  if (typeof runwayProgress === "number") {
+    return Math.max(0, Math.min(100, runwayProgress));
+  }
+  if (runwayTaskStatus === "RUNNING") {
+    return 55;
+  }
+  if (runwayTaskStatus === "THROTTLED") {
+    return 18;
+  }
+  if (runwayTaskStatus === "PENDING") {
+    return 25;
+  }
+  return 15;
 }
 
 async function decorateCloudRender(

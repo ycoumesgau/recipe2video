@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { countGeneratingReferenceAssetsForVideo } from "@/modules/references/repositories/reference.repository";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import { ProjectSegmentsList } from "@/modules/videos/ui/project-segments-list";
@@ -16,7 +17,7 @@ export default async function ProjectSegmentsPage({
 }) {
   const { videoId } = await params;
   const query = await searchParams;
-  const { project, dataError, seedanceSegments } =
+  const { project, dataError, seedanceSegments, hasGeneratingRecipeReferences } =
     await loadSegmentsPageData(videoId);
 
   return (
@@ -64,6 +65,7 @@ export default async function ProjectSegmentsPage({
 
       {project ? (
         <ProjectSegmentsList
+          hasGeneratingRecipeReferences={hasGeneratingRecipeReferences}
           seedanceSegments={seedanceSegments}
           videoId={videoId}
         />
@@ -75,20 +77,23 @@ export default async function ProjectSegmentsPage({
 async function loadSegmentsPageData(videoId: string) {
   try {
     const supabase = createSupabaseAdminClient();
-    const [project, storyboardData] = await Promise.all([
+    const [project, storyboardData, generatingRecipeRefCount] = await Promise.all([
       getVideoProjectById(supabase, videoId),
       getStoryboardReviewData(videoId),
+      countGeneratingReferenceAssetsForVideo(supabase, videoId),
     ]);
 
     return {
       project,
       dataError: null,
       seedanceSegments: storyboardData.seedanceSegments,
+      hasGeneratingRecipeReferences: generatingRecipeRefCount > 0,
     };
   } catch (error) {
     return {
       project: null,
       seedanceSegments: [],
+      hasGeneratingRecipeReferences: false,
       dataError:
         error instanceof Error
           ? error.message

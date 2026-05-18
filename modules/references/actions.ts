@@ -442,6 +442,7 @@ export async function updateReferencePromptAction(formData: FormData) {
 function revalidateReferencePath(videoId: string) {
   revalidatePath(`/videos/${videoId}`);
   revalidatePath(`/videos/${videoId}/references`);
+  revalidatePath(`/videos/${videoId}/segments`);
 }
 
 function redirectWithNotice(

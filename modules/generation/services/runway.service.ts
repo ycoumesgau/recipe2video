@@ -158,6 +158,10 @@ export async function pollRunwayTask(
   while (true) {
     const task = await getRunwayTask(options.taskId);
 
+    if (options.onPoll) {
+      await options.onPoll(task);
+    }
+
     if (task.isTerminal) {
       return task;
     }

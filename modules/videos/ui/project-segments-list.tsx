@@ -18,9 +18,11 @@ import { launchSelectedSegmentsAction } from "@/modules/generation/actions";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 
 export function ProjectSegmentsList({
+  hasGeneratingRecipeReferences,
   seedanceSegments,
   videoId,
 }: {
+  hasGeneratingRecipeReferences: boolean;
   seedanceSegments: SeedanceSegment[];
   videoId: string;
 }) {
@@ -45,6 +47,8 @@ export function ProjectSegmentsList({
   const hasActiveGeneration = seedanceSegments.some((segment) =>
     ["queued", "generating"].includes(segment.status),
   );
+  const shouldPollRsc =
+    hasActiveGeneration || hasGeneratingRecipeReferences;
 
   const selectedSet = new Set(effectiveSelectedSegmentIds);
 
@@ -59,7 +63,7 @@ export function ProjectSegmentsList({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <GenerationRscSync enabled={hasActiveGeneration} />
+        <GenerationRscSync enabled={shouldPollRsc} />
 
         {seedanceSegments.length === 0 ? (
           <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">

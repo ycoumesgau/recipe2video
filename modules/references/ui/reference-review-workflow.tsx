@@ -30,6 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import type { VideoStatus } from "@/modules/videos/video-status";
 
 import {
@@ -420,6 +421,26 @@ function ReferenceCard({
             }
           />
         </div>
+
+        {isGenerating ? (
+          <div className="space-y-1 rounded-lg border bg-muted/30 p-3">
+            <p className="text-xs font-medium">Runway progress</p>
+            <Progress
+              value={progressForRecipeReferenceCard(
+                reference.runwayProgress ?? null,
+                reference.runwayTaskStatus ?? null,
+              )}
+            />
+            <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+              <span>{reference.runwayTaskStatus ?? "starting"}</span>
+              {typeof reference.runwayProgress === "number" ? (
+                <span>{reference.runwayProgress.toFixed(0)}%</span>
+              ) : (
+                <span>queued / running</span>
+              )}
+            </div>
+          </div>
+        ) : null}
 
         {item.usedInSegments.length > 0 ? (
           <div className="rounded-lg border bg-muted/30 p-3 text-xs">
@@ -859,4 +880,23 @@ function formatMissing(segment: SegmentReferenceReadiness) {
   ];
 
   return missing.length > 0 ? missing.join(", ") : "Ready";
+}
+
+function progressForRecipeReferenceCard(
+  runwayProgress: number | null,
+  runwayTaskStatus: string | null,
+): number {
+  if (typeof runwayProgress === "number") {
+    return Math.max(0, Math.min(100, runwayProgress));
+  }
+  if (runwayTaskStatus === "RUNNING") {
+    return 55;
+  }
+  if (runwayTaskStatus === "THROTTLED") {
+    return 18;
+  }
+  if (runwayTaskStatus === "PENDING") {
+    return 25;
+  }
+  return 15;
 }

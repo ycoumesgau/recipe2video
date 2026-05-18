@@ -11,6 +11,7 @@ import { sumRunwayCreditsUsed } from "@/modules/costs/repositories/cost.reposito
 import { fetchRunwayOrganizationBalance } from "@/modules/costs/runway-organization-balance";
 import { readDashboardDataMode } from "@/modules/dashboard/dashboard-data-mode";
 import { countActiveGenerations } from "@/modules/generation/repositories/generation.repository";
+import { countGeneratingReferenceAssets } from "@/modules/references/repositories/reference.repository";
 
 export const dynamic = "force-dynamic";
 
@@ -52,11 +53,14 @@ async function loadHeaderState() {
   // back to neutral defaults instead of crashing the layout.
   try {
     const supabase = createSupabaseAdminClient();
-    const [creditsUsed, activeTaskCount, runwayBalance] = await Promise.all([
-      sumRunwayCreditsUsed(supabase),
-      countActiveGenerations(supabase),
-      fetchRunwayOrganizationBalance(),
-    ]);
+    const [creditsUsed, seedanceActiveCount, referenceImageActiveCount, runwayBalance] =
+      await Promise.all([
+        sumRunwayCreditsUsed(supabase),
+        countActiveGenerations(supabase),
+        countGeneratingReferenceAssets(supabase),
+        fetchRunwayOrganizationBalance(),
+      ]);
+    const activeTaskCount = seedanceActiveCount + referenceImageActiveCount;
     const budget = getRunwayBudgetState(creditsUsed, {
       runwayCreditBalance: runwayBalance?.creditBalance ?? null,
       maxMonthlyCreditSpend: runwayBalance?.maxMonthlyCreditSpend ?? null,

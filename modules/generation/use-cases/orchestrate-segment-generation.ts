@@ -23,6 +23,7 @@ import {
   RUNWAY_DEFAULT_VIDEO_RATIO,
   RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
 } from "../runway.constants";
+import { normalizeRunwayProgress } from "../runway-progress-normalize";
 
 const MAX_SEEDANCE_REFERENCE_INPUTS = 9;
 /**
@@ -722,27 +723,6 @@ function assertSeedance2DurationValid(segment: SeedanceSegment) {
 
 function estimateSeedanceCredits(durationSeconds: number) {
   return Math.ceil(durationSeconds * RUNWAY_SEEDANCE2_CREDITS_PER_SECOND);
-}
-
-function normalizeRunwayProgress(
-  progress: number | undefined,
-  status: RunwayTaskStatus["status"],
-) {
-  if (status === "SUCCEEDED") {
-    return 100;
-  }
-  if (status === "FAILED" || status === "CANCELLED") {
-    return null;
-  }
-  if (typeof progress !== "number" || Number.isNaN(progress)) {
-    return null;
-  }
-
-  if (progress <= 1) {
-    return Number((progress * 100).toFixed(2));
-  }
-
-  return Number(Math.min(progress, 100).toFixed(2));
 }
 
 function computeNextPollDelaySeconds(task: RunwayTaskStatus) {

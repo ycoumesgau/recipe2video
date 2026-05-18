@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import { getReferenceReviewData } from "@/modules/references/use-cases/get-reference-review";
 import { ReferenceReviewWorkflow } from "@/modules/references/ui/reference-review-workflow";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
@@ -23,8 +24,13 @@ export default async function ProjectReferencesPage({
     getReferenceReviewData(supabase, videoId),
   ]);
 
+  const hasGeneratingRecipeReferences = referenceData.recipeReferences.some(
+    (item) => item.reference.status === "generating",
+  );
+
   return (
     <div className="space-y-6">
+      <GenerationRscSync enabled={hasGeneratingRecipeReferences} pollMs={4_000} />
       <div>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Badge variant="outline">References</Badge>

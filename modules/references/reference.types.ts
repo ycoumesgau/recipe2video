@@ -1,5 +1,6 @@
 import type { ReferenceStatus } from "./reference-status";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
+import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
 
 export interface ReferenceAsset {
   id: string;
@@ -29,6 +30,10 @@ export interface ReferenceAsset {
    */
   conditioningCanonicalNames?: string[];
   createdAt: string;
+  /** Set while a Runway `text_to_image` task is polled for this recipe row. */
+  runwayTaskId?: string | null;
+  runwayTaskStatus?: RunwayTaskStatusValue | null;
+  runwayProgress?: number | null;
 }
 
 export interface ReferenceAssetReviewItem {

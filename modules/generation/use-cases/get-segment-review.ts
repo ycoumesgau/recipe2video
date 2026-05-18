@@ -6,7 +6,9 @@ import { listMediaAssetsByGenerationIds } from "@/modules/media-assets/repositor
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import { getSegmentById } from "@/modules/storyboard/repositories/segment.repository";
 import { matchesReference } from "@/modules/references/reference-matching";
+import type { ReferenceStatus } from "@/modules/references/reference-status";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
+import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
 import type { VideoProject } from "@/modules/videos/video.types";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
@@ -46,6 +48,11 @@ export interface SegmentReferenceResolutionItem {
   resolvedSource: "asset_library" | "reference_assets" | null;
   /** True when the matched media has a storage path → Runway can read it JIT. */
   hasStorage: boolean;
+  /** Populated when this row resolves to a recipe-specific `reference_assets` entry. */
+  recipeReferenceId: string | null;
+  recipeReferenceStatus: ReferenceStatus | null;
+  runwayTaskStatus: RunwayTaskStatusValue | null;
+  runwayProgress: number | null;
 }
 
 export interface SegmentReviewData {
@@ -53,6 +60,11 @@ export interface SegmentReviewData {
   segment: SeedanceSegment | null;
   variants: SegmentVariantReviewItem[];
   hasActiveGeneration: boolean;
+  /**
+   * True when at least one recipe-specific reference tied to this segment is
+   * mid Runway GPT-Image 2 generation (`reference_assets.status === generating`).
+   */
+  hasActiveReferenceImageGeneration: boolean;
   feedbacks: SegmentFeedback[];
   /**
    * Per-reference resolution status used by the segment review UI to show
@@ -78,6 +90,7 @@ export async function getSegmentReviewData(
       segment: null,
       variants: [],
       hasActiveGeneration: false,
+      hasActiveReferenceImageGeneration: false,
       feedbacks: [],
       referenceResolutions: [],
     };
@@ -100,12 +113,17 @@ export async function getSegmentReviewData(
   );
   const mediaAssetById = new Map(mediaAssets.map((asset) => [asset.id, asset]));
 
+  const hasActiveReferenceImageGeneration = referenceResolutions.some(
+    (row) => row.recipeReferenceStatus === "generating",
+  );
+
   return {
     project,
     segment,
     hasActiveGeneration: generations.some((generation) =>
       ["pending", "queued", "processing"].includes(generation.status),
     ),
+    hasActiveReferenceImageGeneration,
     feedbacks,
     referenceResolutions,
     variants: generations.map((generation) => ({
@@ -135,8 +153,12 @@ interface SegmentReferencesJoinRow {
     | null;
   reference_assets:
     | {
+        id: string;
         canonical_name: string;
         media_asset_id: string | null;
+        status: string;
+        runway_task_status: string | null;
+        runway_progress: number | null;
       }
     | null;
 }
@@ -156,7 +178,7 @@ async function resolveSegmentReferenceStatuses(
   const { data, error } = await supabase
     .from("segment_references")
     .select(
-      "position, role, required, library_asset_id, recipe_reference_id, asset_library:asset_library!segment_references_library_asset_id_fkey(canonical_name, aliases, media_asset_id), reference_assets:reference_assets!segment_references_recipe_reference_id_fkey(canonical_name, media_asset_id)",
+      "position, role, required, library_asset_id, recipe_reference_id, asset_library:asset_library!segment_references_library_asset_id_fkey(canonical_name, aliases, media_asset_id), reference_assets:reference_assets!segment_references_recipe_reference_id_fkey(id, canonical_name, media_asset_id, status, runway_task_status, runway_progress)",
     )
     .eq("segment_id", segment.id)
     .order("position", { ascending: true });
@@ -221,12 +243,29 @@ async function resolveSegmentReferenceStatuses(
         resolvedCanonicalName: null,
         resolvedSource: null,
         hasStorage: false,
+        recipeReferenceId: null,
+        recipeReferenceStatus: null,
+        runwayTaskStatus: null,
+        runwayProgress: null,
       };
     }
 
     const isLibrary = Boolean(match.library_asset_id);
     const joined = isLibrary ? match.asset_library : match.reference_assets;
     const mediaAssetId = joined?.media_asset_id ?? null;
+    const recipeRef = match.reference_assets;
+    const recipeReferenceId = match.recipe_reference_id;
+    const recipeReferenceStatus = !isLibrary && recipeRef
+      ? (recipeRef.status as ReferenceStatus)
+      : null;
+    const runwayTaskStatus =
+      !isLibrary && recipeRef?.runway_task_status
+        ? (recipeRef.runway_task_status as RunwayTaskStatusValue)
+        : null;
+    const runwayProgress =
+      !isLibrary && recipeRef && recipeRef.runway_progress != null
+        ? Number(recipeRef.runway_progress)
+        : null;
 
     return {
       position: match.position,
@@ -240,6 +279,10 @@ async function resolveSegmentReferenceStatuses(
       hasStorage: mediaAssetId
         ? Boolean(storageById.get(mediaAssetId))
         : false,
+      recipeReferenceId,
+      recipeReferenceStatus,
+      runwayTaskStatus,
+      runwayProgress,
     };
   });
 }
