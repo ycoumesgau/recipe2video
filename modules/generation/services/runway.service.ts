@@ -166,6 +166,15 @@ export async function pollRunwayTask(
       return task;
     }
 
+    if (options.shouldAbort && (await options.shouldAbort()) === true) {
+      throw new RunwayServiceError({
+        code: "poll_aborted",
+        message: `pollRunwayTask: cooperative abort requested for task ${options.taskId}.`,
+        retryable: false,
+        taskId: options.taskId,
+      });
+    }
+
     if (
       options.timeoutMs !== undefined &&
       Date.now() - startedAt + pollIntervalMs > options.timeoutMs

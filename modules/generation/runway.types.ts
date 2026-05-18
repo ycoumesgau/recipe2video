@@ -92,4 +92,9 @@ export interface PollRunwayTaskOptions {
    * while long tasks run (e.g. recipe reference images).
    */
   onPoll?: (task: RunwayTaskStatus) => void | Promise<void>;
+  /**
+   * When this resolves true, polling stops and throws
+   * {@link RunwayServiceError} with code `poll_aborted` (cooperative cancel).
+   */
+  shouldAbort?: () => boolean | Promise<boolean>;
 }

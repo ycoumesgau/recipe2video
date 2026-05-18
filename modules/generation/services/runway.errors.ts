@@ -17,6 +17,7 @@ export type RunwayServiceErrorCode =
   | "task_failed"
   | "task_cancelled"
   | "task_timeout"
+  | "poll_aborted"
   | "download_failed"
   | "runway_api_error"
   | "unknown";

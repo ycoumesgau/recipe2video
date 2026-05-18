@@ -198,6 +198,35 @@ export async function listGeneratingReferenceAssets(
   return (data ?? []).map(mapReferenceAsset);
 }
 
+/**
+ * Recipe-specific reference rows shown on `/active-generations`: in-flight
+ * GPT-Image 2 work plus recent failures the operator can retry. Excludes
+ * `cancelled` (dropped from the queue once abandoned) and library globals.
+ */
+export async function listRecipeReferenceImageQueueForDashboard(
+  supabase: SupabaseDataClient,
+  options: { limit?: number } = {},
+): Promise<ReferenceAsset[]> {
+  let query = supabase
+    .from("reference_assets")
+    .select("*")
+    .not("video_id", "is", null)
+    .neq("source", "asset_library")
+    .in("status", ["generating", "failed"])
+    .order("updated_at", { ascending: false });
+
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+  throwIfSupabaseError(
+    error,
+    "listRecipeReferenceImageQueueForDashboard failed",
+  );
+  return (data ?? []).map(mapReferenceAsset);
+}
+
 export async function countGeneratingReferenceAssetsForVideo(
   supabase: SupabaseDataClient,
   videoId: string,

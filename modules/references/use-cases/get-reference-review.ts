@@ -143,6 +143,10 @@ function isMissingReference(item: ReferenceAssetReviewItem): boolean {
     return false;
   }
 
+  if (reference.status === "cancelled") {
+    return true;
+  }
+
   if (reference.status === "planned" || reference.status === "generating") {
     return true;
   }

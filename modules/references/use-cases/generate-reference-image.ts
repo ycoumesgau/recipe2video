@@ -7,6 +7,7 @@ import {
   pollRunwayTask,
   startReferenceImageGeneration,
 } from "@/modules/generation/services/runway.service";
+import { isRunwayServiceError } from "@/modules/generation/services/runway.errors";
 import { RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO } from "@/modules/generation/runway.constants";
 import { normalizeRunwayProgress } from "@/modules/generation/runway-progress-normalize";
 import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
@@ -103,6 +104,11 @@ export async function generateReferenceImage(
       anchors,
     });
 
+    const preflight = await getReferenceAssetById(supabase, referenceId);
+    if (preflight?.status === "cancelled") {
+      return preflight;
+    }
+
     const task = await startReferenceImageGeneration({
       promptText,
       ratio: RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
@@ -152,6 +158,10 @@ export async function generateReferenceImage(
           runwayTaskStatus: polled.status,
           runwayProgress,
         });
+      },
+      shouldAbort: async () => {
+        const row = await getReferenceAssetById(supabase, referenceId);
+        return row?.status === "cancelled";
       },
     });
 
@@ -221,6 +231,9 @@ export async function generateReferenceImage(
 
     return updated;
   } catch (error) {
+    if (isRunwayServiceError(error) && error.code === "poll_aborted") {
+      return (await getReferenceAssetById(supabase, referenceId)) ?? reference;
+    }
     await updateReferenceAssetStatus(supabase, {
       referenceId,
       status: "failed",
