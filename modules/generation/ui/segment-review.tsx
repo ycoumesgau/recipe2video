@@ -169,6 +169,9 @@ export function SegmentReview({
         <div className="space-y-4">
           <StatusPanel
             hasActiveGeneration={data.hasActiveGeneration}
+            hasActiveReferenceImageGeneration={
+              data.hasActiveReferenceImageGeneration
+            }
             project={data.project}
             segmentStatus={data.segment.status}
             variantCount={data.variants.length}
@@ -694,6 +697,24 @@ function ReferenceResolutionRow({
       <p className="mt-2 font-medium">{resolution.declaredName}</p>
       <p className="text-muted-foreground">{resolution.role}</p>
       <p className="mt-2 text-xs text-muted-foreground">{status.description}</p>
+      {resolution.recipeReferenceStatus === "generating" ? (
+        <div className="mt-3 space-y-1">
+          <Progress
+            value={progressForRecipeReferenceImage(
+              resolution.runwayProgress,
+              resolution.runwayTaskStatus,
+            )}
+          />
+          <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+            <span>Runway {resolution.runwayTaskStatus ?? "PENDING"}</span>
+            {typeof resolution.runwayProgress === "number" ? (
+              <span>{resolution.runwayProgress.toFixed(0)}%</span>
+            ) : (
+              <span>queued / running</span>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -709,6 +730,15 @@ function computeResolutionStatus(resolution: SegmentReferenceResolutionItem): {
       description:
         "This reference name is not in asset_library nor declared in reference-plan.json. Sync the agent or rename the reference to a known canonical / alias.",
       variant: "destructive",
+    };
+  }
+
+  if (resolution.recipeReferenceStatus === "generating") {
+    return {
+      label: "image generating",
+      description:
+        "GPT-Image 2 is running on Runway for this recipe-specific anchor. This card refreshes automatically when the image lands in Storage.",
+      variant: "secondary",
     };
   }
 
@@ -737,11 +767,13 @@ function computeResolutionStatus(resolution: SegmentReferenceResolutionItem): {
 
 function StatusPanel({
   hasActiveGeneration,
+  hasActiveReferenceImageGeneration,
   project,
   segmentStatus,
   variantCount,
 }: {
   hasActiveGeneration: boolean;
+  hasActiveReferenceImageGeneration: boolean;
   project: VideoProject | null;
   segmentStatus: SegmentStatus;
   variantCount: number;
@@ -759,7 +791,10 @@ function StatusPanel({
           <Badge variant={segmentStatusVariant[segmentStatus]}>{segmentStatus}</Badge>
           <Badge variant="secondary">{variantCount} variants</Badge>
           {hasActiveGeneration ? (
-            <Badge variant="outline">generation active</Badge>
+            <Badge variant="outline">Seedance generation active</Badge>
+          ) : null}
+          {hasActiveReferenceImageGeneration ? (
+            <Badge variant="outline">recipe reference generating</Badge>
           ) : null}
           {project ? <Badge variant="outline">{project.selectedVideoModel}</Badge> : null}
         </div>
@@ -801,4 +836,23 @@ function formatDate(value?: string | null) {
       {new Date(value).toLocaleString()}
     </span>
   );
+}
+
+function progressForRecipeReferenceImage(
+  runwayProgress: number | null,
+  runwayTaskStatus: string | null,
+): number {
+  if (typeof runwayProgress === "number") {
+    return Math.max(0, Math.min(100, runwayProgress));
+  }
+  if (runwayTaskStatus === "RUNNING") {
+    return 55;
+  }
+  if (runwayTaskStatus === "THROTTLED") {
+    return 18;
+  }
+  if (runwayTaskStatus === "PENDING") {
+    return 25;
+  }
+  return 15;
 }

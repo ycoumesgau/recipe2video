@@ -2,6 +2,8 @@ import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import type { Database } from "@/shared/supabase/database.types";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
 
+import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
+
 import type { ReferenceAsset } from "../reference.types";
 import type { ReferenceStatus } from "../reference-status";
 
@@ -138,13 +140,88 @@ export async function updateReferenceAssetStatus(
 ): Promise<ReferenceAsset> {
   const { data, error } = await supabase
     .from("reference_assets")
-    .update({ status: input.status })
+    .update({
+      status: input.status,
+      runway_task_id: null,
+      runway_task_status: null,
+      runway_progress: null,
+    })
     .eq("id", input.referenceId)
     .select("*")
     .single();
 
   throwIfSupabaseError(error, "updateReferenceAssetStatus failed");
   return mapReferenceAsset(data);
+}
+
+/**
+ * Persists Runway task id + latest poll snapshot while a recipe-specific
+ * reference image is generating.
+ */
+export async function updateReferenceAssetRunwayPollState(
+  supabase: SupabaseDataClient,
+  input: {
+    referenceId: string;
+    runwayTaskId: string;
+    runwayTaskStatus: string;
+    runwayProgress: number | null;
+  },
+): Promise<void> {
+  const { error } = await supabase
+    .from("reference_assets")
+    .update({
+      runway_task_id: input.runwayTaskId,
+      runway_task_status: input.runwayTaskStatus,
+      runway_progress: input.runwayProgress,
+    })
+    .eq("id", input.referenceId);
+
+  throwIfSupabaseError(error, "updateReferenceAssetRunwayPollState failed");
+}
+
+export async function listGeneratingReferenceAssets(
+  supabase: SupabaseDataClient,
+  options: { limit?: number } = {},
+): Promise<ReferenceAsset[]> {
+  let query = supabase
+    .from("reference_assets")
+    .select("*")
+    .eq("status", "generating")
+    .order("created_at", { ascending: false });
+
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+  throwIfSupabaseError(error, "listGeneratingReferenceAssets failed");
+  return (data ?? []).map(mapReferenceAsset);
+}
+
+export async function countGeneratingReferenceAssetsForVideo(
+  supabase: SupabaseDataClient,
+  videoId: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("reference_assets")
+    .select("id", { count: "exact", head: true })
+    .eq("video_id", videoId)
+    .eq("status", "generating");
+
+  throwIfSupabaseError(error, "countGeneratingReferenceAssetsForVideo failed");
+  return count ?? 0;
+}
+
+export async function countGeneratingReferenceAssets(
+  supabase: SupabaseDataClient,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("reference_assets")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "generating");
+
+  throwIfSupabaseError(error, "countGeneratingReferenceAssets failed");
+  return count ?? 0;
 }
 
 export async function updateReferenceAssetMedia(
@@ -164,6 +241,9 @@ export async function updateReferenceAssetMedia(
 ): Promise<ReferenceAsset> {
   const update: Database["public"]["Tables"]["reference_assets"]["Update"] = {
     media_asset_id: input.mediaAssetId,
+    runway_task_id: null,
+    runway_task_status: null,
+    runway_progress: null,
   };
   if (input.status !== undefined) {
     update.status = input.status;
@@ -213,6 +293,9 @@ export async function updateReferenceAssetRunwayUri(
     .update({
       runway_uri: input.runwayUri,
       status: "uploaded_to_runway",
+      runway_task_id: null,
+      runway_task_status: null,
+      runway_progress: null,
     })
     .eq("id", input.referenceId)
     .select("*")
@@ -235,6 +318,12 @@ export function mapReferenceAsset(row: ReferenceAssetRow): ReferenceAsset {
     status: row.status as ReferenceStatus,
     conditioningCanonicalNames: row.conditioning_canonical_names ?? [],
     createdAt: row.created_at,
+    runwayTaskId: row.runway_task_id ?? null,
+    runwayTaskStatus: (row.runway_task_status as RunwayTaskStatusValue | null) ?? null,
+    runwayProgress:
+      row.runway_progress === null || row.runway_progress === undefined
+        ? null
+        : Number(row.runway_progress),
   };
 }
 

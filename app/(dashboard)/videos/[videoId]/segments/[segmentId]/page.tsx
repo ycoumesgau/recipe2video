@@ -60,7 +60,10 @@ export default async function SegmentReviewPage({
         videoId={videoId}
       />
 
-      <GenerationRscSync enabled={data.hasActiveGeneration} pollMs={4_000} />
+      <GenerationRscSync
+        enabled={data.hasActiveGeneration || data.hasActiveReferenceImageGeneration}
+        pollMs={4_000}
+      />
     </div>
   );
 }
@@ -83,6 +86,7 @@ async function loadSegmentReview(videoId: string, segmentId: string): Promise<{
         segment: null,
         variants: [],
         hasActiveGeneration: false,
+        hasActiveReferenceImageGeneration: false,
         feedbacks: [],
         referenceResolutions: [],
       },

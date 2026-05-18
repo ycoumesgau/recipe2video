@@ -325,6 +325,9 @@ export type Database = {
           prompt: string | null;
           status: string;
           conditioning_canonical_names: string[];
+          runway_task_id: string | null;
+          runway_task_status: string | null;
+          runway_progress: number | null;
           created_at: string;
         };
         Insert: {
@@ -339,6 +342,9 @@ export type Database = {
           prompt?: string | null;
           status?: string;
           conditioning_canonical_names?: string[];
+          runway_task_id?: string | null;
+          runway_task_status?: string | null;
+          runway_progress?: number | null;
           created_at?: string;
         };
         Update: {
@@ -353,6 +359,9 @@ export type Database = {
           prompt?: string | null;
           status?: string;
           conditioning_canonical_names?: string[];
+          runway_task_id?: string | null;
+          runway_task_status?: string | null;
+          runway_progress?: number | null;
           created_at?: string;
         };
         Relationships: [];

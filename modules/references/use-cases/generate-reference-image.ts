@@ -8,11 +8,13 @@ import {
   startReferenceImageGeneration,
 } from "@/modules/generation/services/runway.service";
 import { RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO } from "@/modules/generation/runway.constants";
+import { normalizeRunwayProgress } from "@/modules/generation/runway-progress-normalize";
 import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
 
 import {
   getReferenceAssetById,
   updateReferenceAssetMedia,
+  updateReferenceAssetRunwayPollState,
   updateReferenceAssetStatus,
 } from "../repositories/reference.repository";
 import type { ReferenceAsset } from "../reference.types";
@@ -139,6 +141,18 @@ export async function generateReferenceImage(
     const finalTask = await pollRunwayTask({
       taskId: task.id,
       timeoutMs: REFERENCE_IMAGE_GENERATION_TIMEOUT_MS,
+      onPoll: async (polled) => {
+        const runwayProgress = normalizeRunwayProgress(
+          polled.progress,
+          polled.status,
+        );
+        await updateReferenceAssetRunwayPollState(supabase, {
+          referenceId,
+          runwayTaskId: task.id,
+          runwayTaskStatus: polled.status,
+          runwayProgress,
+        });
+      },
     });
 
     if (finalTask.status !== "SUCCEEDED" || !finalTask.output?.[0]) {

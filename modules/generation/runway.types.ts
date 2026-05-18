@@ -86,4 +86,10 @@ export interface PollRunwayTaskOptions {
   taskId: string;
   timeoutMs?: number;
   pollIntervalMs?: number;
+  /**
+   * Invoked after every non-terminal poll (and once with the terminal task
+   * before returning). Lets callers persist Runway status/progress to the DB
+   * while long tasks run (e.g. recipe reference images).
+   */
+  onPoll?: (task: RunwayTaskStatus) => void | Promise<void>;
 }
