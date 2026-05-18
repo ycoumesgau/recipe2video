@@ -371,6 +371,12 @@ async function buildGithubArtifactRefs(input: {
   repo: string;
   token: string;
 }) {
+  /**
+   * Try branch tip before the pinned `agent_git_commit_sha`. Operators often
+   * push newer JSON to the same branch without updating the video row; if we
+   * tried the stored SHA first, Git-only sync would keep ingesting stale blobs
+   * even though HEAD already contains fixed artifacts.
+   */
   const refs: Array<{
     ref: string;
     persistedSha?: string;
@@ -394,18 +400,14 @@ async function buildGithubArtifactRefs(input: {
     });
   };
 
-  add({
-    ref: input.gitSha,
-    persistedSha: input.gitSha ?? undefined,
-    preferRefOverManifestSha: true,
-  });
+  const branch = input.gitBranch?.trim() ?? "";
 
-  if (input.gitBranch) {
+  if (branch) {
     try {
       const branchHeadSha = await fetchGithubBranchHeadSha({
         owner: input.owner,
         repo: input.repo,
-        branch: input.gitBranch,
+        branch,
         token: input.token,
       });
 
@@ -421,8 +423,14 @@ async function buildGithubArtifactRefs(input: {
       );
     }
 
-    add({ ref: input.gitBranch });
+    add({ ref: branch });
   }
+
+  add({
+    ref: input.gitSha?.trim(),
+    persistedSha: input.gitSha?.trim() ?? undefined,
+    preferRefOverManifestSha: true,
+  });
 
   return refs;
 }
