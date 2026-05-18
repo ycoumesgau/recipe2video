@@ -15,6 +15,7 @@ import {
   Bot,
   CheckCircle2,
   Clock3,
+  GitBranch,
   Loader2,
   MessageSquareText,
   Sparkles,
@@ -43,6 +44,7 @@ import type { VideoProject } from "@/modules/videos/video.types";
 import {
   createRecipeAgentAction,
   submitRecipeAgentMessageAction,
+  syncRecipeAgentArtifactsFromGithubAction,
   type RecipeAgentActionState,
 } from "../actions";
 import type {
@@ -345,7 +347,7 @@ export function RecipeAgentPanel({
 
         <div className="grid gap-4 lg:grid-cols-[1fr_0.85fr]">
           <RunHistoryCard latestRun={latestRun} runs={runs} />
-          <ArtifactSummaryCard artifacts={artifacts} />
+          <ArtifactSummaryCard artifacts={artifacts} project={project} />
         </div>
       </CardContent>
     </Card>
@@ -413,7 +415,39 @@ function RunHistoryCard({
   );
 }
 
-function ArtifactSummaryCard({ artifacts }: { artifacts: AgentArtifact[] }) {
+function ArtifactSummaryCard({
+  artifacts,
+  project,
+}: {
+  artifacts: AgentArtifact[];
+  project: VideoProject;
+}) {
+  const router = useRouter();
+  const [gitSyncState, gitSyncAction] = useActionState(
+    syncRecipeAgentArtifactsFromGithubAction,
+    initialState,
+  );
+  const gitSyncSuccessHandled = useRef(false);
+
+  useEffect(() => {
+    if (gitSyncState.kind !== "success") {
+      gitSyncSuccessHandled.current = false;
+      return;
+    }
+    if (gitSyncSuccessHandled.current) {
+      return;
+    }
+    gitSyncSuccessHandled.current = true;
+    startTransition(() => {
+      router.refresh();
+    });
+  }, [gitSyncState.kind, gitSyncState.message, router]);
+
+  const canSyncFromGit = Boolean(
+    project.agentWorkspacePath?.trim() &&
+      (project.agentGitBranch?.trim() || project.agentGitCommitSha?.trim()),
+  );
+
   return (
     <div className="rounded-lg border p-4">
       <h3 className="font-medium">Synced artifacts</h3>
@@ -436,7 +470,37 @@ function ArtifactSummaryCard({ artifacts }: { artifacts: AgentArtifact[] }) {
           ))}
         </div>
       )}
+
+      <form action={gitSyncAction} className="mt-4 space-y-2 border-t pt-4">
+        <input name="videoId" type="hidden" value={project.id} />
+        <p className="text-xs text-muted-foreground">
+          Pull JSON and markdown from the Git workspace ({canSyncFromGit ? "branch / SHA on file" : "—"}).
+          No Cursor run; uses server GitHub config.
+        </p>
+        <GitSyncSubmitButton disabled={!canSyncFromGit} />
+      </form>
+      <ActionMessage state={gitSyncState} title="Git artifact sync" />
     </div>
+  );
+}
+
+function GitSyncSubmitButton({ disabled }: { disabled: boolean }) {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button
+      className="w-full gap-2"
+      disabled={disabled || pending}
+      type="submit"
+      variant="secondary"
+    >
+      {pending ? (
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+      ) : (
+        <GitBranch className="h-4 w-4 shrink-0" />
+      )}
+      Sync from Git only
+    </Button>
   );
 }
 

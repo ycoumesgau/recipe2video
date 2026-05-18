@@ -9,7 +9,10 @@ import {
 import { inngest } from "@/inngest/client";
 import { INNGEST_EVENTS } from "@/inngest/events";
 
+import { createSupabaseServerClient } from "@/modules/auth/supabase/server";
+
 import type { RecipeAgentStage } from "./recipe-agent.types";
+import { syncRecipeAgentArtifactsFromGithubOnly } from "./use-cases/sync-recipe-agent-from-github";
 
 export interface RecipeAgentActionState {
   kind?: "success" | "error";
@@ -50,6 +53,42 @@ export async function submitRecipeAgentMessageAction(
     };
   } catch (error) {
     return toActionError(error, "Unable to queue recipe agent message.");
+  }
+}
+
+export async function syncRecipeAgentArtifactsFromGithubAction(
+  _previousState: RecipeAgentActionState,
+  formData: FormData,
+): Promise<RecipeAgentActionState> {
+  try {
+    await assertCostlyActionAllowed();
+    const videoId = requireFormString(formData, "videoId");
+    const supabase = await createSupabaseServerClient();
+    const syncPlan = await syncRecipeAgentArtifactsFromGithubOnly(supabase, {
+      videoId,
+    });
+
+    revalidateProjectPaths(videoId);
+
+    if (!syncPlan.valid) {
+      const preview = syncPlan.errors.slice(0, 3).join(" · ");
+      const more =
+        syncPlan.errors.length > 3
+          ? ` (+${syncPlan.errors.length - 3} more)`
+          : "";
+      return {
+        kind: "error",
+        message: `Git sync finished but validation failed: ${preview}${more}`,
+      };
+    }
+
+    return {
+      kind: "success",
+      message:
+        "Artifacts pulled from GitHub and written to the project (including storyboard tables when JSON is valid).",
+    };
+  } catch (error) {
+    return toActionError(error, "Unable to sync artifacts from GitHub.");
   }
 }
 

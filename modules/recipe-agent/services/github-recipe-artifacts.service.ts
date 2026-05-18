@@ -6,36 +6,45 @@ import {
   RECIPE_AGENT_CHECKPOINT_MANIFEST,
 } from "../recipe-agent.constants";
 
+const ManifestArtifactListEntrySchema = z.union([
+  z.object({ path: z.string().min(1) }).passthrough(),
+  z.string().min(1),
+]);
+
 const CheckpointManifestSchema = z
   .object({
     branch: z.string().min(1).optional(),
     commitSha: z.string().min(7).optional(),
     latestPushedCommitSha: z.string().min(7).optional(),
+    /** Some agent runs emit this key instead of `commitSha`; treated the same for GitHub sync. */
+    checkpointCommitSha: z.string().min(7).optional(),
     artifactPaths: z.array(z.string()).optional(),
-    artifacts: z
-      .array(
-        z
-          .object({
-            path: z.string().min(1),
-          })
-          .passthrough(),
-      )
-      .optional(),
+    artifacts: z.array(ManifestArtifactListEntrySchema).optional(),
     completedAt: z.string().optional(),
     updatedAtUtc: z.string().optional(),
     manifestPath: z.string().optional(),
     workspace: z.string().optional(),
   })
   .passthrough()
-  .refine((value) => !!(value.commitSha || value.latestPushedCommitSha), {
-    message: "Manifest must contain commitSha or latestPushedCommitSha.",
-  })
+  .refine(
+    (value) =>
+      !!(value.commitSha || value.latestPushedCommitSha || value.checkpointCommitSha),
+    {
+      message:
+        "Manifest must contain commitSha, latestPushedCommitSha, or checkpointCommitSha.",
+    },
+  )
   .transform((value) => ({
     ...value,
-    commitSha: value.commitSha ?? value.latestPushedCommitSha,
+    commitSha:
+      value.commitSha ??
+      value.latestPushedCommitSha ??
+      value.checkpointCommitSha,
     artifactPaths:
       value.artifactPaths ??
-      value.artifacts?.map((artifact) => artifact.path).filter(Boolean),
+      value.artifacts
+        ?.map((entry) => (typeof entry === "string" ? entry : entry.path))
+        .filter(Boolean),
   }));
 
 export type RecipeAgentCheckpointManifest = z.infer<typeof CheckpointManifestSchema>;
@@ -211,17 +220,28 @@ export async function supplementRecipeAgentArtifactsFromGithub(input: {
     pathsByName.set(name, `${input.workspacePath}/${name}`);
   }
 
+  pathsByName.set(
+    RECIPE_AGENT_CHECKPOINT_MANIFEST,
+    `${input.workspacePath}/${RECIPE_AGENT_CHECKPOINT_MANIFEST}`,
+  );
+
   for (const artifactPath of input.artifactPaths ?? []) {
     const normalizedPath = artifactPath.replace(/\\/g, "/");
+    const underWorkspace = `${input.workspacePath}/`;
+    const resolvedPath = normalizedPath.startsWith(underWorkspace)
+      ? normalizedPath
+      : !normalizedPath.includes("/")
+        ? `${underWorkspace}${normalizedPath}`
+        : normalizedPath;
 
-    if (!normalizedPath.startsWith(`${input.workspacePath}/`)) {
+    if (!resolvedPath.startsWith(underWorkspace)) {
       continue;
     }
 
-    const name = normalizedPath.split("/").at(-1);
+    const name = resolvedPath.split("/").at(-1);
 
     if (name) {
-      pathsByName.set(name, normalizedPath);
+      pathsByName.set(name, resolvedPath);
     }
   }
 
