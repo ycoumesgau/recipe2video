@@ -365,6 +365,8 @@ export async function syncRecipeAgentArtifacts(
       // still persist the well-formed rows: a single unresolvable reference
       // shouldn't block the rest of the storyboard's wiring.
       let position = 0;
+      /** Dedup: DB enforces unique (segment_id, library_asset_id) and (segment_id, recipe_reference_id). */
+      const seenTargets = new Set<string>();
       for (const segmentReference of segment.references) {
         const libraryEntry = libraryIndex.get(segmentReference.name);
         const recipeEntry = recipeRefIndex.get(segmentReference.name);
@@ -376,10 +378,28 @@ export async function syncRecipeAgentArtifacts(
           continue;
         }
 
+        const libraryAssetId = libraryEntry?.id ?? null;
+        const recipeReferenceId = libraryEntry ? null : recipeEntry?.id ?? null;
+        const targetKey = libraryAssetId
+          ? `lib:${libraryAssetId}`
+          : recipeReferenceId
+            ? `recipe:${recipeReferenceId}`
+            : null;
+
+        if (targetKey && seenTargets.has(targetKey)) {
+          plan.errors.push(
+            `segment '${segment.title}' (${segment.id}): duplicate link to the same asset row for reference name '${segmentReference.name}' — extra row skipped (fix seedance-segments if this was unintentional).`,
+          );
+          continue;
+        }
+        if (targetKey) {
+          seenTargets.add(targetKey);
+        }
+
         mappings.push({
           segmentId: segment.id,
-          libraryAssetId: libraryEntry?.id ?? null,
-          recipeReferenceId: libraryEntry ? null : recipeEntry?.id ?? null,
+          libraryAssetId,
+          recipeReferenceId,
           role: segmentReference.role,
           position,
           required: segmentReference.required ?? true,
