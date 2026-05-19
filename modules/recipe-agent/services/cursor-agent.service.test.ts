@@ -413,6 +413,31 @@ test("createRecipeAgent maps Composer 2 to forced fast mode", async () => {
   });
 });
 
+test("createRecipeAgent maps Composer 2.5 to forced fast mode", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "composer-2.5",
+      modelFast: "false",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  await service.createRecipeAgent({
+    videoId: "video-1",
+    title: "Paris-Brest",
+  });
+
+  assert.deepEqual(sdk.createdOptions?.model, {
+    id: "composer-2.5",
+    params: [{ id: "fast", value: "true" }],
+  });
+});
+
 class FakeCursorSdkAdapter implements CursorAgentSdkAdapter {
   createdOptions?: AgentOptions;
   resumedOptions?: Partial<AgentOptions>;
