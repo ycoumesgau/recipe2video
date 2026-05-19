@@ -73,38 +73,43 @@ export function SegmentReviewHeadingNav({
   return (
     <nav
       aria-label="Navigation entre segments"
-      className="mb-1 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-3"
+      className="mb-1 flex items-center gap-3 sm:gap-4"
     >
-      <SegmentNavButton
-        aria-label={
-          navigation.previous
-            ? `Segment précédent : ${formatPeerLabel(navigation.previous)}`
-            : "Pas de segment précédent"
-        }
-        disabled={!prevHref}
-        href={prevHref}
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </SegmentNavButton>
-
-      <div className="min-w-0 space-y-1 text-center sm:text-left">
-        {heading}
+      <div className="flex shrink-0 flex-col items-center gap-1">
+        <div
+          aria-label="Segment précédent et suivant"
+          className="inline-flex items-center gap-1"
+          role="group"
+        >
+          <SegmentNavButton
+            aria-label={
+              navigation.previous
+                ? `Segment précédent : ${formatPeerLabel(navigation.previous)}`
+                : "Pas de segment précédent"
+            }
+            disabled={!prevHref}
+            href={prevHref}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </SegmentNavButton>
+          <SegmentNavButton
+            aria-label={
+              navigation.next
+                ? `Segment suivant : ${formatPeerLabel(navigation.next)}`
+                : "Pas de segment suivant"
+            }
+            disabled={!nextHref}
+            href={nextHref}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </SegmentNavButton>
+        </div>
         <p className="text-xs font-medium text-muted-foreground tabular-nums sm:text-sm">
           {positionLabel}
         </p>
       </div>
 
-      <SegmentNavButton
-        aria-label={
-          navigation.next
-            ? `Segment suivant : ${formatPeerLabel(navigation.next)}`
-            : "Pas de segment suivant"
-        }
-        disabled={!nextHref}
-        href={nextHref}
-      >
-        <ChevronRight className="h-4 w-4" />
-      </SegmentNavButton>
+      <div className="min-w-0 flex-1">{heading}</div>
     </nav>
   );
 }
