@@ -1,0 +1,458 @@
+From b0fcf6ea6629e12ae9ab80a6302349a701d313ec Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursor-agent@cursor.com>
+Date: Tue, 19 May 2026 16:08:52 +0000
+Subject: [PATCH] Add song-cover-plan contract for Spotify publication assets
+
+Adds an optional per-recipe artifact (song-cover-plan.json) that drives
+Recipe2Video's Cover & Canvas tab. The agent plans an album cover and a
+5-8s Spotify Canvas using the same canonical name space as Seedance
+segments and the reference plan.
+
+- contracts/song-cover.md: full contract with field rules and the
+  structural invariants the app validates at sync time.
+- .cursor/skills/spotify-publication-assets/SKILL.md: creative
+  direction (loop strategy, mascot policy, Spotify guardrails) and
+  prompt templates for both deliverables.
+- examples/paris-brest/song-cover-plan.json: worked example using
+  @FilledCrownFrame as the loop anchor and a discrete-gesture mascot
+  beat (crumble dusting) that keeps the loop seamless.
+- Pointers in seedance-workflow, asset-reference-system,
+  recipe-researcher, README, AGENTS, and artifact-schemas.
+---
+ .cursor/agents/recipe-researcher.md           |   4 +
+ .../skills/asset-reference-system/SKILL.md    |   1 +
+ .cursor/skills/seedance-workflow/SKILL.md     |   4 +
+ .../spotify-publication-assets/SKILL.md       | 115 +++++++++++++++
+ AGENTS.md                                     |   2 +
+ README.md                                     |   9 +-
+ contracts/artifact-schemas.md                 |  17 +++
+ contracts/song-cover.md                       | 134 ++++++++++++++++++
+ examples/paris-brest/README.md                |   4 +
+ examples/paris-brest/song-cover-plan.json     |  33 +++++
+ 10 files changed, 322 insertions(+), 1 deletion(-)
+ create mode 100644 .cursor/skills/spotify-publication-assets/SKILL.md
+ create mode 100644 contracts/song-cover.md
+ create mode 100644 examples/paris-brest/song-cover-plan.json
+
+diff --git a/.cursor/agents/recipe-researcher.md b/.cursor/agents/recipe-researcher.md
+index 2ffe47f..5b166e0 100644
+--- a/.cursor/agents/recipe-researcher.md
++++ b/.cursor/agents/recipe-researcher.md
+@@ -19,3 +19,7 @@ Return:
+ - states that need Seedance reference images.
+ 
+ Do not write final prompts. Feed findings into `recipe-analysis.json` and `decisions.md`.
++
++## Stage 3 deliverable (optional, on operator request): publication planning
++
++When the operator asks for streaming-publication assets (album cover and Spotify Canvas), produce `agent-recipes/{videoId}/song-cover-plan.json` per `contracts/song-cover.md` and the `spotify-publication-assets` skill. This artifact is optional and produced only on demand — the TikTok pipeline ships without it.
+diff --git a/.cursor/skills/asset-reference-system/SKILL.md b/.cursor/skills/asset-reference-system/SKILL.md
+index ee7375e..e782181 100644
+--- a/.cursor/skills/asset-reference-system/SKILL.md
++++ b/.cursor/skills/asset-reference-system/SKILL.md
+@@ -11,6 +11,7 @@ Use whenever a scene, segment, or reference plan mentions kitchen, character, po
+ 
+ - Use only real files from `assets/`.
+ - Do not invent canonical reference names.
++- Canonical names can be reused across artifacts: Seedance segments (`seedance-segments.json`), the recipe-specific reference plan (`reference-plan.json`), AND the streaming publication plan (`song-cover-plan.json`) all draw from the same name space — global library entries from `assets/` plus per-video recipe-specific entries declared in `reference-plan.json`.
+ - A canonical asset name is the file name without extension.
+ - Global references cover kitchen, character, poses, expressions, and common utensils.
+ - Recipe-specific references cover food states Seedance may misread.
+diff --git a/.cursor/skills/seedance-workflow/SKILL.md b/.cursor/skills/seedance-workflow/SKILL.md
+index f4cb8a4..df398a5 100644
+--- a/.cursor/skills/seedance-workflow/SKILL.md
++++ b/.cursor/skills/seedance-workflow/SKILL.md
+@@ -147,6 +147,10 @@ dive, slice, drip) must happen in segments 1..N-2.
+ The 5-10 segment count cap includes this fixed outro segment; plan
+ 4-9 creative segments + 1 outro.
+ 
++## See also: Spotify publication assets
++
++The album cover and the Spotify Canvas are planned in a separate artifact (`song-cover-plan.json`) by the `spotify-publication-assets` skill. They are independent from the TikTok pipeline and use a different policy (character anchors are encouraged for the cover; the Canvas needs a continuous loop instead of hard cuts). See `contracts/song-cover.md`.
++
+ ## Validation
+ 
+ Before marking a segment ready:
+diff --git a/.cursor/skills/spotify-publication-assets/SKILL.md b/.cursor/skills/spotify-publication-assets/SKILL.md
+new file mode 100644
+index 0000000..25f5993
+--- /dev/null
++++ b/.cursor/skills/spotify-publication-assets/SKILL.md
+@@ -0,0 +1,115 @@
++---
++name: spotify-publication-assets
++description: Plan the per-recipe album cover and Spotify Canvas for streaming distribution of the Suno track.
++---
++
++# Spotify Publication Assets
++
++Use when the operator asks the agent to plan streaming-distribution assets for a Suno track. Produces a single artifact: `agent-recipes/{videoId}/song-cover-plan.json` per `contracts/song-cover.md`.
++
++This work is independent from the TikTok pipeline. The TikTok video ships without these assets.
++
++## Goal
++
++For each track published on Spotify (and similar streaming platforms), produce:
++
++1. an **album cover**, square 1:1 — image hero of the dish + brand mascot, kitchen recognizable in the background;
++2. a **Spotify Canvas**, vertical 9:16, 5-8 seconds — a continuous-loop food-porn beat that reinforces the brand and bridges the TikTok video and the Spotify listen.
++
++## Spotify Canvas non-negotiable specs
++
++- Duration: 5-8 s (Spotify allows 3-8, Seedance 2 imposes >= 5; we target 5 s by default for cost).
++- Format: vertical 9:16, 1080p (Seedance `1080:1920`, 40 credits/s).
++- No sound (Spotify plays the track over the muted Canvas).
++- Safe area: action centered, NOT in the lower half of the screen (Spotify controls overlay there) and not glued to the edges (some phones crop).
++
++## Continuous loop strategy
++
++- Default mode: continuous loop. First frame and last frame must be visually identical.
++- The Canvas plan declares ONE `loopAnchorReferenceName`. The prompt explicitly says first frame and last frame must match `@<loopAnchorReferenceName>`.
++- The loop anchor MUST be a static, reversible visual moment. The mascot gesture overlays on top and returns to it.
++- Do NOT use Seedance `first_last_frames` mode (it blocks the `references[]` array — we need the references).
++- Forbidden inside a continuous loop: irreversible motion (visible cooking, state transformation of the dish, gravitational pour that cannot reset). They kill the loop.
++
++## Mascot policy
++
++- Mascot must appear at least once in the 5-8 s window.
++- Default appearance mode: a discrete reversible gesture (a hand sprinkling, sliding a tool, depositing a finishing topping). The mascot enters frame, does the gesture, leaves frame. The loop anchor is the visual state of the dish without the mascot.
++- Other modes (`silhouette_presence`, `celebration`) are deliberate creative choices for specific recipes.
++- Never name the mascot in the Canvas (no surimpressed text, no graphical element with the name).
++- Never have the mascot mouth to the music (no lipsync — Spotify policy).
++
++## Reference reuse vs. new reference
++
++The agent decides whether the existing references planned in `reference-plan.json` cover the visual moment the cover or the Canvas needs.
++
++Prefer reuse:
++
++- `FinalDishVisual` is usually a good loop anchor and a good hero for the cover.
++- `@KitchenIslandDefault` (or any `KitchenIsland*` / `Induction*` / `OvenWide`) carries the kitchen identity.
++- `@CharacterSheet` plus a `@PoseFront` / `@PoseTopDown` etc. lock the mascot identity.
++- Any `recipe_state` reference can be reused — its shape does NOT need to match the target output (GPT-Image 2 and Seedance both handle non-square anchors).
++
++Declare a NEW recipe-specific reference (in `reference-plan.json`, `source: "generated_reference_needed"`, per `contracts/reference-image-generation.md`) only when the Canvas or the cover needs a visual moment that no existing reference covers — usually a more food-porn intermediate that did not need to ship in the TikTok video (a slow praline pour, a glaze drip, a brittle crack reveal, a hero macro of a topping landing on cream).
++
++When you declare a new reference, list its canonical name in the Canvas `imageReferences` (or the cover `conditioningReferences`) the same way you would for a Seedance segment. The app generates the new reference through the References tab before the cover or Canvas generation runs.
++
++## Album cover direction
++
++- Square 1:1. The app generates at the largest square GPT-Image 2 supports and upscales to 3000x3000 for distribution at download time.
++- Mascot as joy/triumph hero in the frame (this is one of the few places character anchors are encouraged — the recipe-state policy that excludes them does NOT apply here).
++- Finished dish hero in front. Food porn beats welcome on the dish.
++- Kitchen recognizable in the background (`@KitchenIslandDefault` or a similar identity anchor).
++- No text on the artwork. Spotify renders title and artist itself.
++- Color palette can be more saturated and stylized than the TikTok segments. Background can include the brand rainbow burst when appropriate.
++
++## Album cover prompt template (guidance, not strict)
++
++```
++A square 1:1 album cover.
++The Licorn mascot is the joyful hero behind the kitchen island: fists raised, eyes squinted with happiness, white hoodie, single horn, pink ponytail.
++Use @CharacterSheet to lock the 2D illustrated identity. Do not redesign or 3D-ify the character.
++Use @KitchenIslandDefault as the background kitchen identity: light terrazzo countertop, black flush induction plate, same cabinet style as the recipe.
++Use @FinalDishVisual (or a more food-porn intermediate) as the hero foreground: <one short dish-only sentence here, ≤ 280 characters>.
++Behind the character, a vertical rainbow burst that mirrors the celebration outro motif.
++Stylized food-porn lighting on the dish: amber rim light, faint steam where appropriate, glossy textures.
++No text on the artwork. No logo. No URL. No watermark.
++```
++
++## Spotify Canvas prompt template (guidance, not strict)
++
++```
++Vertical 9:16 food-porn loop, 5 seconds, no slow motion, no rapid cuts.
++The first frame and the last frame must be visually identical to @<loopAnchorReferenceName> so the loop is seamless.
++Continuity lock: the dish state is the same at 0.0 s and at 5.0 s.
++
++Mandatory timing (example for a 5 s discrete gesture loop):
++- 0.0 to 1.5 s: the scene is exactly @<loopAnchorReferenceName>. Static.
++- 1.5 to 3.5 s: the Licorn's hand enters from frame top-right, performs <reversible gesture, e.g. sprinkles caramelized hazelnut crumble> on the dish, leaves frame.
++- 3.5 to 5.0 s: the scene returns to @<loopAnchorReferenceName>. Static.
++
++Use @KitchenIslandDefault as the active hero island view.
++Use @CharacterSheet to lock the 2D mascot identity (do not redesign the character).
++
++Integrated audio: no speech, no voiceover, no music. Only quiet kitchen ambience.
++
++Negatives: no text on screen, no captions, no logo, no URL, no watermark, no human face, no lipsync, no rapid cuts, no intense flashes, no irreversible motion of the dish state, no missing portion at the end, no mascot redesign, no 3D-ification of the mascot, no other species.
++```
++
++## Spotify policy guardrails (must hold)
++
++- No logo, no brand name visible, no URL.
++- No human face talking, singing, or rapping (Canvas is not synced to the music).
++- No lipsync of any kind (mascot included).
++- No rapid cuts, no intense flashes.
++- No text on screen (title and artist are rendered by Spotify).
++- Safe area: keep the action away from the lower half (player controls) and the extreme edges (crop on some phones).
++
++## Cost expectations
++
++- Album cover: GPT-Image 2 default quality. Negligible at 100 covers / year.
++- Canvas: 5-8 s of Seedance 2 1080p = 200-320 credits per regen. Plan for ~1.5 regens average per Canvas.
++
++## Cadence reminder
++
++The brand releases 2 tracks per week — about 100 Canvases per year. Each Canvas is custom to its recipe and produced by Recipe2Video alongside the rest of the pipeline.
+diff --git a/AGENTS.md b/AGENTS.md
+index 2d72116..3cc9f82 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -8,6 +8,8 @@ This is a **creative planning workspace**, not an application codebase. There is
+ 
+ The Cursor AI agent reads rules (`.cursor/rules/`), skills (`.cursor/skills/`), and agent definitions (`.cursor/agents/`) to produce recipe-to-video planning artifacts in `agent-recipes/{videoId}/`. The Recipe2Video production app (separate repo) consumes these artifacts.
+ 
++The agent also produces an optional streaming-publication artifact (`song-cover-plan.json`) when the operator requests an album cover and a Spotify Canvas — see `contracts/song-cover.md` and the `spotify-publication-assets` skill. This artifact is not required for the TikTok pipeline.
++
+ ### Key facts
+ 
+ - **No dependencies to install.** There is no `package.json`, `requirements.txt`, or equivalent.
+diff --git a/README.md b/README.md
+index 0355a37..98a44af 100644
+--- a/README.md
++++ b/README.md
+@@ -31,6 +31,12 @@ suno-prompt.md
+ changelog.md
+ ```
+ 
++Optional artifacts (produced on operator request):
++
++```txt
++song-cover-plan.json   # streaming-publication assets: album cover + Spotify Canvas
++```
++
+ Daily generated recipe artifacts are ignored by Git. Recipe2Video retrieves them
+ through the Cursor SDK, validates them, and syncs valid content into Supabase.
+ 
+@@ -57,7 +63,8 @@ through the Cursor SDK, validates them, and syncs valid content into Supabase.
+ 4. Plan global and recipe-specific references for Seedance.
+ 5. Generate copy-ready Seedance prompts with explicit reference roles.
+ 6. Generate a copy-ready Suno prompt (agent baseline + operator 2–3 min edits documented in `contracts/suno-music.md`).
+-7. Let Recipe2Video validate, persist, approve, and execute.
++7. On operator request, plan publication assets in `song-cover-plan.json` per `contracts/song-cover.md` and the `spotify-publication-assets` skill (album cover + Spotify Canvas).
++8. Let Recipe2Video validate, persist, approve, and execute.
+ 
+ Image generation remains useful only for creating **reference images** needed by
+ Seedance, such as raw, baked, filled, cut, glazed, broken, or final food states.
+diff --git a/contracts/artifact-schemas.md b/contracts/artifact-schemas.md
+index 64dc75f..6779ec5 100644
+--- a/contracts/artifact-schemas.md
++++ b/contracts/artifact-schemas.md
+@@ -207,6 +207,23 @@ Strict JSON. Required: `schemaVersion` (must be `1`), `status`, `fields`, `instr
+ 
+ Full Suno policy, worked example, and operator table: **`contracts/suno-music.md`**.
+ 
++## `song-cover-plan.json` (optional)
++
++Strict JSON. Required: `schemaVersion` (must be `1`), `albumCover`, `spotifyCanvas`, `qualityChecks`.
++
++This artifact is **optional** in the checkpoint manifest. It is produced on operator request (publication planning stage) and drives the Recipe2Video Cover & Canvas tab:
++
++- `albumCover.prompt` + `albumCover.conditioningReferences[]` — GPT-Image 2 album cover (square 1:1, upscaled to 3000x3000 at download).
++- `spotifyCanvas.prompt` + `spotifyCanvas.imageReferences[]` + optional `spotifyCanvas.videoReferences[]` + `spotifyCanvas.loopAnchorReferenceName` + `spotifyCanvas.durationSeconds` (5-8) — Seedance 2 continuous-loop vertical 1080p video.
++
++Structural rules enforced at sync time:
++
++- `loopAnchorReferenceName` must appear in `imageReferences`.
++- Canonical names must resolve to global library entries or to recipe-specific references already declared in `reference-plan.json`.
++- `durationSeconds` integer in `[5, 8]`.
++
++Full policy, prompt templates, mascot policy, Spotify guardrails, and the worked Paris-Brest example live in **`contracts/song-cover.md`** and **`.cursor/skills/spotify-publication-assets/SKILL.md`**.
++
+ ## Markdown Artifacts
+ 
+ - `decisions.md`: user decisions, assumptions, and accepted trade-offs.
+diff --git a/contracts/song-cover.md b/contracts/song-cover.md
+new file mode 100644
+index 0000000..679714a
+--- /dev/null
++++ b/contracts/song-cover.md
+@@ -0,0 +1,134 @@
++# Spotify Publication Assets Contract (`song-cover-plan.json`)
++
++This contract defines the per-recipe artifact that drives the Recipe2Video **Cover & Canvas** tab. The artifact lives at:
++
++```txt
++agent-recipes/{videoId}/song-cover-plan.json
++```
++
++It is **optional** in the checkpoint manifest: when absent, the app shows an empty state with a CTA that asks the agent to plan publication assets. When present, the app validates it, syncs it into Supabase, and unlocks operator-driven generation of:
++
++1. an **album cover** (1:1 square, generated by GPT-Image 2 via Runway, upscaled to 3000x3000 by the app);
++2. a **Spotify Canvas** (9:16 vertical, 5-8 s, generated by Seedance 2 via Runway).
++
++Both assets target streaming distribution (Spotify, Apple Music, etc.). They are NOT used by the TikTok pipeline.
++
++## Strict JSON shape (schemaVersion 1)
++
++```json
++{
++  "schemaVersion": 1,
++  "albumCover": {
++    "prompt": "string — full GPT-Image 2 prompt; references anchors by @Name",
++    "conditioningReferences": ["KitchenIslandDefault", "CharacterSheet", "FinalDishVisual"],
++    "notes": "optional — operator-facing rationale"
++  },
++  "spotifyCanvas": {
++    "prompt": "string — Seedance text_to_video prompt with explicit loop instruction",
++    "imageReferences": ["KitchenIslandDefault", "CharacterSheet", "PralineMacroFoodPorn"],
++    "videoReferences": [],
++    "loopAnchorReferenceName": "PralineMacroFoodPorn",
++    "durationSeconds": 5,
++    "mascotAppearanceMode": "discrete_gesture",
++    "notes": "optional"
++  },
++  "qualityChecks": {
++    "noTextOnScreen": true,
++    "noLogoOrUrl": true,
++    "noLipsyncToMusic": true,
++    "mascotAppearsAtLeastOnce": true,
++    "loopAnchorIsAlsoInImageReferences": true,
++    "durationWithinSpotifyWindow": true
++  }
++}
++```
++
++Strict JSON: no comments, no trailing commas, no Markdown fences.
++
++## Field rules
++
++### `schemaVersion`
++
++Must be `1`.
++
++### `albumCover.prompt`
++
++- English, full GPT-Image 2 prompt.
++- Must reference its anchors by `@Name` (the canonical name of each entry in `conditioningReferences`).
++- Square 1:1 framing assumed by the app — do NOT write framing instructions like "vertical reference still" that came from the older reference-image contract.
++- No text rendered on the artwork (no title, no artist name, no brand, no URL). Spotify renders metadata itself.
++- Mascot is allowed and encouraged — this is one of the few places the character can be hero (joy/triumph). It is NOT a "recipe state" image; the recipe-state conditioning policy that excludes character anchors does NOT apply here.
++
++### `albumCover.conditioningReferences`
++
++- Ordered list of canonical names. The app forwards them to GPT-Image 2 as `referenceImages[]`.
++- Each name must resolve to:
++  - a global library entry in `assets/` (kitchen, character, pose, expression, utensil), OR
++  - a recipe-specific reference already declared in `reference-plan.json` for the same `videoId`.
++- Up to 16 anchors (GPT-Image 2 limit). 3-5 well-chosen ones are typically enough: kitchen + mascot + finished dish (or a more food-porn intermediate).
++- Anchors do NOT need to be square. GPT-Image 2 handles non-square anchors fine.
++- If the agent needs a new recipe-specific image (for example a more food-porn intermediate that does not exist yet), declare it in `reference-plan.json` with `source: "generated_reference_needed"` per `contracts/reference-image-generation.md`, then list its canonical name here. The app generates and approves the new reference through the References tab before the cover can be generated.
++
++### `spotifyCanvas.prompt`
++
++- English, full Seedance 2 `text_to_video` prompt.
++- MUST contain an explicit loop instruction. The first frame and the last frame must be visually identical to the loop anchor reference (referenced by `@loopAnchorReferenceName`). Recommended wording: `the first frame and the last frame must be visually identical to @<loopAnchorReferenceName> for a seamless continuous loop`.
++- The app also appends Spotify policy negatives at generation time if not present (no text, no captions, no logo, no URL, no human face, no lipsync, no rapid cuts, no intense flashes), but the agent SHOULD already include them in the prompt.
++- Mascot must appear at least once in the 5-8 s window. Default mode: a discrete reversible gesture (a hand sprinkling a topping, sliding a tool, depositing a finishing touch) that ends back in the loop-anchor visual state. Full-body celebrations are reserved for recipes where the artistic direction explicitly calls for one.
++- Safe area: composition must keep the action centered, NOT in the lower half of the frame (Spotify controls overlay there).
++- No fast cuts, no intense flashes (Spotify policy).
++
++### `spotifyCanvas.imageReferences`
++
++- Up to 9 entries (Seedance hard cap).
++- Each name must resolve to a global library entry OR a recipe-specific reference for the same `videoId`.
++- `loopAnchorReferenceName` MUST be present in this list.
++
++### `spotifyCanvas.videoReferences`
++
++- Up to 3 entries, combined duration <= 15 s (Seedance hard cap).
++- Optional. Use only when a specific motion needs grounding.
++- `LicornOutroVideo` is appropriate ONLY when the artistic direction is an actual mascot celebration (rare for a Canvas — a 3 s explosion of joy does NOT loop). For routine discrete gestures, leave this empty and let the prompt drive the motion.
++
++### `spotifyCanvas.loopAnchorReferenceName`
++
++- Required. Canonical name of the reference that defines both the first and the last frame of the loop.
++- Must also appear in `imageReferences`.
++- Choose a static, reversible visual moment. The Canvas mascot gesture overlays on top of this anchor and returns to it at the end of the loop.
++- Common picks: `FinalDishVisual` (default), or a more food-porn intermediate that the agent has planned in `reference-plan.json` (e.g. a hero macro of praline pour, a glaze drip, a clean cracked-open reveal).
++
++### `spotifyCanvas.durationSeconds`
++
++- Integer in `[5, 8]`. This is the intersection of Spotify Canvas window (3-8 s) and Seedance 2 minimum (5 s).
++- Default 5 s for cost (5 x 40 credits = 200 credits per regen at 1080p).
++
++### `spotifyCanvas.mascotAppearanceMode`
++
++- One of:
++  - `discrete_gesture` (default) — a hand or partial appearance executes a reversible gesture on the dish.
++  - `silhouette_presence` — the mascot is behind the island or off to the side, present but not centered.
++  - `celebration` — full body, reserved for recipes whose artistic direction warrants it (rare).
++- Hint for the operator and for downstream prompt sanity checks. Does NOT change generation parameters.
++
++### `qualityChecks`
++
++All booleans the agent self-attests after writing the plan:
++
++- `noTextOnScreen` — neither the cover nor the Canvas renders text.
++- `noLogoOrUrl` — no brand mark, no URL on the Canvas.
++- `noLipsyncToMusic` — the mascot never mouths to the Suno track (Spotify policy: no synced lipsync).
++- `mascotAppearsAtLeastOnce` — Canvas mascot policy.
++- `loopAnchorIsAlsoInImageReferences` — structural invariant (also enforced by the app).
++- `durationWithinSpotifyWindow` — 5-8 s inclusive.
++
++If any check is `false`, the app emits a warning in the sync log but does not block the upsert. The operator decides whether to override or ask the agent to revise.
++
++## Worked example
++
++See [examples/paris-brest/song-cover-plan.json](../examples/paris-brest/song-cover-plan.json).
++
++## Sync behavior (app side, informative)
++
++- The app reads this artifact via the GitHub artifact service at checkpoint sync, validates it against a Zod schema mirroring this contract, resolves every canonical name against `asset_library` + per-video `reference_assets`, and upserts two rows in the `song_cover_artifacts` table (one per kind).
++- Existing `active_media_asset_id` is preserved on text/ref changes — only a manual regen produces a new variant.
++- If `song-cover-plan.json` is missing, the Cover & Canvas page renders an empty state and a CTA "Ask the agent to plan Spotify assets" that sends the agent a `publication_planning` stage message.
+diff --git a/examples/paris-brest/README.md b/examples/paris-brest/README.md
+index 4887fca..708ce7c 100644
+--- a/examples/paris-brest/README.md
++++ b/examples/paris-brest/README.md
+@@ -16,3 +16,7 @@ Key lesson: the Paris-Brest crown is a non-standard repeated structure. Seedance
+ - `@PralineCreamFrame`
+ - `@FilledCrownFrame`
+ - `@FinishedParisBrestFrame`
++
++## Optional: streaming publication assets
++
++`song-cover-plan.json` shows the album cover and Spotify Canvas plan for the same recipe. It reuses the global kitchen and character anchors plus `@FilledCrownFrame` as the loop anchor — the open crown's praline cream rosettes carry more food-porn signal than the closed crown shot. The Canvas mascot is a discrete hand sprinkling caramelized hazelnut crumble on the cream, which reads as a reversible gesture and lets the loop start and end on the same anchor frame. See `contracts/song-cover.md` for the full contract.
+diff --git a/examples/paris-brest/song-cover-plan.json b/examples/paris-brest/song-cover-plan.json
+new file mode 100644
+index 0000000..622b851
+--- /dev/null
++++ b/examples/paris-brest/song-cover-plan.json
+@@ -0,0 +1,33 @@
++{
++  "schemaVersion": 1,
++  "albumCover": {
++    "prompt": "Square 1:1 album cover. The Licorn mascot is the joyful hero behind the kitchen island: fists raised, eyes squinted with happiness, white hoodie, single horn, pink ponytail. Use @CharacterSheet to lock the 2D illustrated identity; do not redesign or 3D-ify the character. Use @KitchenIslandDefault as the background kitchen identity: light terrazzo countertop, black flush induction plate, same cabinet style as the recipe. Use @FilledCrownFrame as the hero foreground: a horizontally opened Paris-Brest crown filled with satin praline cream rosettes, preserving the repeated choux dome topology, sitting intact on the countertop. Behind the character, a vertical rainbow burst that mirrors the celebration outro motif. Stylized food-porn lighting on the dish: amber rim light, glossy praline highlights, faint hazelnut shards dusting in mid-air. No text on the artwork. No logo. No URL. No watermark.",
++    "conditioningReferences": [
++      "KitchenIslandDefault",
++      "CharacterSheet",
++      "FilledCrownFrame"
++    ],
++    "notes": "Cover hero is the filled crown rather than a generic FinalDishVisual; the open praline cream rosettes carry more food-porn signal than the closed crown shot."
++  },
++  "spotifyCanvas": {
++    "prompt": "Vertical 9:16 food-porn loop, 5 seconds, no slow motion, no rapid cuts. The first frame and the last frame must be visually identical to @FilledCrownFrame so the loop is seamless. Continuity lock: the dish state is identical at 0.0 s and at 5.0 s. Mandatory timing: 0.0 to 1.5 s the scene is exactly @FilledCrownFrame, a filled Paris-Brest crown with satin praline cream rosettes sitting intact on the kitchen island countertop; static frame, glossy praline highlights, soft amber rim light. 1.5 to 3.5 s the Licorn's hand enters from the top-right of the frame holding a small spoon and dusts caramelized hazelnut crumble over the cream rosettes, then leaves frame to the top-right. 3.5 to 5.0 s the scene returns to exactly @FilledCrownFrame; the crumble that was dusted in mid-shot has settled invisibly into the existing rosette geometry so the start and end frames match. Use @KitchenIslandDefault as the active hero island view. Use @CharacterSheet to lock the 2D mascot identity; do not redesign the character; only the hand and a sleeve cuff are visible. Integrated audio: no speech, no voiceover, no music. Only quiet kitchen ambience. Negatives: no text on screen, no captions, no logo, no URL, no watermark, no human face, no lipsync, no rapid cuts, no intense flashes, no irreversible motion of the dish state, no missing portion at the end, no mascot redesign, no 3D-ification of the mascot, no other species.",
++    "imageReferences": [
++      "KitchenIslandDefault",
++      "CharacterSheet",
++      "FilledCrownFrame"
++    ],
++    "videoReferences": [],
++    "loopAnchorReferenceName": "FilledCrownFrame",
++    "durationSeconds": 5,
++    "mascotAppearanceMode": "discrete_gesture",
++    "notes": "Loop anchor is FilledCrownFrame so the praline cream rosettes are visible at start and end. Mascot is reduced to a hand sprinkling crumble, which reads as a reversible gesture and keeps the loop seamless. No LicornOutroVideo because we do not want a celebration burst on a streaming canvas."
++  },
++  "qualityChecks": {
++    "noTextOnScreen": true,
++    "noLogoOrUrl": true,
++    "noLipsyncToMusic": true,
++    "mascotAppearsAtLeastOnce": true,
++    "loopAnchorIsAlsoInImageReferences": true,
++    "durationWithinSpotifyWindow": true
++  }
++}
+-- 
+2.43.0
+

@@ -6,7 +6,9 @@ export type MediaAssetType =
   | "runway_output"
   | "accepted_clip"
   | "suno_audio"
-  | "final_export";
+  | "final_export"
+  | "album_cover_image"
+  | "spotify_canvas_video";
 
 export type MediaAssetProvider =
   | "supabase"

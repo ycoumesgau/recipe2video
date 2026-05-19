@@ -48,6 +48,26 @@ test("getReferenceIdFromReferenceImageStoragePath parses legacy and variant path
   );
 });
 
+test("buildMediaStoragePath places song-cover artifacts under videoId/artifactId/variantId", () => {
+  const coverPath = buildMediaStoragePath({
+    type: "album_cover_image",
+    videoId: "video-1",
+    artifactId: "artifact-1",
+    variantId: "variant-1",
+    mimeType: "image/png",
+  });
+  assert.equal(coverPath, "video-1/artifact-1/variant-1.png");
+
+  const canvasPath = buildMediaStoragePath({
+    type: "spotify_canvas_video",
+    videoId: "video-1",
+    artifactId: "artifact-2",
+    variantId: "variant-2",
+    mimeType: "video/mp4",
+  });
+  assert.equal(canvasPath, "video-1/artifact-2/variant-2.mp4");
+});
+
 test("referenceIdFromMediaAsset prefers metadata.referenceId", () => {
   assert.equal(
     referenceIdFromMediaAsset({
