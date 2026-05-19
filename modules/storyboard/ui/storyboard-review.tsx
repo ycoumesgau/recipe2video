@@ -243,8 +243,8 @@ function LogicalScenesTable({
                   <Badge
                     variant="outline"
                     className={cn(
-                      "border-storyboard-segment-chip-border bg-storyboard-segment-chip-bg font-semibold text-foreground",
-                      "hover:bg-storyboard-segment-chip-bg",
+                      scene.position % 2 === 0 &&
+                        "border-border bg-muted hover:bg-muted",
                     )}
                   >
                     {segmentLabelBySceneId.get(scene.id) ?? "-"}
