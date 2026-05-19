@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import { SegmentReview } from "@/modules/generation/ui/segment-review";
+import { SegmentReviewHeadingNav } from "@/modules/generation/ui/segment-review-navigation";
 import {
   getSegmentReviewData,
   type SegmentReviewData,
@@ -32,11 +33,17 @@ export default async function SegmentReviewPage({
         <Badge className="mb-3" variant="outline">
           Segment review
         </Badge>
-        <h2 className="licorn-page-title">
-          {data.segment
-            ? formatSegmentPageHeading(data.segment)
-            : "Segment review"}
-        </h2>
+        <SegmentReviewHeadingNav
+          heading={
+            <h2 className="licorn-page-title min-w-0">
+              {data.segment
+                ? formatSegmentPageHeading(data.segment)
+                : "Segment review"}
+            </h2>
+          }
+          navigation={data.navigation}
+          videoId={videoId}
+        />
         <p className="max-w-3xl text-muted-foreground">
           Compare generated variants, play Mux review copies, select the
           accepted take, and use agent feedback with visible prompt diffs
@@ -90,6 +97,7 @@ async function loadSegmentReview(videoId: string, segmentId: string): Promise<{
         feedbacks: [],
         referenceResolutions: [],
         isLastSegmentOfVideo: false,
+        navigation: null,
       },
       dataError:
         error instanceof Error

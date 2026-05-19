@@ -58,9 +58,25 @@ export interface SegmentReferenceResolutionItem {
   runwayProgress: number | null;
 }
 
+export interface SegmentNavigationPeer {
+  segmentId: string;
+  position: number;
+  title: string;
+}
+
+/** Ordered prev/next peers for slideshow-style segment review navigation. */
+export interface SegmentReviewNavigation {
+  currentIndex: number;
+  totalCount: number;
+  previous: SegmentNavigationPeer | null;
+  next: SegmentNavigationPeer | null;
+}
+
 export interface SegmentReviewData {
   project: VideoProject | null;
   segment: SeedanceSegment | null;
+  /** Prev/next segment links in storyboard order (`position` ascending). */
+  navigation: SegmentReviewNavigation | null;
   variants: SegmentVariantReviewItem[];
   hasActiveGeneration: boolean;
   /**
@@ -104,6 +120,7 @@ export async function getSegmentReviewData(
       feedbacks: [],
       referenceResolutions: [],
       isLastSegmentOfVideo: false,
+      navigation: null,
     };
   }
 
@@ -138,6 +155,7 @@ export async function getSegmentReviewData(
   return {
     project,
     segment,
+    navigation: buildSegmentReviewNavigation(allSegments, segment.id),
     hasActiveGeneration: generations.some((generation) =>
       ["pending", "queued", "processing"].includes(generation.status),
     ),
@@ -154,6 +172,39 @@ export async function getSegmentReviewData(
         mediaAssetByGenerationId.get(generation.id) ??
         null,
     })),
+  };
+}
+
+function buildSegmentReviewNavigation(
+  orderedSegments: SeedanceSegment[],
+  currentSegmentId: string,
+): SegmentReviewNavigation | null {
+  if (orderedSegments.length === 0) {
+    return null;
+  }
+
+  const currentIndex = orderedSegments.findIndex(
+    (candidate) => candidate.id === currentSegmentId,
+  );
+  if (currentIndex < 0) {
+    return null;
+  }
+
+  const toPeer = (segment: SeedanceSegment): SegmentNavigationPeer => ({
+    segmentId: segment.id,
+    position: segment.position,
+    title: segment.title,
+  });
+
+  return {
+    currentIndex,
+    totalCount: orderedSegments.length,
+    previous:
+      currentIndex > 0 ? toPeer(orderedSegments[currentIndex - 1]!) : null,
+    next:
+      currentIndex < orderedSegments.length - 1
+        ? toPeer(orderedSegments[currentIndex + 1]!)
+        : null,
   };
 }
 
