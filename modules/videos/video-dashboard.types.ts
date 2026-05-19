@@ -15,10 +15,10 @@ export interface VideoDashboardProject {
   thumbnailLabel: string;
   thumbnailTone: "pink" | "amber" | "emerald" | "sky";
   /**
-   * Mux thumbnail URL for the project's first accepted clip when available.
-   * Mux generates thumbnails on-demand from the public playback ID via
-   * `https://image.mux.com/{playbackId}/thumbnail.jpg`. Falls back to the
-   * gradient placeholder when no playback is available yet.
+   * Card header image when available. Priority: recipe-specific
+   * `FinalDishVisual` reference, other recipe references, uploaded recipe
+   * photos, then Mux thumbnail from the first accepted clip. Falls back to
+   * the gradient placeholder when nothing is available yet.
    */
   thumbnailUrl?: string | null;
   acceptedSegments: number;

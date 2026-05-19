@@ -4,6 +4,7 @@ import { fetchRunwayOrganizationBalance } from "@/modules/costs/runway-organizat
 import { readDashboardDataMode } from "@/modules/dashboard/dashboard-data-mode";
 import { getProjectThumbnailPlaybackIds } from "@/modules/media-assets/repositories/media-asset.repository";
 import { getVideoDashboardData } from "@/modules/videos/get-video-dashboard-data";
+import { resolveProjectCardThumbnailUrls } from "@/modules/videos/use-cases/resolve-project-card-thumbnail-urls";
 import { getVideoLibraryStats } from "@/modules/videos/get-video-library-stats";
 import { listVideoProjects } from "@/modules/videos/repositories/video.repository";
 import { VideoLibraryDashboard } from "@/modules/videos/ui/video-library-dashboard";
@@ -33,7 +34,12 @@ export default async function DashboardPage({
   const includeSeededDemos =
     dataMode === "mock" && libraryMode === "active" && page === 1;
 
-  const thumbnailUrlByProjectId = buildThumbnailUrlMap(thumbnailByProjectId);
+  const supabase = createSupabaseAdminClient();
+  const thumbnailUrlByProjectId = await resolveProjectCardThumbnailUrls(
+    supabase,
+    projects.map((project) => project.id),
+    thumbnailByProjectId,
+  );
   const data = getVideoDashboardData(projects, thumbnailUrlByProjectId, {
     includeSeededDemos,
     runwayBalance,
@@ -104,14 +110,6 @@ async function loadProjectsForDashboard(
       page: 1,
     };
   }
-}
-
-function buildThumbnailUrlMap(playbackIdByVideoId: Map<string, string>) {
-  const result = new Map<string, string>();
-  for (const [videoId, playbackId] of playbackIdByVideoId) {
-    result.set(videoId, `https://image.mux.com/${playbackId}/thumbnail.jpg`);
-  }
-  return result;
 }
 
 async function loadRunwayCreditsUsedLogged() {
