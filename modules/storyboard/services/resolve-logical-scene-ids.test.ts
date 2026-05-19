@@ -109,6 +109,34 @@ test("remapAllSegments assigns outro via subtraction of prior segments", () => {
   assert.deepEqual(remapped.get(7), ["db-34", "db-35", "db-36"]);
 });
 
+test("buildSegmentLabelByPersistedSceneId ignores stale logical_scenes.segment_id", () => {
+  const persisted = Array.from({ length: 6 }, (_, index) =>
+    scene(index + 1, `db-${index + 1}`),
+  );
+  persisted[0] = { ...persisted[0], segmentId: "seg-7" };
+  persisted[1] = { ...persisted[1], segmentId: "seg-7" };
+  persisted[2] = { ...persisted[2], segmentId: "seg-7" };
+
+  const labels = buildSegmentLabelByPersistedSceneId(
+    [
+      { position: 1, arc: "body", logicalSceneIds: ["db-1", "db-2"] },
+      { position: 2, arc: "body", logicalSceneIds: ["db-3", "db-4"] },
+      {
+        id: "seg-7",
+        position: 7,
+        arc: "licorn_celebration_outro",
+        logicalSceneIds: persisted.map((item) => item.id),
+      },
+    ],
+    persisted,
+  );
+
+  assert.equal(labels.get("db-1"), "S1");
+  assert.equal(labels.get("db-2"), "S1");
+  assert.equal(labels.get("db-3"), "S2");
+  assert.equal(labels.get("db-5"), "S7");
+});
+
 test("buildSegmentLabelByPersistedSceneId keeps lower segment when outro lists every scene id", () => {
   const persisted = Array.from({ length: 6 }, (_, index) =>
     scene(index + 1, `db-${index + 1}`),
