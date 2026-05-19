@@ -366,6 +366,66 @@ export type Database = {
         };
         Relationships: [];
       };
+      song_cover_artifacts: {
+        Row: {
+          id: string;
+          video_id: string;
+          kind: string;
+          prompt: string;
+          image_reference_canonical_names: string[];
+          video_reference_canonical_names: string[];
+          loop_anchor_reference_name: string | null;
+          duration_seconds: number | null;
+          status: string;
+          active_media_asset_id: string | null;
+          runway_task_id: string | null;
+          runway_task_status: string | null;
+          runway_progress: number | null;
+          notes: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          video_id: string;
+          kind: string;
+          prompt: string;
+          image_reference_canonical_names?: string[];
+          video_reference_canonical_names?: string[];
+          loop_anchor_reference_name?: string | null;
+          duration_seconds?: number | null;
+          status?: string;
+          active_media_asset_id?: string | null;
+          runway_task_id?: string | null;
+          runway_task_status?: string | null;
+          runway_progress?: number | null;
+          notes?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          video_id?: string;
+          kind?: string;
+          prompt?: string;
+          image_reference_canonical_names?: string[];
+          video_reference_canonical_names?: string[];
+          loop_anchor_reference_name?: string | null;
+          duration_seconds?: number | null;
+          status?: string;
+          active_media_asset_id?: string | null;
+          runway_task_id?: string | null;
+          runway_task_status?: string | null;
+          runway_progress?: number | null;
+          notes?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       asset_library: {
         Row: {
           id: string;

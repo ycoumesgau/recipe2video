@@ -17,6 +17,7 @@ export type RecipeAgentStage =
   | "reference_planning"
   | "segment_prompt_revision"
   | "suno_prompt_revision"
+  | "publication_planning"
   | "general";
 
 export type RecipeAgentStatus =

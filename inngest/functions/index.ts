@@ -22,6 +22,8 @@ import {
   requestSegmentGeneration,
   uploadSegmentMux,
 } from "./segment-generation";
+import { generateAlbumCoverWorkflow } from "./song-cover-generation";
+import { generateSpotifyCanvasWorkflow } from "./song-canvas-generation";
 
 export const functions = [
   ingestRecipeWorkflow,
@@ -40,4 +42,6 @@ export const functions = [
   createRecipeAgentWorkflow,
   sendRecipeAgentMessageWorkflow,
   syncRecipeAgentArtifactsWorkflow,
+  generateAlbumCoverWorkflow,
+  generateSpotifyCanvasWorkflow,
 ];

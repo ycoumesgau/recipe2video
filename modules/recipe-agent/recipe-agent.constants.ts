@@ -15,6 +15,7 @@ export const RECIPE_AGENT_ARTIFACT_NAMES = [
   "suno-prompt.json",
   "suno-prompt.md",
   "changelog.md",
+  "song-cover-plan.json",
 ] as const;
 
 export const RECIPE_AGENT_JSON_ARTIFACT_NAMES = [
@@ -23,4 +24,15 @@ export const RECIPE_AGENT_JSON_ARTIFACT_NAMES = [
   "seedance-segments.json",
   "reference-plan.json",
   "suno-prompt.json",
+  "song-cover-plan.json",
+] as const;
+
+/**
+ * Artifacts the recipe agent produces only on operator request (the
+ * checkpoint manifest may legitimately omit them). The sync use case
+ * skips its hard validation when one of these is absent and merely
+ * leaves the corresponding domain row empty.
+ */
+export const RECIPE_AGENT_OPTIONAL_ARTIFACT_NAMES = [
+  "song-cover-plan.json",
 ] as const;

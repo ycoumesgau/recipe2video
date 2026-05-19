@@ -30,7 +30,11 @@ export function buildRecipeAgentGuardianSubagentPrompt(input: {
     "- Do not call Runway, OpenAI, Supabase, Mux, Suno, or other paid generation APIs from tools. Produce planning artifacts only.",
     "",
     "Required artifacts:",
-    ...RECIPE_AGENT_ARTIFACT_NAMES.map((name) => `- ${input.workspacePath}/${name}`),
+    ...RECIPE_AGENT_ARTIFACT_NAMES.filter(
+      (name) => name !== "song-cover-plan.json",
+    ).map((name) => `- ${input.workspacePath}/${name}`),
+    "",
+    `Optional artifact (only when the user explicitly asks for it): ${input.workspacePath}/song-cover-plan.json — Spotify album cover and Canvas plan, see contracts/song-cover.md.`,
     "",
     "Artifact basics: strict JSON without fences; update changelog.md when changing scenes, segments, references, or Suno; produce reference-plan.json before Seedance generation approval; dedupe library canonical names per reference-plan rules in workspace docs.",
     "Outro sync pitfall: the standardized outro segment still needs `logicalSceneIds` with at least one placeholder (e.g. `[\"scene-outro\"]`). Full rules: `.cursor/rules/seedance-outro.mdc`.",
@@ -61,7 +65,12 @@ export function buildRecipeAgentSystemPrompt(input: {
     "- Produce planning artifacts only. Recipe2Video will validate and execute costly actions later.",
     "",
     "Required artifacts to maintain:",
-    ...RECIPE_AGENT_ARTIFACT_NAMES.map((name) => `- ${input.workspacePath}/${name}`),
+    ...RECIPE_AGENT_ARTIFACT_NAMES.filter(
+      (name) => name !== "song-cover-plan.json",
+    ).map((name) => `- ${input.workspacePath}/${name}`),
+    "",
+    "Optional artifact (publication_planning stage only):",
+    `- ${input.workspacePath}/song-cover-plan.json — Spotify album cover and Canvas plan per contracts/song-cover.md. Produce on operator request; do not emit it by default.`,
     "",
     "Artifact rules:",
     "- JSON artifacts must be strictly valid JSON with no Markdown fences.",
@@ -109,16 +118,31 @@ export function buildRecipeAgentUserMessage(input: {
   message: string;
   workspacePath: string;
 }) {
-  const stageSpecificRules =
-    input.stage === "recipe_ingest"
-      ? [
-          "Mandatory for recipe_ingest: recipe-analysis.json must be written or updated in this run.",
-          "If source information is incomplete, still write recipe-analysis.json with clarifyingQuestions and note remaining gaps in decisions.md/changelog.md.",
-          "recipe-analysis.json contract is strict: `criticalTransformations`, `visualTextureOpportunities`, `possibleHooks`, and `promptPolicySources` must be arrays of plain strings (never objects).",
-          "For recipe-analysis.json timing, keep `recipe.timing` keys as `prep`, `cook`, `total` (string or null).",
-          "After writing JSON artifacts, read them back with read_file to verify they are valid JSON before finishing.",
-        ]
-      : [];
+  const stageSpecificRules = (() => {
+    if (input.stage === "recipe_ingest") {
+      return [
+        "Mandatory for recipe_ingest: recipe-analysis.json must be written or updated in this run.",
+        "If source information is incomplete, still write recipe-analysis.json with clarifyingQuestions and note remaining gaps in decisions.md/changelog.md.",
+        "recipe-analysis.json contract is strict: `criticalTransformations`, `visualTextureOpportunities`, `possibleHooks`, and `promptPolicySources` must be arrays of plain strings (never objects).",
+        "For recipe-analysis.json timing, keep `recipe.timing` keys as `prep`, `cook`, `total` (string or null).",
+        "After writing JSON artifacts, read them back with read_file to verify they are valid JSON before finishing.",
+      ];
+    }
+
+    if (input.stage === "publication_planning") {
+      return [
+        "Mandatory for publication_planning: produce or update song-cover-plan.json per contracts/song-cover.md.",
+        "Follow the spotify-publication-assets skill for direction (loop strategy, mascot policy, food-porn beats, Spotify guardrails).",
+        "Canvas duration is an integer between 5 and 8 seconds (Spotify <= 8, Seedance 2 >= 5).",
+        "loopAnchorReferenceName MUST appear in spotifyCanvas.imageReferences. The Canvas prompt MUST explicitly state that the first frame and the last frame match @<loopAnchorReferenceName> for a seamless loop.",
+        "Reference reuse first: pick from existing global library entries and recipe-specific entries already in reference-plan.json. Declare a new reference-plan.json entry (source: \"generated_reference_needed\") only if the existing set does not cover the visual moment you want.",
+        "No text, no logo, no URL, no human face, no lipsync to the music on either deliverable. Mascot must appear at least once in the Canvas, default to a discrete reversible gesture rather than a celebration burst.",
+        "After writing song-cover-plan.json, read it back with read_file to verify it is strict JSON and self-consistent with reference-plan.json.",
+      ];
+    }
+
+    return [];
+  })();
 
   return [
     `Stage: ${input.stage}`,

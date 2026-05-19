@@ -7,6 +7,8 @@ export const MEDIA_STORAGE_BUCKETS = {
   acceptedClips: "accepted-clips",
   sunoAudio: "suno-audio",
   finalExports: "final-exports",
+  albumCovers: "album-covers",
+  spotifyCanvases: "spotify-canvases",
 } as const;
 
 export type MediaStorageBucket =
@@ -31,4 +33,6 @@ export const MEDIA_ASSET_STORAGE_BUCKET_BY_TYPE: Record<
   accepted_clip: MEDIA_STORAGE_BUCKETS.acceptedClips,
   suno_audio: MEDIA_STORAGE_BUCKETS.sunoAudio,
   final_export: MEDIA_STORAGE_BUCKETS.finalExports,
+  album_cover_image: MEDIA_STORAGE_BUCKETS.albumCovers,
+  spotify_canvas_video: MEDIA_STORAGE_BUCKETS.spotifyCanvases,
 };

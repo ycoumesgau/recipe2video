@@ -37,6 +37,14 @@ type StoragePathInput =
       compositionId: string;
       filename?: string | null;
       mimeType?: string | null;
+    }
+  | {
+      type: "album_cover_image" | "spotify_canvas_video";
+      videoId: string;
+      artifactId: string;
+      variantId: string;
+      filename?: string | null;
+      mimeType?: string | null;
     };
 
 const DEFAULT_EXTENSION_BY_TYPE: Record<MediaAssetType, string> = {
@@ -46,6 +54,8 @@ const DEFAULT_EXTENSION_BY_TYPE: Record<MediaAssetType, string> = {
   accepted_clip: "mp4",
   suno_audio: "mp3",
   final_export: "mp4",
+  album_cover_image: "png",
+  spotify_canvas_video: "mp4",
 };
 
 const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
@@ -93,6 +103,15 @@ export function buildMediaStoragePath(input: StoragePathInput): string {
       return `${input.videoId}/${sanitizeStorageFileName(input.filename)}`;
     case "final_export":
       return `${input.videoId}/${input.compositionId}.${getStorageFileExtension({
+        type: input.type,
+        filename: input.filename,
+        mimeType: input.mimeType,
+      })}`;
+    case "album_cover_image":
+    case "spotify_canvas_video":
+      return `${input.videoId}/${input.artifactId}/${
+        input.variantId
+      }.${getStorageFileExtension({
         type: input.type,
         filename: input.filename,
         mimeType: input.mimeType,

@@ -45,6 +45,9 @@ import type {
 
 import type { SunoPromptV2 } from "@/modules/recipe-agent/suno-prompt-v2.schema";
 import { SunoPromptV2Schema } from "@/modules/recipe-agent/suno-prompt-v2.schema";
+import type { SongCoverPlan } from "@/modules/recipe-agent/song-cover-plan.schema";
+import { SongCoverPlanSchema } from "@/modules/recipe-agent/song-cover-plan.schema";
+import { syncSongCoverPlan } from "@/modules/song-cover/use-cases/sync-song-cover-plan";
 
 import type {
   RecipeAgentArtifact,
@@ -152,6 +155,12 @@ export interface RecipeAgentArtifactSyncPlan {
   referencesRaw: ReferencePlanEntry[];
   sunoPrompt: string | null;
   sunoPromptV2: SunoPromptV2 | null;
+  /**
+   * Parsed `song-cover-plan.json` payload. Null when the agent did not
+   * emit the (optional) artifact — the Cover & Canvas tab renders an
+   * empty state with a CTA in that case.
+   */
+  songCoverPlan: SongCoverPlan | null;
   errors: string[];
 }
 
@@ -168,9 +177,31 @@ export function buildRecipeAgentArtifactSyncPlan(
   let referencesRaw: ReferencePlanEntry[] = [];
   let sunoPrompt: string | null = null;
   let sunoPromptV2: SunoPromptV2 | null = null;
+  let songCoverPlan: SongCoverPlan | null = null;
 
   for (const artifact of input.artifacts) {
     const content = artifact.content ?? "";
+
+    if (artifact.name === "song-cover-plan.json") {
+      const songCoverOutcome = validateSongCoverPlanArtifact(content);
+      artifactRecords.push({
+        videoId: input.videoId,
+        artifactName: artifact.name,
+        artifactPath: artifact.path,
+        content,
+        contentHash: createArtifactContentHash(content),
+        validationStatus:
+          songCoverOutcome.errors.length > 0 ? "invalid" : "valid",
+        validationErrors: songCoverOutcome.errors,
+      });
+      errors.push(
+        ...songCoverOutcome.errors.map((error) => `${artifact.name}: ${error}`),
+      );
+      if (songCoverOutcome.value) {
+        songCoverPlan = songCoverOutcome.value;
+      }
+      continue;
+    }
 
     if (artifact.name === "suno-prompt.json") {
       const jsonOutcome = validateSunoPromptJsonArtifact(content);
@@ -276,6 +307,7 @@ export function buildRecipeAgentArtifactSyncPlan(
     referencesRaw,
     sunoPrompt,
     sunoPromptV2,
+    songCoverPlan,
     errors,
   };
 }
@@ -486,7 +518,66 @@ export async function syncRecipeAgentArtifacts(
     await mergeVideoProjectRecipeData(supabase, input.videoId, sunoPatch);
   }
 
+  if (plan.songCoverPlan) {
+    const songCoverSync = await syncSongCoverPlan(supabase, {
+      videoId: input.videoId,
+      plan: plan.songCoverPlan,
+    });
+
+    // The Cover & Canvas tab surfaces unresolved canonical names so the
+    // operator can either fix the agent plan or live with the warning
+    // (manual edits in the UI still work). We do NOT block the sync on
+    // these — the rows are upserted and the artifact statuses stay on
+    // `planned` until the operator triggers a regen.
+    for (const name of songCoverSync.unresolvedCoverConditioning) {
+      plan.errors.push(
+        `song-cover-plan.json: albumCover.conditioningReferences includes '${name}' which is not in asset_library nor declared in reference-plan.json.`,
+      );
+    }
+    for (const name of songCoverSync.unresolvedCanvasImageReferences) {
+      plan.errors.push(
+        `song-cover-plan.json: spotifyCanvas.imageReferences includes '${name}' which is not in asset_library nor declared in reference-plan.json.`,
+      );
+    }
+    for (const name of songCoverSync.unresolvedCanvasVideoReferences) {
+      plan.errors.push(
+        `song-cover-plan.json: spotifyCanvas.videoReferences includes '${name}' which is not in asset_library nor declared in reference-plan.json.`,
+      );
+    }
+    if (songCoverSync.canvasPromptLoopWarning) {
+      plan.errors.push(`song-cover-plan.json: ${songCoverSync.canvasPromptLoopWarning}`);
+    }
+  }
+
   return plan;
+}
+
+function validateSongCoverPlanArtifact(content: string): {
+  value: SongCoverPlan | null;
+  errors: string[];
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    return {
+      value: null,
+      errors: [
+        `Invalid JSON: ${error instanceof Error ? error.message : "unknown parse error"}`,
+      ],
+    };
+  }
+
+  const result = SongCoverPlanSchema.safeParse(parsed);
+  if (!result.success) {
+    return {
+      value: null,
+      errors: result.error.issues.map(
+        (issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`,
+      ),
+    };
+  }
+  return { value: result.data, errors: [] };
 }
 
 export function createArtifactContentHash(content: string) {

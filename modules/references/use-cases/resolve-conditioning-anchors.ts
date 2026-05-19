@@ -17,7 +17,10 @@ import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.cons
 import { createStorageSignedUrl } from "@/modules/media-assets/services/storage-signed-url";
 
 import { findAssetLibraryByCanonicalNames } from "../repositories/asset-library.repository";
-import { isConditioningExcludedCategory } from "./conditioning-category-policy";
+import {
+  isConditioningExcludedCategory,
+  type ConditioningContext,
+} from "./conditioning-category-policy";
 import { deriveRunwayTag, makeRunwayTagsUnique } from "./derive-runway-tag";
 
 type MediaAssetStoragePick = Pick<
@@ -117,6 +120,7 @@ export interface ResolveConditioningAnchorsResult {
 export async function resolveConditioningAnchors(
   supabase: SupabaseDataClient,
   requestedNames: string[],
+  context: ConditioningContext = "recipe_state",
 ): Promise<ResolveConditioningAnchorsResult> {
   const trimmed = requestedNames
     .map((name) => name.trim())
@@ -183,7 +187,7 @@ export async function resolveConditioningAnchors(
     // dedicated `excludedAnchors` list so the UI can show the operator
     // "we kept your declared anchor but skipped this one on purpose"
     // rather than a generic "not found".
-    if (isConditioningExcludedCategory(entry.category)) {
+    if (isConditioningExcludedCategory(entry.category, context)) {
       seenEntryIds.add(entry.id);
       excludedAnchors.push({
         canonicalName: entry.canonicalName,
