@@ -236,20 +236,22 @@ export const persistReferenceOutput = inngest.createFunction(
     retries: 0,
     triggers: [{ event: INNGEST_EVENTS.referenceOutputPersistRequested }],
   },
-  async ({ event }) => {
+  async ({ event, step }) => {
     const supabase = createSupabaseAdminClient();
     const data = event.data as ReferenceOutputPersistRequestedData;
 
     await assertAllowlistedUser(data.requestedByUserId);
 
-    return persistReferenceImageOutputWorkflow(data, {
-      prepareReferenceGeneration: (referenceId) =>
-        prepareReferenceImageGeneration(supabase, referenceId),
-      finalizeReferenceOutput: (input) =>
-        finalizeReferenceImageOutput({ ...input, supabase }),
-      sendEvent: data.awaitCompletionEvent
-        ? referenceWorkflowSendEvent
-        : undefined,
-    });
+    return step.run("finalize-reference-output", async () =>
+      persistReferenceImageOutputWorkflow(data, {
+        prepareReferenceGeneration: (referenceId) =>
+          prepareReferenceImageGeneration(supabase, referenceId),
+        finalizeReferenceOutput: (input) =>
+          finalizeReferenceImageOutput({ ...input, supabase }),
+        sendEvent: data.awaitCompletionEvent
+          ? referenceWorkflowSendEvent
+          : undefined,
+      }),
+    );
   },
 );
