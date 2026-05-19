@@ -9,7 +9,7 @@ import {
 } from "@/modules/storyboard/repositories/logical-scene.repository";
 import { replaceSegmentsForVideo } from "@/modules/storyboard/repositories/segment.repository";
 import { createGpt55PlanningPromptEngine } from "@/modules/storyboard/services/gpt55-planning-prompt-engine";
-import { resolvePersistedLogicalSceneIds } from "@/modules/storyboard/services/resolve-logical-scene-ids";
+import { resolveSegmentLogicalSceneIdsForPersistence } from "@/modules/storyboard/services/resolve-logical-scene-ids";
 import type {
   CreateSeedanceSegmentInput,
   LogicalScene,
@@ -228,8 +228,8 @@ function mapSegmentsForPersistence(
   createdBy: string,
 ): CreateSeedanceSegmentInput[] {
   return segments.map((segment, index) => {
-    const mappedSceneIds = resolvePersistedLogicalSceneIds({
-      agentSceneIds: segment.logicalSceneIds,
+    const logicalSceneIds = resolveSegmentLogicalSceneIdsForPersistence({
+      segment,
       persistedScenes,
     });
 
@@ -238,10 +238,7 @@ function mapSegmentsForPersistence(
       position: segment.position ?? index + 1,
       title: segment.title,
       arc: segment.arc,
-      logicalSceneIds:
-        mappedSceneIds.length > 0
-          ? mappedSceneIds
-          : persistedScenes.map((scene) => scene.id),
+      logicalSceneIds,
       description: segment.description,
       prompt: segment.prompt,
       promptInitial: segment.promptInitial ?? segment.prompt,

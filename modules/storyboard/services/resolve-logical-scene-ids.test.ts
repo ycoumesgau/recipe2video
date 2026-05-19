@@ -7,6 +7,7 @@ import {
   extractPositionFromAgentSceneId,
   listLogicalScenesForSegment,
   resolvePersistedLogicalSceneIds,
+  resolveSegmentLogicalSceneIdsForPersistence,
 } from "./resolve-logical-scene-ids";
 
 function scene(position: number, id: string): LogicalScene {
@@ -58,6 +59,44 @@ test("buildSegmentLabelByPersistedSceneId labels scenes from agent segment mappi
 
   assert.equal(labels.get("db-1"), "S2");
   assert.equal(labels.get("db-2"), "S2");
+});
+
+test("resolveSegmentLogicalSceneIdsForPersistence does not assign all scenes on outro placeholder", () => {
+  const persisted = Array.from({ length: 36 }, (_, index) =>
+    scene(index + 1, `db-${index + 1}`),
+  );
+
+  const mapped = resolveSegmentLogicalSceneIdsForPersistence({
+    segment: {
+      arc: "licorn_celebration_outro",
+      logicalSceneIds: ["scene-outro"],
+    },
+    persistedScenes: persisted,
+  });
+
+  assert.equal(mapped.length, 1);
+  assert.equal(mapped[0], "db-36");
+});
+
+test("buildSegmentLabelByPersistedSceneId keeps lower segment when outro lists every scene id", () => {
+  const persisted = Array.from({ length: 6 }, (_, index) =>
+    scene(index + 1, `db-${index + 1}`),
+  );
+  const allIds = persisted.map((item) => item.id);
+
+  const labels = buildSegmentLabelByPersistedSceneId(
+    [
+      { position: 1, logicalSceneIds: ["db-1", "db-2"] },
+      { position: 2, logicalSceneIds: ["db-3", "db-4"] },
+      { position: 7, logicalSceneIds: allIds },
+    ],
+    persisted,
+  );
+
+  assert.equal(labels.get("db-1"), "S1");
+  assert.equal(labels.get("db-3"), "S2");
+  assert.equal(labels.get("db-5"), "S7");
+  assert.equal(labels.get("db-6"), "S7");
 });
 
 test("listLogicalScenesForSegment returns scenes in segment order", () => {
