@@ -22,6 +22,7 @@ import type { VideoProject } from "@/modules/videos/video.types";
 import type { VideoStatus } from "@/modules/videos/video-status";
 import {
   RUNWAY_DEFAULT_VIDEO_RATIO,
+  RUNWAY_MAX_REFERENCE_BYTES,
   RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES,
   RUNWAY_MAX_SEEDANCE_VIDEO_REFERENCES_TOTAL_SECONDS,
   RUNWAY_SEEDANCE2_CREDITS_PER_SECOND,
@@ -31,15 +32,6 @@ import {
 import { normalizeRunwayProgress } from "../runway-progress-normalize";
 
 const MAX_SEEDANCE_REFERENCE_INPUTS = 9;
-/**
- * Per-reference size cap enforced by Runway's API:
- *   `Asset size exceeds 16.0MB.` (path: references[i].uri)
- *
- * Surfaced as a constant so the same number is used both for the pre-flight
- * guard (here) and for the asset-library normalization script in
- * `scripts/normalize-asset-library-images.ts`.
- */
-const RUNWAY_MAX_REFERENCE_BYTES = 16 * 1024 * 1024;
 
 interface WorkflowAuthData {
   requestedByUserId: string;

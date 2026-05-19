@@ -7,7 +7,10 @@ import {
   pollRunwayTask,
   startReferenceImageGeneration,
 } from "@/modules/generation/services/runway.service";
-import { RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO } from "@/modules/generation/runway.constants";
+import {
+  RUNWAY_MAX_REFERENCE_BYTES,
+  RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+} from "@/modules/generation/runway.constants";
 import { normalizeRunwayProgress } from "@/modules/generation/runway-progress-normalize";
 import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
 
@@ -97,6 +100,8 @@ export async function generateReferenceImage(
     anchors = resolution.anchors;
     unresolvedAnchorNames = resolution.unresolvedNames;
     excludedAnchors = resolution.excludedAnchors;
+
+    assertConditioningAnchorsUnderRunwaySizeLimit(referenceId, anchors);
 
     const { promptText } = buildReferenceImagePrompt({
       storedPrompt: reference.prompt,
@@ -227,4 +232,39 @@ export async function generateReferenceImage(
     });
     throw error;
   }
+}
+
+/**
+ * Pre-flight validation of conditioning anchors against Runway's 16 MB
+ * per-asset cap. Without this guard, an oversize library PNG (typical case:
+ * a 4K kitchen render at ~17 MB) is handed to GPT-Image 2 as
+ * `referenceImages[0]`, Runway downloads it, and rejects the entire request
+ * with `Asset size exceeds 16.0MB.` — wasting an Inngest step and surfacing
+ * an opaque SDK error. Segment generation already has the same guard via
+ * `assertReferencesUnderRunwaySizeLimit` in `orchestrate-segment-generation`.
+ */
+function assertConditioningAnchorsUnderRunwaySizeLimit(
+  referenceId: string,
+  anchors: ConditioningAnchor[],
+) {
+  const oversize = anchors.filter(
+    (anchor) => anchor.fileSizeBytes > RUNWAY_MAX_REFERENCE_BYTES,
+  );
+
+  if (oversize.length === 0) {
+    return;
+  }
+
+  const limitMb = (RUNWAY_MAX_REFERENCE_BYTES / (1024 * 1024)).toFixed(1);
+  const details = oversize
+    .map((anchor) => {
+      const sizeMb = (anchor.fileSizeBytes / (1024 * 1024)).toFixed(2);
+      const mime = anchor.mimeType ? ` ${anchor.mimeType}` : "";
+      return `${anchor.canonicalName} (@${anchor.tag}, ${sizeMb}MB${mime})`;
+    })
+    .join(", ");
+
+  throw new Error(
+    `Reference ${referenceId} has conditioning anchor(s) above Runway's ${limitMb}MB-per-asset limit: ${details}. Re-encode the library asset(s) (e.g. \`npm run normalize:asset-library\`) before regenerating.`,
+  );
 }

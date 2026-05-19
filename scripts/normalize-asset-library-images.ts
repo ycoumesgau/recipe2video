@@ -50,9 +50,8 @@ import process from "node:process";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 
+import { RUNWAY_MAX_REFERENCE_BYTES } from "../modules/generation/runway.constants";
 import type { Database } from "../shared/supabase/database.types";
-
-const RUNWAY_MAX_REFERENCE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_THRESHOLD_BYTES = 12 * 1024 * 1024;
 const REFERENCE_IMAGES_BUCKET = "reference-images";
 const JPEG_QUALITY = 92;

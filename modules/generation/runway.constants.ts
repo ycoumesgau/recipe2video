@@ -33,3 +33,10 @@ export const RUNWAY_SEEDANCE2_CREDITS_PER_SECOND = 40;
  */
 export const RUNWAY_SEEDANCE2_MIN_DURATION_SECONDS = 5;
 export const RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS = 15;
+/**
+ * Per-asset size cap for every Runway endpoint that accepts a reference URI
+ * (Seedance `references[]`, GPT-Image 2 `referenceImages[]`, etc.). Oversize
+ * assets are rejected with `Asset size exceeds 16.0MB.` — see
+ * `scripts/normalize-asset-library-images.ts` for the offline fixer.
+ */
+export const RUNWAY_MAX_REFERENCE_BYTES = 16 * 1024 * 1024;

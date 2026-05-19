@@ -18,6 +18,8 @@ interface MediaRow {
   id: string;
   storage_bucket: string;
   storage_path: string;
+  file_size_bytes: number | null;
+  mime_type: string | null;
 }
 
 interface FakeData {
@@ -185,26 +187,36 @@ const media: MediaRow[] = [
     id: "media-kitchen",
     storage_bucket: "reference-images",
     storage_path: "library/kitchen/island_default.png",
+    file_size_bytes: 4 * 1024 * 1024,
+    mime_type: "image/png",
   },
   {
     id: "media-baking",
     storage_bucket: "reference-images",
     storage_path: "library/utensil/baking_dish.png",
+    file_size_bytes: 2 * 1024 * 1024,
+    mime_type: "image/png",
   },
   {
     id: "media-deprecated",
     storage_bucket: "reference-images",
     storage_path: "library/kitchen/deprecated_island.png",
+    file_size_bytes: 1 * 1024 * 1024,
+    mime_type: "image/png",
   },
   {
     id: "media-character",
     storage_bucket: "reference-images",
     storage_path: "library/character/Character-sheet.png",
+    file_size_bytes: 3 * 1024 * 1024,
+    mime_type: "image/png",
   },
   {
     id: "media-pose",
     storage_bucket: "reference-images",
     storage_path: "library/character/Luma-front-pose.png",
+    file_size_bytes: 3 * 1024 * 1024,
+    mime_type: "image/png",
   },
 ];
 
