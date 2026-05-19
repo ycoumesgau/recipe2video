@@ -771,6 +771,108 @@ test("createArtifactContentHash is stable for unchanged content", () => {
   );
 });
 
+test("buildRecipeAgentArtifactSyncPlan returns null songCoverPlan when the artifact is absent", () => {
+  const plan = buildRecipeAgentArtifactSyncPlan({ videoId, artifacts: [] });
+  assert.equal(plan.songCoverPlan, null);
+  assert.equal(plan.valid, true);
+});
+
+test("buildRecipeAgentArtifactSyncPlan parses a valid song-cover-plan.json", () => {
+  const songCoverPlanJson = JSON.stringify({
+    schemaVersion: 1,
+    albumCover: {
+      prompt:
+        "Square 1:1 album cover. Use @CharacterSheet to lock the 2D mascot identity. Use @KitchenIslandDefault as background. Use @FilledCrownFrame as the hero foreground dish.",
+      conditioningReferences: [
+        "KitchenIslandDefault",
+        "CharacterSheet",
+        "FilledCrownFrame",
+      ],
+    },
+    spotifyCanvas: {
+      prompt:
+        "Vertical 9:16 food-porn loop, 5 seconds. The first frame and the last frame must be visually identical to @FilledCrownFrame for a seamless loop.",
+      imageReferences: [
+        "KitchenIslandDefault",
+        "CharacterSheet",
+        "FilledCrownFrame",
+      ],
+      videoReferences: [],
+      loopAnchorReferenceName: "FilledCrownFrame",
+      durationSeconds: 5,
+      mascotAppearanceMode: "discrete_gesture",
+    },
+    qualityChecks: {
+      noTextOnScreen: true,
+      noLogoOrUrl: true,
+      noLipsyncToMusic: true,
+      mascotAppearsAtLeastOnce: true,
+      loopAnchorIsAlsoInImageReferences: true,
+      durationWithinSpotifyWindow: true,
+    },
+  });
+
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [artifact("song-cover-plan.json", songCoverPlanJson)],
+  });
+
+  assert.ok(plan.songCoverPlan, "Expected songCoverPlan to be populated");
+  assert.equal(plan.songCoverPlan?.schemaVersion, 1);
+  assert.equal(plan.songCoverPlan?.spotifyCanvas.durationSeconds, 5);
+  assert.equal(plan.valid, true);
+  const record = plan.artifactRecords.find(
+    (r) => r.artifactName === "song-cover-plan.json",
+  );
+  assert.ok(record, "Expected an artifact record for song-cover-plan.json");
+  assert.equal(record?.validationStatus, "valid");
+});
+
+test("buildRecipeAgentArtifactSyncPlan records validation errors for malformed song-cover-plan.json", () => {
+  const malformed = JSON.stringify({
+    schemaVersion: 1,
+    albumCover: {
+      prompt: "too short",
+      conditioningReferences: [],
+    },
+    spotifyCanvas: {
+      prompt: "missing loop",
+      imageReferences: ["KitchenIslandDefault"],
+      videoReferences: [],
+      loopAnchorReferenceName: "SomethingElse",
+      durationSeconds: 4,
+    },
+    qualityChecks: {
+      noTextOnScreen: true,
+      noLogoOrUrl: true,
+      noLipsyncToMusic: true,
+      mascotAppearsAtLeastOnce: true,
+      loopAnchorIsAlsoInImageReferences: false,
+      durationWithinSpotifyWindow: false,
+    },
+  });
+
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [artifact("song-cover-plan.json", malformed)],
+  });
+
+  assert.equal(plan.songCoverPlan, null);
+  assert.equal(plan.valid, false);
+  const record = plan.artifactRecords.find(
+    (r) => r.artifactName === "song-cover-plan.json",
+  );
+  assert.equal(record?.validationStatus, "invalid");
+  assert.ok(
+    record?.validationErrors && record.validationErrors.length > 0,
+    "Expected validation errors on the artifact record",
+  );
+  assert.ok(
+    plan.errors.some((e) => e.includes("song-cover-plan.json:")),
+    "Expected the malformed plan to surface artifact-scoped errors",
+  );
+});
+
 function artifact(name: string, content: string) {
   return {
     name,

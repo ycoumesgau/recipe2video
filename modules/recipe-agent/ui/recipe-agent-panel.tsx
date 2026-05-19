@@ -75,6 +75,7 @@ const stageLabels: Record<RecipeAgentStage, string> = {
   reference_planning: "Plan references",
   segment_prompt_revision: "Revise segment prompt",
   suno_prompt_revision: "Revise Suno prompt",
+  publication_planning: "Plan Spotify publication assets",
   general: "General recipe decision",
 };
 

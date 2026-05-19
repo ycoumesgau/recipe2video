@@ -97,7 +97,12 @@ test("SongCoverPlanSchema rejects a loop anchor missing from imageReferences", (
 });
 
 test("SongCoverPlanSchema rejects more than 9 image references", () => {
-  const plan = basePlan();
+  const plan = basePlan() as ReturnType<typeof basePlan> & {
+    spotifyCanvas: {
+      imageReferences: string[];
+      loopAnchorReferenceName: string;
+    };
+  };
   plan.spotifyCanvas.imageReferences = Array.from(
     { length: 10 },
     (_, i) => `Ref${i}`,
@@ -109,13 +114,20 @@ test("SongCoverPlanSchema rejects more than 9 image references", () => {
 
 test("SongCoverPlanSchema rejects more than 3 video references", () => {
   const plan = basePlan();
-  plan.spotifyCanvas.videoReferences = ["VideoA", "VideoB", "VideoC", "VideoD"];
+  (plan.spotifyCanvas as { videoReferences: string[] }).videoReferences = [
+    "VideoA",
+    "VideoB",
+    "VideoC",
+    "VideoD",
+  ];
   const result = SongCoverPlanSchema.safeParse(plan);
   assert.equal(result.success, false);
 });
 
 test("SongCoverPlanSchema rejects more than 16 cover conditioning references", () => {
-  const plan = basePlan();
+  const plan = basePlan() as ReturnType<typeof basePlan> & {
+    albumCover: { conditioningReferences: string[] };
+  };
   plan.albumCover.conditioningReferences = Array.from(
     { length: 17 },
     (_, i) => `Ref${i}`,
