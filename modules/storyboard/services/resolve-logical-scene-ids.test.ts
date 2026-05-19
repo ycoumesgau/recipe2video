@@ -6,8 +6,8 @@ import {
   buildSegmentLabelByPersistedSceneId,
   extractPositionFromAgentSceneId,
   listLogicalScenesForSegment,
+  remapAllSegmentsLogicalSceneIdsForPersistence,
   resolvePersistedLogicalSceneIds,
-  resolveSegmentLogicalSceneIdsForPersistence,
 } from "./resolve-logical-scene-ids";
 
 function scene(position: number, id: string): LogicalScene {
@@ -61,21 +61,52 @@ test("buildSegmentLabelByPersistedSceneId labels scenes from agent segment mappi
   assert.equal(labels.get("db-2"), "S2");
 });
 
-test("resolveSegmentLogicalSceneIdsForPersistence does not assign all scenes on outro placeholder", () => {
+test("remapAllSegments assigns outro via subtraction of prior segments", () => {
   const persisted = Array.from({ length: 36 }, (_, index) =>
     scene(index + 1, `db-${index + 1}`),
   );
+  const agentScenePositionById = new Map(
+    Array.from({ length: 36 }, (_, index) => [`scene-${index + 1}`, index + 1]),
+  );
 
-  const mapped = resolveSegmentLogicalSceneIdsForPersistence({
-    segment: {
+  const segments = [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      position: index + 1,
+      arc: "body",
+      logicalSceneIds: Array.from({ length: 5 }, (_, offset) => {
+        const position = index * 5 + offset + 1;
+        return `scene-${position}`;
+      }),
+    })),
+    {
+      position: 6,
+      arc: "finishing",
+      logicalSceneIds: Array.from({ length: 8 }, (_, offset) => `scene-${26 + offset}`),
+    },
+    {
+      position: 7,
       arc: "licorn_celebration_outro",
       logicalSceneIds: ["scene-outro"],
     },
+  ];
+
+  const remapped = remapAllSegmentsLogicalSceneIdsForPersistence({
+    segments,
     persistedScenes: persisted,
+    agentScenePositionById,
   });
 
-  assert.equal(mapped.length, 1);
-  assert.equal(mapped[0], "db-36");
+  assert.deepEqual(remapped.get(6), [
+    "db-26",
+    "db-27",
+    "db-28",
+    "db-29",
+    "db-30",
+    "db-31",
+    "db-32",
+    "db-33",
+  ]);
+  assert.deepEqual(remapped.get(7), ["db-34", "db-35", "db-36"]);
 });
 
 test("buildSegmentLabelByPersistedSceneId keeps lower segment when outro lists every scene id", () => {
@@ -88,7 +119,11 @@ test("buildSegmentLabelByPersistedSceneId keeps lower segment when outro lists e
     [
       { position: 1, logicalSceneIds: ["db-1", "db-2"] },
       { position: 2, logicalSceneIds: ["db-3", "db-4"] },
-      { position: 7, logicalSceneIds: allIds },
+      {
+        position: 7,
+        arc: "licorn_celebration_outro",
+        logicalSceneIds: allIds,
+      },
     ],
     persisted,
   );
@@ -99,15 +134,43 @@ test("buildSegmentLabelByPersistedSceneId keeps lower segment when outro lists e
   assert.equal(labels.get("db-6"), "S7");
 });
 
-test("listLogicalScenesForSegment returns scenes in segment order", () => {
-  const persisted = [scene(1, "db-1"), scene(2, "db-2")];
+test("listLogicalScenesForSegment uses remapped outro tail scenes", () => {
+  const persisted = Array.from({ length: 36 }, (_, index) =>
+    scene(index + 1, `db-${index + 1}`),
+  );
+  const agentScenePositionById = new Map(
+    Array.from({ length: 36 }, (_, index) => [`scene-${index + 1}`, index + 1]),
+  );
+  const segments = [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      position: index + 1,
+      arc: "body",
+      logicalSceneIds: Array.from({ length: 5 }, (_, offset) => {
+        const position = index * 5 + offset + 1;
+        return `scene-${position}`;
+      }),
+    })),
+    {
+      position: 6,
+      arc: "finishing",
+      logicalSceneIds: Array.from({ length: 8 }, (_, offset) => `scene-${26 + offset}`),
+    },
+    {
+      position: 7,
+      arc: "licorn_celebration_outro",
+      logicalSceneIds: ["scene-outro"],
+    },
+  ];
+
   const included = listLogicalScenesForSegment(
-    { logicalSceneIds: ["demo-scene-02", "demo-scene-01"] },
+    segments[6],
     persisted,
+    segments,
+    agentScenePositionById,
   );
 
   assert.deepEqual(
     included.map((item) => item.position),
-    [2, 1],
+    [34, 35, 36],
   );
 });

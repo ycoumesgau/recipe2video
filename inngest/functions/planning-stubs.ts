@@ -9,7 +9,7 @@ import {
 } from "@/modules/storyboard/repositories/logical-scene.repository";
 import { replaceSegmentsForVideo } from "@/modules/storyboard/repositories/segment.repository";
 import { createGpt55PlanningPromptEngine } from "@/modules/storyboard/services/gpt55-planning-prompt-engine";
-import { resolveSegmentLogicalSceneIdsForPersistence } from "@/modules/storyboard/services/resolve-logical-scene-ids";
+import { remapAllSegmentsLogicalSceneIdsForPersistence } from "@/modules/storyboard/services/resolve-logical-scene-ids";
 import type {
   CreateSeedanceSegmentInput,
   LogicalScene,
@@ -227,18 +227,24 @@ function mapSegmentsForPersistence(
   persistedScenes: LogicalScene[],
   createdBy: string,
 ): CreateSeedanceSegmentInput[] {
+  const logicalSceneIdsByPosition = remapAllSegmentsLogicalSceneIdsForPersistence({
+    segments: segments.map((segment, index) => ({
+      position: segment.position ?? index + 1,
+      arc: segment.arc,
+      logicalSceneIds: segment.logicalSceneIds,
+    })),
+    persistedScenes,
+  });
+
   return segments.map((segment, index) => {
-    const logicalSceneIds = resolveSegmentLogicalSceneIdsForPersistence({
-      segment,
-      persistedScenes,
-    });
+    const position = segment.position ?? index + 1;
 
     return {
       videoId,
-      position: segment.position ?? index + 1,
+      position,
       title: segment.title,
       arc: segment.arc,
-      logicalSceneIds,
+      logicalSceneIds: logicalSceneIdsByPosition.get(position) ?? [],
       description: segment.description,
       prompt: segment.prompt,
       promptInitial: segment.promptInitial ?? segment.prompt,

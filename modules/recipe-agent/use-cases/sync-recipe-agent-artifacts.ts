@@ -13,7 +13,7 @@ import {
   upsertLogicalScenesForVideoByPosition,
   type CreateLogicalSceneInput,
 } from "@/modules/storyboard/repositories/logical-scene.repository";
-import { resolveSegmentLogicalSceneIdsForPersistence } from "@/modules/storyboard/services/resolve-logical-scene-ids";
+import { remapAllSegmentsLogicalSceneIdsForPersistence } from "@/modules/storyboard/services/resolve-logical-scene-ids";
 import {
   listSegmentsByVideoId,
   replaceSegmentsForVideo,
@@ -596,13 +596,19 @@ function remapSegmentInputsForPersistedScenes(
   persistedScenes: LogicalScene[],
   agentScenePositionById: ReadonlyMap<string, number>,
 ): ReturnType<typeof toCreateSegmentInput>[] {
+  const logicalSceneIdsByPosition = remapAllSegmentsLogicalSceneIdsForPersistence({
+    segments: segments.map((segment) => ({
+      position: segment.position,
+      arc: segment.arc,
+      logicalSceneIds: segment.logicalSceneIds,
+    })),
+    persistedScenes,
+    agentScenePositionById,
+  });
+
   return segments.map((segment) => ({
     ...segment,
-    logicalSceneIds: resolveSegmentLogicalSceneIdsForPersistence({
-      segment: { arc: segment.arc, logicalSceneIds: segment.logicalSceneIds },
-      persistedScenes,
-      agentScenePositionById,
-    }),
+    logicalSceneIds: logicalSceneIdsByPosition.get(segment.position) ?? [],
   }));
 }
 

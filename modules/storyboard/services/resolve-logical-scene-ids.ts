@@ -8,6 +8,12 @@ const OUTRO_PLACEHOLDER_SCENE_IDS = new Set([
   "licorn_celebration_outro",
 ]);
 
+export type SegmentLogicalSceneLinkInput = {
+  position: number;
+  arc: string;
+  logicalSceneIds: string[];
+};
+
 /**
  * Extracts the editorial scene position encoded in agent-emitted scene IDs
  * (e.g. `scene-12`, `demo-scene-01`, `video-abc-scene-05`).
@@ -20,6 +26,33 @@ export function extractPositionFromAgentSceneId(sceneId: string): number | null 
 
   const parsed = Number.parseInt(match[1], 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function isOutroPlaceholderSceneId(sceneId: string): boolean {
+  return OUTRO_PLACEHOLDER_SCENE_IDS.has(sceneId.trim().toLowerCase());
+}
+
+function collectUnclaimedSceneIds(
+  persistedScenes: LogicalScene[],
+  claimedPositions: Set<number>,
+): string[] {
+  return persistedScenes
+    .filter((scene) => !claimedPositions.has(scene.position))
+    .sort((left, right) => left.position - right.position)
+    .map((scene) => scene.id);
+}
+
+function claimScenePositions(
+  persistedScenes: LogicalScene[],
+  sceneIds: string[],
+  claimedPositions: Set<number>,
+): void {
+  for (const sceneId of sceneIds) {
+    const scene = persistedScenes.find((item) => item.id === sceneId);
+    if (scene) {
+      claimedPositions.add(scene.position);
+    }
+  }
 }
 
 /**
@@ -60,59 +93,82 @@ export function resolvePersistedLogicalSceneIds(input: {
 }
 
 /**
- * Maps a segment's agent scene ids to persisted row ids for DB storage.
+ * Resolves logical scene links for every segment in editorial order.
  *
- * Never falls back to "all scenes" — that corrupts storyboard linking when
- * placeholder ids (e.g. `scene-outro`) fail to resolve.
+ * Non-outro segments use agent `logicalSceneIds`. The outro segment receives
+ * every scene not already claimed by earlier segments (e.g. scenes 34–36 when
+ * segment 6 ends at scene 33).
+ */
+export function remapAllSegmentsLogicalSceneIdsForPersistence(input: {
+  segments: SegmentLogicalSceneLinkInput[];
+  persistedScenes: LogicalScene[];
+  agentScenePositionById?: ReadonlyMap<string, number>;
+}): Map<number, string[]> {
+  const sortedScenes = [...input.persistedScenes].sort(
+    (left, right) => left.position - right.position,
+  );
+  const claimedPositions = new Set<number>();
+  const idsBySegmentPosition = new Map<number, string[]>();
+
+  const editorialSegments = [...input.segments].sort(
+    (left, right) => left.position - right.position,
+  );
+  const outroSegments = editorialSegments.filter((segment) => isOutroSegment(segment));
+  const bodySegments = editorialSegments.filter((segment) => !isOutroSegment(segment));
+
+  for (const segment of bodySegments) {
+    const mapped = resolvePersistedLogicalSceneIds({
+      agentSceneIds: segment.logicalSceneIds,
+      persistedScenes: sortedScenes,
+      agentScenePositionById: input.agentScenePositionById,
+    });
+    claimScenePositions(sortedScenes, mapped, claimedPositions);
+    idsBySegmentPosition.set(segment.position, mapped);
+  }
+
+  for (const segment of outroSegments) {
+    const explicitAgentIds = segment.logicalSceneIds.filter(
+      (sceneId) => !isOutroPlaceholderSceneId(sceneId),
+    );
+    const remainingSceneIds = collectUnclaimedSceneIds(sortedScenes, claimedPositions);
+
+    const mappedFromAgent =
+      remainingSceneIds.length === 0
+        ? resolvePersistedLogicalSceneIds({
+            agentSceneIds: explicitAgentIds,
+            persistedScenes: sortedScenes,
+            agentScenePositionById: input.agentScenePositionById,
+          }).filter((sceneId) => {
+            const scene = sortedScenes.find((item) => item.id === sceneId);
+            return scene != null && !claimedPositions.has(scene.position);
+          })
+        : [];
+
+    const outroSceneIds =
+      remainingSceneIds.length > 0 ? remainingSceneIds : mappedFromAgent;
+
+    claimScenePositions(sortedScenes, outroSceneIds, claimedPositions);
+    idsBySegmentPosition.set(segment.position, outroSceneIds);
+  }
+
+  return idsBySegmentPosition;
+}
+
+/**
+ * @deprecated Prefer `remapAllSegmentsLogicalSceneIdsForPersistence` for batch mapping.
  */
 export function resolveSegmentLogicalSceneIdsForPersistence(input: {
   segment: { arc: string; logicalSceneIds: string[] };
   persistedScenes: LogicalScene[];
   agentScenePositionById?: ReadonlyMap<string, number>;
 }): string[] {
-  const agentSceneIds = expandOutroPlaceholderSceneIds(
-    input.segment.logicalSceneIds,
-    input.persistedScenes,
-    input.segment.arc,
-  );
-
-  const mapped = resolvePersistedLogicalSceneIds({
-    agentSceneIds,
+  const mapped = remapAllSegmentsLogicalSceneIdsForPersistence({
+    segments: [input.segment],
     persistedScenes: input.persistedScenes,
     agentScenePositionById: input.agentScenePositionById,
   });
 
-  if (mapped.length > 0) {
-    return mapped;
-  }
-
-  if (isOutroSegment(input.segment)) {
-    const lastScene = input.persistedScenes.at(-1);
-    return lastScene ? [lastScene.id] : [];
-  }
-
-  return [];
-}
-
-function expandOutroPlaceholderSceneIds(
-  agentSceneIds: string[],
-  persistedScenes: LogicalScene[],
-  arc: string,
-): string[] {
-  if (!isOutroSegment({ arc }) || persistedScenes.length === 0) {
-    return agentSceneIds;
-  }
-
-  const lastScene = persistedScenes.at(-1);
-  if (!lastScene) {
-    return agentSceneIds;
-  }
-
-  return agentSceneIds.map((agentSceneId) =>
-    OUTRO_PLACEHOLDER_SCENE_IDS.has(agentSceneId.trim().toLowerCase())
-      ? lastScene.id
-      : agentSceneId,
-  );
+  return mapped.values().next().value ?? [];
 }
 
 /**
@@ -166,16 +222,20 @@ export function buildSegmentLabelByPersistedSceneId(
     }
   }
 
+  const remappedIds = remapAllSegmentsLogicalSceneIdsForPersistence({
+    segments,
+    persistedScenes,
+    agentScenePositionById,
+  });
+
   const sortedSegments = [...segments].sort((left, right) => left.position - right.position);
 
   for (const segment of sortedSegments) {
     const label = `S${segment.position}`;
-    for (const agentSceneId of segment.logicalSceneIds) {
-      const scene = resolvePersistedLogicalScene(
-        agentSceneId,
-        persistedScenes,
-        agentScenePositionById,
-      );
+    const sceneIds = remappedIds.get(segment.position) ?? segment.logicalSceneIds;
+
+    for (const sceneId of sceneIds) {
+      const scene = persistedScenes.find((item) => item.id === sceneId);
       if (scene && !labels.has(scene.id)) {
         labels.set(scene.id, label);
       }
@@ -189,17 +249,20 @@ export function buildSegmentLabelByPersistedSceneId(
  * Lists logical scenes included in a segment, using persisted row IDs.
  */
 export function listLogicalScenesForSegment(
-  segment: { logicalSceneIds: string[] },
+  segment: { position: number; arc: string; logicalSceneIds: string[] },
   persistedScenes: LogicalScene[],
+  allSegments: SegmentLogicalSceneLinkInput[],
   agentScenePositionById?: ReadonlyMap<string, number>,
 ): LogicalScene[] {
-  return segment.logicalSceneIds
-    .map((agentSceneId) =>
-      resolvePersistedLogicalScene(
-        agentSceneId,
-        persistedScenes,
-        agentScenePositionById,
-      ),
-    )
+  const remappedIds = remapAllSegmentsLogicalSceneIdsForPersistence({
+    segments: allSegments,
+    persistedScenes,
+    agentScenePositionById,
+  });
+
+  const sceneIds = remappedIds.get(segment.position) ?? segment.logicalSceneIds;
+
+  return sceneIds
+    .map((sceneId) => persistedScenes.find((scene) => scene.id === sceneId))
     .filter((scene): scene is LogicalScene => Boolean(scene));
 }
