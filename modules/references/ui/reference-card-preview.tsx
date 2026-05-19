@@ -20,7 +20,7 @@ export function ReferenceCardPreview({
     return (
       <div
         className={cn(
-          "mx-3 flex aspect-[9/16] max-h-48 items-center justify-center rounded-lg border border-dashed bg-muted/40",
+          "mx-3 flex h-40 items-center justify-center rounded-lg border border-dashed bg-muted/40",
           className,
         )}
       >
@@ -30,16 +30,11 @@ export function ReferenceCardPreview({
   }
 
   return (
-    <div
-      className={cn(
-        "group/preview relative mx-3 overflow-hidden rounded-lg bg-muted/30",
-        className,
-      )}
-    >
+    <div className={cn("group/preview relative mx-3", className)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt={alt}
-        className="aspect-[9/16] max-h-48 w-full object-cover"
+        className="h-40 w-full rounded-lg object-cover"
         src={previewUrl}
       />
       {onExpand ? (
