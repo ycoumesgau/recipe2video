@@ -258,7 +258,7 @@ function ContinueToSegmentsCard({
                         ? `missing approval — ${segment.missingApprovedReferences.join(", ")}`
                         : null,
                       segment.missingRunwayUploads.length > 0
-                        ? `missing Runway upload — ${segment.missingRunwayUploads.join(", ")}`
+                        ? `missing stored image — ${segment.missingRunwayUploads.join(", ")}`
                         : null,
                     ]
                       .filter(Boolean)
@@ -474,7 +474,7 @@ function SegmentReadinessCard({
 function formatMissing(segment: SegmentReferenceReadiness) {
   const missing = [
     ...segment.missingApprovedReferences.map((item) => `${item} approval`),
-    ...segment.missingRunwayUploads.map((item) => `${item} Runway URI`),
+    ...segment.missingRunwayUploads.map((item) => `${item} storage`),
   ];
 
   return missing.length > 0 ? missing.join(", ") : "Ready";

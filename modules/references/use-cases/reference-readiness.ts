@@ -37,14 +37,11 @@ export function buildSegmentReadiness(
           ({ asset, segmentReference }) =>
             !segmentReference.runwayUri &&
             isApprovedReference(asset) &&
-            // Library globals are streamed to Runway just-in-time via signed
-            // URLs (see `resolveSegmentSeedanceReferences`). They never carry
-            // a persisted `runwayUri`, so flagging them as "needs Runway
-            // upload" misled users into hunting for a button that does not
-            // exist. Recipe-specific approved references still need an
-            // explicit upload (`uploadReferenceToRunwayAction`).
+            // Library globals and recipe rows are streamed to Runway via signed
+            // URLs at Seedance time. `runway_uri` is audit-only and is cleared
+            // when the operator selects another image variant.
             !isLibraryGlobal(asset) &&
-            !asset?.runwayUri,
+            !hasStoredReferenceMedia(asset),
         )
         .map(({ segmentReference }) => segmentReference.label || segmentReference.name),
     };
@@ -109,4 +106,8 @@ function isApprovedReference(reference: ReferenceAsset | undefined) {
 
 function isLibraryGlobal(reference: ReferenceAsset | undefined) {
   return reference?.source === "asset_library";
+}
+
+function hasStoredReferenceMedia(reference: ReferenceAsset | undefined) {
+  return Boolean(reference?.mediaAssetId);
 }

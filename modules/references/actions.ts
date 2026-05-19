@@ -388,7 +388,7 @@ export async function markReferencesReadyAction(formData: FormData) {
               ? `missing approval: ${segment.missingApprovedReferences.join(", ")}`
               : null,
             segment.missingRunwayUploads.length > 0
-              ? `missing Runway upload: ${segment.missingRunwayUploads.join(", ")}`
+              ? `missing stored image: ${segment.missingRunwayUploads.join(", ")}`
               : null,
           ].filter(Boolean);
           return `${segment.segmentTitle} (${issues.join("; ")})`;

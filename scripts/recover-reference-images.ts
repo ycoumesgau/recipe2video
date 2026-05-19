@@ -11,6 +11,7 @@
  *   --runway-task-id=<uuid> Override task id (when DB row lost it)
  *   --requested-by-user-id=<uuid>  Cost log attribution (else from cost_logs)
  *   --dry-run               Print actions without writing
+ *   --reconcile-stuck       Fix rows stuck in `generating` (Runway done, persist failed)
  */
 import { readFileSync } from "node:fs";
 
@@ -21,6 +22,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/shared/supabase/database.types";
 
 type RecoverySupabaseClient = SupabaseClient<Database>;
+type ReferenceRow = Database["public"]["Tables"]["reference_assets"]["Row"];
 
 const DEFAULT_VIDEO_ID = "4c1053b6-ecfd-4af3-89f2-f866aa2a295b";
 const REFERENCE_IMAGES_BUCKET = "reference-images";
@@ -65,7 +67,10 @@ async function main() {
       if (args.referenceId && reference.id !== args.referenceId) {
         return false;
       }
-      if (reference.media_asset_id) {
+      if (args.reconcileStuck) {
+        return reference.status === "generating";
+      }
+      if (reference.media_asset_id && reference.status !== "generating") {
         return false;
       }
       if (args.referenceId) {
@@ -104,6 +109,21 @@ async function main() {
 
   const results = [];
   for (const { reference, runwayTaskId } of candidates) {
+    if (args.reconcileStuck) {
+      results.push(
+        await reconcileStuckReferenceRow({
+          supabase,
+          runway,
+          reference,
+          videoId: args.videoId,
+          runwayTaskId,
+          requestedByUserId,
+          dryRun: args.dryRun,
+        }),
+      );
+      continue;
+    }
+
     if (!runwayTaskId) {
       results.push({
         referenceId: reference.id,
@@ -114,147 +134,301 @@ async function main() {
       continue;
     }
 
-    const task = await runway.tasks.retrieve(runwayTaskId);
-    if (task.status !== "SUCCEEDED") {
-      results.push({
-        referenceId: reference.id,
-        canonicalName: reference.canonical_name,
+    results.push(
+      await recoverSucceededRunwayTask({
+        supabase,
+        runway,
+        reference,
+        videoId: args.videoId,
         runwayTaskId,
-        runwayStatus: task.status,
-        recovered: false,
-        reason: `Runway task is ${task.status}, not SUCCEEDED.`,
-      });
-      continue;
-    }
-
-    const outputUrl = task.output?.[0];
-    if (!outputUrl) {
-      results.push({
-        referenceId: reference.id,
-        canonicalName: reference.canonical_name,
-        runwayTaskId,
-        runwayStatus: task.status,
-        recovered: false,
-        reason: "Runway task succeeded but returned no output URL.",
-      });
-      continue;
-    }
-
-    if (args.dryRun) {
-      results.push({
-        referenceId: reference.id,
-        canonicalName: reference.canonical_name,
-        runwayTaskId,
-        runwayStatus: task.status,
-        outputUrl,
-        recovered: false,
-        reason: "dry_run: would persist output.",
-      });
-      continue;
-    }
-
-    const response = await fetch(outputUrl);
-    if (!response.ok) {
-      throw new Error(
-        `Download failed for ${reference.canonical_name}: HTTP ${response.status}`,
-      );
-    }
-
-    const body = Buffer.from(await response.arrayBuffer());
-    const mimeType = response.headers.get("content-type") ?? "image/png";
-    const extension = extensionForMimeType(mimeType);
-    const storagePath = `${args.videoId}/${reference.id}/${runwayTaskId}.${extension}`;
-
-    const uploadResult = await supabase.storage
-      .from(REFERENCE_IMAGES_BUCKET)
-      .upload(storagePath, body, {
-        contentType: mimeType,
-        upsert: true,
-      });
-    if (uploadResult.error) {
-      throw new Error(
-        `Storage upload failed for ${reference.canonical_name}: ${uploadResult.error.message}`,
-      );
-    }
-
-    const { data: mediaAsset, error: mediaError } = await supabase
-      .from("media_assets")
-      .insert({
-        video_id: args.videoId,
-        type: "reference_image",
-        provider: "runway",
-        storage_bucket: REFERENCE_IMAGES_BUCKET,
-        storage_path: storagePath,
-        runway_output_url: outputUrl,
-        original_filename: `${reference.id}.${extension}`,
-        mime_type: mimeType,
-        file_size_bytes: body.length,
-        status: "stored",
-        metadata: {
-          source: "runway_text_to_image_recovery",
-          recovery: true,
-          referenceId: reference.id,
-          referenceVariantId: runwayTaskId,
-          runwayTaskId,
-          model: REFERENCE_IMAGE_MODEL,
-        },
-        created_by: requestedByUserId,
-      })
-      .select("*")
-      .single();
-
-    if (mediaError) {
-      throw new Error(
-        `media_assets insert failed for ${reference.canonical_name}: ${mediaError.message}`,
-      );
-    }
-
-    const { error: referenceError } = await supabase
-      .from("reference_assets")
-      .update({
-        media_asset_id: mediaAsset.id,
-        status: "generated",
-        runway_uri: null,
-        runway_task_id: null,
-        runway_task_status: null,
-        runway_progress: null,
-      })
-      .eq("id", reference.id);
-
-    if (referenceError) {
-      throw new Error(
-        `reference_assets update failed for ${reference.canonical_name}: ${referenceError.message}`,
-      );
-    }
-
-    await supabase.from("cost_logs").insert({
-      video_id: args.videoId,
-      segment_id: null,
-      provider: "runway",
-      model: REFERENCE_IMAGE_MODEL,
-      operation: "reference_image_generation_recovered",
-      credits_used: null,
-      metadata: {
-        referenceId: reference.id,
-        runwayTaskId,
-        mediaAssetId: mediaAsset.id,
-        recovery: true,
-      },
-      created_by: requestedByUserId,
-    });
-
-    results.push({
-      referenceId: reference.id,
-      canonicalName: reference.canonical_name,
-      runwayTaskId,
-      runwayStatus: task.status,
-      mediaAssetId: mediaAsset.id,
-      storagePath,
-      recovered: true,
-    });
+        requestedByUserId,
+        dryRun: args.dryRun,
+      }),
+    );
   }
 
   console.log(JSON.stringify({ videoId: args.videoId, results }, null, 2));
+}
+
+async function reconcileStuckReferenceRow(input: {
+  supabase: RecoverySupabaseClient;
+  runway: RunwayML;
+  reference: ReferenceRow;
+  videoId: string;
+  runwayTaskId: string | undefined;
+  requestedByUserId: string;
+  dryRun: boolean;
+}) {
+  const { reference } = input;
+  const runwayTaskId =
+    input.runwayTaskId ?? reference.runway_task_id ?? undefined;
+
+  if (!runwayTaskId) {
+    if (input.dryRun) {
+      return {
+        referenceId: reference.id,
+        canonicalName: reference.canonical_name,
+        reconciled: false,
+        reason: "dry_run: would mark failed (missing task id).",
+      };
+    }
+    await input.supabase
+      .from("reference_assets")
+      .update({ status: "failed" })
+      .eq("id", reference.id);
+    return {
+      referenceId: reference.id,
+      canonicalName: reference.canonical_name,
+      reconciled: true,
+      action: "marked_failed_missing_task_id",
+    };
+  }
+
+  const task = await input.runway.tasks.retrieve(runwayTaskId);
+  const runwaySucceeded =
+    task.status === "SUCCEEDED" || reference.runway_task_status === "SUCCEEDED";
+
+  if (!runwaySucceeded) {
+    if (task.status === "FAILED" || task.status === "CANCELLED") {
+      if (!input.dryRun) {
+        await input.supabase
+          .from("reference_assets")
+          .update({ status: "failed" })
+          .eq("id", reference.id);
+      }
+      return {
+        referenceId: reference.id,
+        canonicalName: reference.canonical_name,
+        reconciled: true,
+        action: "marked_failed_runway_terminal",
+        runwayStatus: task.status,
+      };
+    }
+    return {
+      referenceId: reference.id,
+      canonicalName: reference.canonical_name,
+      reconciled: false,
+      reason: `Runway task is still ${task.status}.`,
+    };
+  }
+
+  const existingMedia = await findMediaForRunwayTask(
+    input.supabase,
+    input.videoId,
+    reference.id,
+    runwayTaskId,
+  );
+
+  if (existingMedia) {
+    if (input.dryRun) {
+      return {
+        referenceId: reference.id,
+        canonicalName: reference.canonical_name,
+        reconciled: false,
+        reason: `dry_run: would link media ${existingMedia.id}.`,
+      };
+    }
+    await linkReferenceToMedia(input.supabase, reference.id, existingMedia.id);
+    return {
+      referenceId: reference.id,
+      canonicalName: reference.canonical_name,
+      reconciled: true,
+      action: "linked_existing_media_for_task",
+      mediaAssetId: existingMedia.id,
+    };
+  }
+
+  return recoverSucceededRunwayTask({
+    supabase: input.supabase,
+    runway: input.runway,
+    reference,
+    videoId: input.videoId,
+    runwayTaskId,
+    requestedByUserId: input.requestedByUserId,
+    dryRun: input.dryRun,
+    recovery: true,
+  });
+}
+
+async function recoverSucceededRunwayTask(input: {
+  supabase: RecoverySupabaseClient;
+  runway: RunwayML;
+  reference: ReferenceRow;
+  videoId: string;
+  runwayTaskId: string;
+  requestedByUserId: string;
+  dryRun: boolean;
+  recovery?: boolean;
+}) {
+  const task = await input.runway.tasks.retrieve(input.runwayTaskId);
+  if (task.status !== "SUCCEEDED") {
+    return {
+      referenceId: input.reference.id,
+      canonicalName: input.reference.canonical_name,
+      runwayTaskId: input.runwayTaskId,
+      runwayStatus: task.status,
+      recovered: false,
+      reason: `Runway task is ${task.status}, not SUCCEEDED.`,
+    };
+  }
+
+  const outputUrl = task.output?.[0];
+  if (!outputUrl) {
+    return {
+      referenceId: input.reference.id,
+      canonicalName: input.reference.canonical_name,
+      runwayTaskId: input.runwayTaskId,
+      runwayStatus: task.status,
+      recovered: false,
+      reason: "Runway task succeeded but returned no output URL.",
+    };
+  }
+
+  if (input.dryRun) {
+    return {
+      referenceId: input.reference.id,
+      canonicalName: input.reference.canonical_name,
+      runwayTaskId: input.runwayTaskId,
+      runwayStatus: task.status,
+      recovered: false,
+      reason: "dry_run: would persist output.",
+    };
+  }
+
+  const response = await fetch(outputUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Download failed for ${input.reference.canonical_name}: HTTP ${response.status}`,
+    );
+  }
+
+  const body = Buffer.from(await response.arrayBuffer());
+  const mimeType = response.headers.get("content-type") ?? "image/png";
+  const extension = extensionForMimeType(mimeType);
+  const storagePath = `${input.videoId}/${input.reference.id}/${input.runwayTaskId}.${extension}`;
+
+  const uploadResult = await input.supabase.storage
+    .from(REFERENCE_IMAGES_BUCKET)
+    .upload(storagePath, body, {
+      contentType: mimeType,
+      upsert: true,
+    });
+  if (uploadResult.error) {
+    throw new Error(
+      `Storage upload failed for ${input.reference.canonical_name}: ${uploadResult.error.message}`,
+    );
+  }
+
+  const { data: mediaAsset, error: mediaError } = await input.supabase
+    .from("media_assets")
+    .insert({
+      video_id: input.videoId,
+      type: "reference_image",
+      provider: "runway",
+      storage_bucket: REFERENCE_IMAGES_BUCKET,
+      storage_path: storagePath,
+      runway_output_url: outputUrl,
+      original_filename: `${input.reference.id}.${extension}`,
+      mime_type: mimeType,
+      file_size_bytes: body.length,
+      status: "stored",
+      metadata: {
+        source: input.recovery
+          ? "runway_text_to_image_recovery"
+          : "runway_text_to_image",
+        recovery: input.recovery ?? false,
+        referenceId: input.reference.id,
+        referenceVariantId: input.runwayTaskId,
+        runwayTaskId: input.runwayTaskId,
+        model: REFERENCE_IMAGE_MODEL,
+      },
+      created_by: input.requestedByUserId,
+    })
+    .select("*")
+    .single();
+
+  if (mediaError) {
+    throw new Error(
+      `media_assets insert failed for ${input.reference.canonical_name}: ${mediaError.message}`,
+    );
+  }
+
+  await linkReferenceToMedia(
+    input.supabase,
+    input.reference.id,
+    mediaAsset.id,
+  );
+
+  await input.supabase.from("cost_logs").insert({
+    video_id: input.videoId,
+    segment_id: null,
+    provider: "runway",
+    model: REFERENCE_IMAGE_MODEL,
+    operation: "reference_image_generation_recovered",
+    credits_used: null,
+    metadata: {
+      referenceId: input.reference.id,
+      runwayTaskId: input.runwayTaskId,
+      mediaAssetId: mediaAsset.id,
+      recovery: true,
+    },
+    created_by: input.requestedByUserId,
+  });
+
+  return {
+    referenceId: input.reference.id,
+    canonicalName: input.reference.canonical_name,
+    runwayTaskId: input.runwayTaskId,
+    runwayStatus: task.status,
+    mediaAssetId: mediaAsset.id,
+    storagePath,
+    recovered: true,
+  };
+}
+
+async function findMediaForRunwayTask(
+  supabase: RecoverySupabaseClient,
+  videoId: string,
+  referenceId: string,
+  runwayTaskId: string,
+) {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("id, storage_path, metadata")
+    .eq("video_id", videoId)
+    .eq("type", "reference_image")
+    .contains("metadata", { referenceId, runwayTaskId })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`media_assets lookup failed: ${error.message}`);
+  }
+
+  return data;
+}
+
+async function linkReferenceToMedia(
+  supabase: RecoverySupabaseClient,
+  referenceId: string,
+  mediaAssetId: string,
+) {
+  const { error } = await supabase
+    .from("reference_assets")
+    .update({
+      media_asset_id: mediaAssetId,
+      status: "generated",
+      runway_uri: null,
+      runway_task_id: null,
+      runway_task_status: null,
+      runway_progress: null,
+    })
+    .eq("id", referenceId);
+
+  if (error) {
+    throw new Error(`reference_assets update failed: ${error.message}`);
+  }
 }
 
 async function loadRunwayTaskIdsFromCostLogs(
@@ -332,10 +506,15 @@ function parseArgs(argv: string[]) {
   let runwayTaskId: string | undefined;
   let requestedByUserId: string | undefined;
   let dryRun = false;
+  let reconcileStuck = false;
 
   for (const arg of argv) {
     if (arg === "--dry-run") {
       dryRun = true;
+      continue;
+    }
+    if (arg === "--reconcile-stuck") {
+      reconcileStuck = true;
       continue;
     }
     if (arg.startsWith("--video-id=")) {
@@ -363,6 +542,7 @@ function parseArgs(argv: string[]) {
     runwayTaskId,
     requestedByUserId,
     dryRun,
+    reconcileStuck,
   };
 }
 

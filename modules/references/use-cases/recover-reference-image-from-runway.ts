@@ -63,7 +63,10 @@ export async function recoverReferenceImageFromRunway(
     };
   }
 
-  if (reference.mediaAssetId) {
+  // A previous variant may still be linked while a regen is stuck in
+  // `generating` with Runway already at SUCCEEDED — keep going so we can
+  // point the row at the latest task output.
+  if (reference.mediaAssetId && reference.status !== "generating") {
     return {
       referenceId: input.referenceId,
       runwayTaskId,
