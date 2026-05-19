@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, Clapperboard, ListChecks, Lock } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -222,7 +223,10 @@ function LogicalScenesTable({
                 <TableCell>
                   <Badge
                     variant="outline"
-                    className="licorn-storyboard-segment-chip"
+                    className={cn(
+                      "border-storyboard-segment-chip-border bg-storyboard-segment-chip-bg font-semibold text-foreground",
+                      "hover:bg-storyboard-segment-chip-bg",
+                    )}
                   >
                     {segmentLabelBySceneId.get(scene.id) ?? "-"}
                   </Badge>
