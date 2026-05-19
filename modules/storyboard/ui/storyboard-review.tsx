@@ -1,4 +1,11 @@
-import { AlertTriangle, CheckCircle2, Clapperboard, ListChecks, Lock } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clapperboard,
+  ListChecks,
+  ListTree,
+  Lock,
+} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +36,7 @@ import {
 } from "../services/resolve-logical-scene-ids";
 import type { LogicalScene, SeedanceSegment } from "../storyboard.types";
 import { StoryboardActions } from "./storyboard-actions";
+import { StoryboardStructureFlow } from "./storyboard-structure-flow";
 
 export function StoryboardReview({
   compactPageHeading = false,
@@ -147,8 +155,12 @@ export function StoryboardReview({
             videoId={project.id}
           />
 
-          <Tabs defaultValue="logical-scenes">
+          <Tabs defaultValue="structure">
             <TabsList className="flex flex-wrap">
+              <TabsTrigger value="structure">
+                <ListTree />
+                Structure
+              </TabsTrigger>
               <TabsTrigger value="logical-scenes">
                 <ListChecks />
                 Logical scenes
@@ -158,6 +170,13 @@ export function StoryboardReview({
                 Seedance segments
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent className="space-y-4" value="structure">
+              <StoryboardStructureFlow
+                logicalScenes={logicalScenes}
+                seedanceSegments={seedanceSegments}
+              />
+            </TabsContent>
 
             <TabsContent className="space-y-4" value="logical-scenes">
               <LogicalScenesTable
