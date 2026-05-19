@@ -187,29 +187,11 @@ export function resolvePersistedLogicalScene(
  * Builds sceneId → segment label (e.g. `S3`) for storyboard tables.
  */
 export function buildSegmentLabelByPersistedSceneId(
-  segments: {
-    id?: string;
-    position: number;
-    logicalSceneIds: string[];
-  }[],
+  segments: SegmentLogicalSceneLinkInput[],
   persistedScenes: LogicalScene[],
   agentScenePositionById?: ReadonlyMap<string, number>,
 ): Map<string, string> {
   const labels = new Map<string, string>();
-  const segmentById = new Map(
-    segments.flatMap((segment) => (segment.id ? [[segment.id, segment]] as const : [])),
-  );
-
-  for (const scene of persistedScenes) {
-    if (!scene.segmentId) {
-      continue;
-    }
-    const segment = segmentById.get(scene.segmentId);
-    if (segment) {
-      labels.set(scene.id, `S${segment.position}`);
-    }
-  }
-
   const remappedIds = remapAllSegmentsLogicalSceneIdsForPersistence({
     segments,
     persistedScenes,
@@ -220,11 +202,11 @@ export function buildSegmentLabelByPersistedSceneId(
 
   for (const segment of sortedSegments) {
     const label = `S${segment.position}`;
-    const sceneIds = remappedIds.get(segment.position) ?? segment.logicalSceneIds;
+    const sceneIds = remappedIds.get(segment.position) ?? [];
 
     for (const sceneId of sceneIds) {
       const scene = persistedScenes.find((item) => item.id === sceneId);
-      if (scene && !labels.has(scene.id)) {
+      if (scene) {
         labels.set(scene.id, label);
       }
     }
