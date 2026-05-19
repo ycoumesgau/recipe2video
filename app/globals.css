@@ -249,8 +249,4 @@
     @apply mt-1.5 text-xs font-medium leading-relaxed text-muted-foreground;
   }
 
-  /** Chip segment (Logical scenes) — fond gris pour marquer les blocs S1, S2, … */
-  .licorn-storyboard-segment-chip {
-    @apply border border-storyboard-segment-chip-border bg-storyboard-segment-chip-bg font-semibold text-foreground;
-  }
 }
