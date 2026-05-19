@@ -10,7 +10,8 @@ const OUTRO_PLACEHOLDER_SCENE_IDS = new Set([
 
 export type SegmentLogicalSceneLinkInput = {
   position: number;
-  arc: string;
+  /** Required for persistence sync; optional in UI-only remapping. */
+  arc?: string;
   logicalSceneIds: string[];
 };
 
@@ -113,8 +114,12 @@ export function remapAllSegmentsLogicalSceneIdsForPersistence(input: {
   const editorialSegments = [...input.segments].sort(
     (left, right) => left.position - right.position,
   );
-  const outroSegments = editorialSegments.filter((segment) => isOutroSegment(segment));
-  const bodySegments = editorialSegments.filter((segment) => !isOutroSegment(segment));
+  const outroSegments = editorialSegments.filter((segment) =>
+    isOutroSegment({ arc: segment.arc ?? "" }),
+  );
+  const bodySegments = editorialSegments.filter(
+    (segment) => !isOutroSegment({ arc: segment.arc ?? "" }),
+  );
 
   for (const segment of bodySegments) {
     const mapped = resolvePersistedLogicalSceneIds({
@@ -152,23 +157,6 @@ export function remapAllSegmentsLogicalSceneIdsForPersistence(input: {
   }
 
   return idsBySegmentPosition;
-}
-
-/**
- * @deprecated Prefer `remapAllSegmentsLogicalSceneIdsForPersistence` for batch mapping.
- */
-export function resolveSegmentLogicalSceneIdsForPersistence(input: {
-  segment: { arc: string; logicalSceneIds: string[] };
-  persistedScenes: LogicalScene[];
-  agentScenePositionById?: ReadonlyMap<string, number>;
-}): string[] {
-  const mapped = remapAllSegmentsLogicalSceneIdsForPersistence({
-    segments: [input.segment],
-    persistedScenes: input.persistedScenes,
-    agentScenePositionById: input.agentScenePositionById,
-  });
-
-  return mapped.values().next().value ?? [];
 }
 
 /**
