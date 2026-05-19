@@ -53,6 +53,9 @@ export interface OutroTemplateInput {
   finalDishDescription: string;
 }
 
+/** Max length of the dish clause embedded in the canonical outro prompt. */
+export const FINAL_DISH_DESCRIPTION_MAX_CHARS = 280;
+
 /**
  * Builds the canonical outro reference list. Order is the contract;
  * the sync use-case does not reorder before persisting.
@@ -115,7 +118,9 @@ export function buildOutroReferences(): SegmentReference[] {
  * moves and never gets touched.
  */
 export function buildOutroPrompt(input: OutroTemplateInput): string {
-  const dish = sanitizeDishDescription(input.finalDishDescription);
+  const dish = sanitizeDishDescription(
+    resolveFinalDishDescriptionForOutro(input.finalDishDescription),
+  );
 
   return [
     `Use @${LICORN_OUTRO_REFERENCE_NAMES.kitchenLayoutContextWide} for structural kitchen context.`,
@@ -211,6 +216,116 @@ export function applyOutroOverrideToSegments(input: {
   return { segments: overridden, errors };
 }
 
+/**
+ * Turns `reference-plan.json[FinalDishVisual].prompt` into a short dish
+ * clause for the canonical outro. Agents often emit a full GPT-Image 2
+ * generation prompt (300-600 chars) in that field; the full text is still
+ * persisted for image generation — only the outro embed needs a compact
+ * description.
+ */
+export function resolveFinalDishDescriptionForOutro(rawPrompt: string): string {
+  const collapsed = rawPrompt.trim().replace(/\s+/g, " ");
+  if (collapsed.length === 0) {
+    throw new Error(
+      "buildOutroPrompt: finalDishDescription must be a non-empty single-sentence dish description.",
+    );
+  }
+  if (collapsed.length <= FINAL_DISH_DESCRIPTION_MAX_CHARS) {
+    return collapsed;
+  }
+
+  const extracted = extractDishDescriptionFromReferencePlanPrompt(collapsed);
+  if (
+    extracted.length > 0 &&
+    extracted.length <= FINAL_DISH_DESCRIPTION_MAX_CHARS
+  ) {
+    return extracted;
+  }
+
+  const firstSentence = takeFirstSentence(collapsed);
+  if (
+    firstSentence.length > 0 &&
+    firstSentence.length <= FINAL_DISH_DESCRIPTION_MAX_CHARS
+  ) {
+    return firstSentence;
+  }
+
+  const truncated = truncateAtWordBoundary(
+    extracted.length > 0 ? extracted : collapsed,
+    FINAL_DISH_DESCRIPTION_MAX_CHARS,
+  );
+  if (truncated.length === 0) {
+    throw new Error(
+      "buildOutroPrompt: finalDishDescription must be a non-empty single-sentence dish description.",
+    );
+  }
+  return truncated;
+}
+
+/**
+ * Parses the common GPT-Image recipe_state boilerplate:
+ * "Generate one vertical-reference still of the final {dish} in the Licorn
+ * kitchen …: {visual details}. The dish is intact …"
+ */
+function extractDishDescriptionFromReferencePlanPrompt(
+  collapsed: string,
+): string {
+  const titleMatch = collapsed.match(
+    /of the final (.+?) in the Licorn kitchen/i,
+  );
+  const title = titleMatch?.[1]?.trim() ?? "";
+
+  const colonIndex = collapsed.indexOf(":");
+  if (colonIndex === -1) {
+    return title;
+  }
+
+  let details = collapsed.slice(colonIndex + 1).trim();
+  details = stripTrailingReferencePlanBoilerplate(details);
+
+  if (!title) {
+    return details;
+  }
+  if (!details) {
+    return title;
+  }
+  return `${title}: ${details}`;
+}
+
+function stripTrailingReferencePlanBoilerplate(details: string): string {
+  const stopPatterns = [
+    /\.\s*The dish is intact and motionless/i,
+    /\.\s*Keep it sexy/i,
+    /\.\s*Keep the dish intact/i,
+    /\.\s*without changing the Licorn kitchen/i,
+  ];
+  let result = details;
+  for (const pattern of stopPatterns) {
+    const match = result.match(pattern);
+    if (match?.index !== undefined) {
+      result = result.slice(0, match.index);
+    }
+  }
+  return result.replace(/\.\s*$/, "").trim();
+}
+
+function takeFirstSentence(collapsed: string): string {
+  const match = collapsed.match(/^(.+?)\.\s+/);
+  return match?.[1]?.trim() ?? collapsed;
+}
+
+function truncateAtWordBoundary(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+  const slice = text.slice(0, maxChars);
+  const lastSpace = slice.lastIndexOf(" ");
+  if (lastSpace > maxChars * 0.6) {
+    return slice.slice(0, lastSpace).trim();
+  }
+  return slice.trim();
+}
+
 function sanitizeDishDescription(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
@@ -218,9 +333,9 @@ function sanitizeDishDescription(value: string): string {
       "buildOutroPrompt: finalDishDescription must be a non-empty single-sentence dish description.",
     );
   }
-  if (trimmed.length > 280) {
+  if (trimmed.length > FINAL_DISH_DESCRIPTION_MAX_CHARS) {
     throw new Error(
-      `buildOutroPrompt: finalDishDescription is ${trimmed.length} chars; keep it under 280 to avoid bloating the outro prompt.`,
+      `buildOutroPrompt: finalDishDescription is ${trimmed.length} chars; keep it under ${FINAL_DISH_DESCRIPTION_MAX_CHARS} to avoid bloating the outro prompt.`,
     );
   }
   return trimmed.replace(/\s+/g, " ");

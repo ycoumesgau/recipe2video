@@ -8,6 +8,7 @@ import {
 } from "@/modules/references/repositories/segment-references.repository";
 import {
   buildOutroPrompt,
+  resolveFinalDishDescriptionForOutro,
   buildOutroReferences,
   LICORN_OUTRO_ARC,
   LICORN_OUTRO_DURATION_SECONDS,
@@ -121,7 +122,9 @@ export async function applyStandardOutroToSegment(
     );
   }
 
-  const finalDishDescription = finalDishReference.prompt.trim();
+  const finalDishDescription = resolveFinalDishDescriptionForOutro(
+    finalDishReference.prompt.trim(),
+  );
   const prompt = buildOutroPrompt({ finalDishDescription });
   const references = buildOutroReferences();
 
