@@ -44,7 +44,9 @@ import { listInFlightCompositionRenders } from "@/modules/assembly/repositories/
 import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import {
   cancelGenerationAction,
+  cancelReferenceImageGenerationAction,
   retryGenerationAction,
+  retryReferenceImageGenerationAction,
   setQueuePauseAction,
 } from "@/modules/generation/queue-actions";
 import { listActiveGenerations } from "@/modules/generation/repositories/generation.repository";
@@ -53,8 +55,9 @@ import type { GenerationStatus } from "@/modules/generation/generation-status";
 import { getGenerationQueuePaused } from "@/modules/generation/repositories/queue-state.repository";
 import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
 import { RUNWAY_DEFAULT_REFERENCE_IMAGE_MODEL } from "@/modules/generation/runway.constants";
+import type { ReferenceStatus } from "@/modules/references/reference-status";
 import type { ReferenceAsset } from "@/modules/references/reference.types";
-import { listGeneratingReferenceAssets } from "@/modules/references/repositories/reference.repository";
+import { listRecipeReferenceImageQueueForDashboard } from "@/modules/references/repositories/reference.repository";
 import { getSegmentById } from "@/modules/storyboard/repositories/segment.repository";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
@@ -82,6 +85,7 @@ interface ActiveReferenceImageRow {
   videoTitle: string;
   canonicalName: string;
   model: string;
+  referenceStatus: ReferenceStatus;
   runwayTaskId: string | null;
   runwayTaskStatus: RunwayTaskStatusValue | null;
   runwayProgress: number | null;
@@ -184,7 +188,7 @@ export default async function ActiveGenerationsPage() {
             </CardTitle>
             <CardDescription>
               GPT-Image 2 tasks for recipe-specific anchors (`text_to_image`).
-              Progress mirrors Runway polling, same as Seedance rows above.
+              Cancel in-flight work or retry failures without leaving this page.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -194,6 +198,7 @@ export default async function ActiveGenerationsPage() {
                   <TableHead>Project</TableHead>
                   <TableHead>Reference</TableHead>
                   <TableHead>Model</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Runway</TableHead>
                   <TableHead>Progress</TableHead>
                   <TableHead>Started</TableHead>
@@ -208,6 +213,13 @@ export default async function ActiveGenerationsPage() {
                     </TableCell>
                     <TableCell>{task.canonicalName}</TableCell>
                     <TableCell>{task.model}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={referenceStatusBadgeVariant(task.referenceStatus)}
+                      >
+                        {task.referenceStatus}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       {task.runwayTaskStatus ? (
                         <Badge
@@ -226,6 +238,7 @@ export default async function ActiveGenerationsPage() {
                     <TableCell className="min-w-32">
                       <Progress
                         value={progressForReferenceImageRow(
+                          task.referenceStatus,
                           task.runwayProgress,
                           task.runwayTaskStatus,
                         )}
@@ -234,7 +247,41 @@ export default async function ActiveGenerationsPage() {
                     <TableCell className="text-muted-foreground">
                       {formatDateTime(task.startedAt)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="flex flex-wrap justify-end gap-2">
+                      {task.referenceStatus === "generating" ? (
+                        <form action={cancelReferenceImageGenerationAction}>
+                          <input name="videoId" type="hidden" value={task.videoId} />
+                          <input
+                            name="referenceId"
+                            type="hidden"
+                            value={task.referenceId}
+                          />
+                          <Button size="sm" type="submit" variant="ghost">
+                            <XCircle className="h-4 w-4" />
+                            Cancel
+                          </Button>
+                        </form>
+                      ) : null}
+                      {task.referenceStatus === "failed" ||
+                      task.referenceStatus === "cancelled" ? (
+                        <form action={retryReferenceImageGenerationAction}>
+                          <input name="videoId" type="hidden" value={task.videoId} />
+                          <input
+                            name="referenceId"
+                            type="hidden"
+                            value={task.referenceId}
+                          />
+                          <Button
+                            disabled={paused}
+                            size="sm"
+                            type="submit"
+                            variant="outline"
+                          >
+                            <RefreshCcw className="h-4 w-4" />
+                            Retry
+                          </Button>
+                        </form>
+                      ) : null}
                       <Button asChild size="sm" variant="outline">
                         <Link href={`/videos/${task.videoId}/references`}>
                           Open references
@@ -388,12 +435,12 @@ export default async function ActiveGenerationsPage() {
 async function loadActiveGenerations() {
   try {
     const supabase = createSupabaseAdminClient();
-    const [generations, paused, compositions, generatingRefs] =
+    const [generations, paused, compositions, referenceQueueRows] =
       await Promise.all([
         listActiveGenerations(supabase, { limit: 50 }),
         getGenerationQueuePaused(supabase),
         listInFlightCompositionRenders(supabase, { limit: 20 }),
-        listGeneratingReferenceAssets(supabase, { limit: 50 }),
+        listRecipeReferenceImageQueueForDashboard(supabase, { limit: 50 }),
       ]);
 
     const rows = await Promise.all(
@@ -403,7 +450,7 @@ async function loadActiveGenerations() {
     );
 
     const referenceRows = await Promise.all(
-      generatingRefs.map(async (reference) =>
+      referenceQueueRows.map(async (reference) =>
         decorateReferenceImageTask(supabase, reference),
       ),
     );
@@ -453,6 +500,7 @@ async function decorateReferenceImageTask(
     videoTitle: video?.title ?? "Untitled project",
     canonicalName: reference.canonicalName,
     model: RUNWAY_DEFAULT_REFERENCE_IMAGE_MODEL,
+    referenceStatus: reference.status,
     runwayTaskId: reference.runwayTaskId ?? null,
     runwayTaskStatus: reference.runwayTaskStatus ?? null,
     runwayProgress: reference.runwayProgress ?? null,
@@ -460,10 +508,32 @@ async function decorateReferenceImageTask(
   };
 }
 
+function referenceStatusBadgeVariant(
+  status: ReferenceStatus,
+): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "failed" || status === "rejected") {
+    return "destructive";
+  }
+  if (status === "generating") {
+    return "default";
+  }
+  if (status === "cancelled") {
+    return "outline";
+  }
+  if (status === "planned") {
+    return "outline";
+  }
+  return "secondary";
+}
+
 function progressForReferenceImageRow(
+  referenceStatus: ReferenceStatus,
   runwayProgress: number | null,
   runwayTaskStatus: RunwayTaskStatusValue | null,
 ): number {
+  if (referenceStatus === "failed" || referenceStatus === "cancelled") {
+    return 0;
+  }
   if (typeof runwayProgress === "number") {
     return Math.max(0, Math.min(100, runwayProgress));
   }

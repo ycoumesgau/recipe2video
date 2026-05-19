@@ -63,6 +63,7 @@ const statusBadgeVariant: Record<
   rejected: "destructive",
   uploaded_to_runway: "secondary",
   failed: "destructive",
+  cancelled: "outline",
 };
 
 /**
@@ -71,7 +72,11 @@ const statusBadgeVariant: Record<
  * Generate / Regenerate again — the per-reference Inngest worker is
  * already running. Must mirror the filter on the server-side action.
  */
-const PENDING_GENERATION_STATUSES: ReferenceStatus[] = ["planned", "failed"];
+const PENDING_GENERATION_STATUSES: ReferenceStatus[] = [
+  "planned",
+  "failed",
+  "cancelled",
+];
 
 export function ReferenceReviewWorkflow({
   data,

@@ -800,6 +800,24 @@ function computeResolutionStatus(resolution: SegmentReferenceResolutionItem): {
     };
   }
 
+  if (resolution.recipeReferenceStatus === "failed") {
+    return {
+      label: "image failed",
+      description:
+        "The last GPT-Image 2 attempt did not complete. Retry from the references page or the Active generations queue.",
+      variant: "destructive",
+    };
+  }
+
+  if (resolution.recipeReferenceStatus === "cancelled") {
+    return {
+      label: "generation cancelled",
+      description:
+        "Runway work was abandoned before completion. Regenerate from the references page when you are ready.",
+      variant: "outline",
+    };
+  }
+
   if (!resolution.hasStorage) {
     return {
       label: "no storage",

@@ -10,6 +10,10 @@ import {
 } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import {
+  getReferenceAssetById,
+  updateReferenceAssetStatus,
+} from "@/modules/references/repositories/reference.repository";
+import {
   getSegmentById,
   updateSegmentStatus,
 } from "@/modules/storyboard/repositories/segment.repository";
@@ -119,6 +123,108 @@ export async function cancelGenerationAction(formData: FormData) {
   }
 
   revalidatePath("/active-generations");
+}
+
+export async function cancelReferenceImageGenerationAction(formData: FormData) {
+  const referenceId = requireString(formData, "referenceId");
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const reference = await getReferenceAssetById(supabase, referenceId);
+
+    if (!reference) {
+      throw new Error(`Reference ${referenceId} not found.`);
+    }
+
+    if (reference.videoId !== videoId) {
+      throw new Error("Reference does not belong to this project.");
+    }
+
+    if (reference.status !== "generating") {
+      revalidateAfterRecipeReferenceQueueChange(videoId);
+      return;
+    }
+
+    await updateReferenceAssetStatus(supabase, {
+      referenceId,
+      status: "cancelled",
+    });
+  } catch (error) {
+    if (isAuthAccessError(error)) {
+      throw error;
+    }
+    throw error instanceof Error
+      ? error
+      : new Error("Unable to cancel reference image generation.");
+  }
+
+  revalidateAfterRecipeReferenceQueueChange(videoId);
+}
+
+export async function retryReferenceImageGenerationAction(formData: FormData) {
+  const referenceId = requireString(formData, "referenceId");
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const reference = await getReferenceAssetById(supabase, referenceId);
+
+    if (!reference) {
+      throw new Error(`Reference ${referenceId} not found.`);
+    }
+
+    if (reference.videoId !== videoId) {
+      throw new Error("Reference does not belong to this project.");
+    }
+
+    if (reference.source === "asset_library") {
+      throw new Error("Library globals cannot be retried from this queue.");
+    }
+
+    if (reference.status === "generating") {
+      throw new Error("This reference is already generating.");
+    }
+
+    if (!(reference.status === "failed" || reference.status === "cancelled")) {
+      throw new Error(
+        "Retry is only available for failed or cancelled recipe references.",
+      );
+    }
+
+    if (!reference.prompt || reference.prompt.trim().length === 0) {
+      throw new Error("Set a prompt on this reference before retrying.");
+    }
+
+    await inngest.send({
+      name: INNGEST_EVENTS.videoReferenceGenerateRequested,
+      data: {
+        videoId,
+        referenceId,
+        requestedByUserId: profile.id,
+        isAllowlisted: true,
+      },
+    });
+  } catch (error) {
+    if (isAuthAccessError(error)) {
+      throw error;
+    }
+    throw error instanceof Error
+      ? error
+      : new Error("Unable to retry reference image generation.");
+  }
+
+  revalidateAfterRecipeReferenceQueueChange(videoId);
+}
+
+function revalidateAfterRecipeReferenceQueueChange(videoId: string) {
+  revalidatePath("/active-generations");
+  revalidatePath("/");
+  revalidatePath(`/videos/${videoId}/references`);
+  revalidatePath(`/videos/${videoId}/segments`);
+  revalidatePath(`/videos/${videoId}`);
 }
 
 function requireString(formData: FormData, key: string): string {

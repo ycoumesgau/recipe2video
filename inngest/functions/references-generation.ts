@@ -27,7 +27,7 @@ import {
  * an image they already vetted (per-reference Regenerate button covers
  * that path through the singular event below).
  */
-const PENDING_STATUSES = new Set(["planned", "failed"]);
+const PENDING_STATUSES = new Set(["planned", "failed", "cancelled"]);
 
 export const generateReferencesWorkflow = inngest.createFunction(
   {
