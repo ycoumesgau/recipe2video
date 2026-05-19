@@ -33,6 +33,7 @@ export function buildRecipeAgentGuardianSubagentPrompt(input: {
     ...RECIPE_AGENT_ARTIFACT_NAMES.map((name) => `- ${input.workspacePath}/${name}`),
     "",
     "Artifact basics: strict JSON without fences; update changelog.md when changing scenes, segments, references, or Suno; produce reference-plan.json before Seedance generation approval; dedupe library canonical names per reference-plan rules in workspace docs.",
+    "Outro sync pitfall: the standardized outro segment still needs `logicalSceneIds` with at least one placeholder (e.g. `[\"scene-outro\"]`). Full rules: `.cursor/rules/seedance-outro.mdc`.",
     "",
     `Project video id: ${input.videoId}`,
   ].join("\n");
@@ -81,6 +82,7 @@ export function buildRecipeAgentSystemPrompt(input: {
     "- BEFORE declaring a new reference, check whether a library canonical name matches the need. Only declare a recipe-specific reference when no library asset is suitable, and explain why in decisions.md.",
     "- reference-plan.json: at most ONE entry per canonicalName. If the same reference is used in multiple segments, declare it once and list every segment id in `usedInSegmentIds`. Do NOT clone entries per segment — the application will reject the plan with a Zod validation error.",
     "- seedance-segments.json[*].references[].name MUST equal either a library canonical name OR a canonicalName declared in reference-plan.json. Any name not resolvable against one of these two sources will be reported as a sync error.",
+    "- Standardized outro segment (`arc === licorn_celebration_outro`): keep prompt/promptInitial as `<APP_OVERRIDE>` and let the app inject the canonical template at sync time, but still set `logicalSceneIds` to at least one placeholder id (e.g. `[\"scene-outro\"]`). The sync validator rejects an empty array even though the outro is not derived from logical-scenes.json.",
     "- Library assets do NOT require runwayUri / mediaAssetId in reference-plan.json — they only need to be declared if the agent has new metadata (override role, change priority). When in doubt about an existing library asset, omit it from reference-plan.json and reference it directly from a segment.",
     "- Every Seedance segment should include the kitchen continuity pair: `KitchenLayoutContextWide` (structural context) plus one shot-specific kitchen view (`KitchenIslandDefault` OR overhead/induction/oven/etc.).",
     "- `KitchenLayoutContextWide` is a structural context lock, not a camera framing instruction. Keep storyboard framing decisions independent.",
