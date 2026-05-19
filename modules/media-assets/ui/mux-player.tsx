@@ -34,6 +34,7 @@ export function RecipeMuxPlayer({
   return (
     <div className={frameClassName}>
       <MuxPlayer
+        key={playbackId}
         accentColor="#f59e0b"
         className="h-full w-full [--media-object-fit:contain]"
         metadata={{

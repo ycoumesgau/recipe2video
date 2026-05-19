@@ -16,7 +16,10 @@ import type { VideoProject } from "@/modules/videos/video.types";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
 import type { Generation } from "../generation.types";
-import { listGenerationsBySegmentId } from "../repositories/generation.repository";
+import {
+  getGenerationById,
+  listGenerationsBySegmentId,
+} from "../repositories/generation.repository";
 
 export interface SegmentVariantReviewItem {
   generation: Generation;
@@ -137,9 +140,19 @@ export async function getSegmentReviewData(
   );
   const isLastSegmentOfVideo =
     Number.isFinite(maxPosition) && segment.position === maxPosition;
+  const selectedGeneration =
+    segment.selectedGenerationId &&
+    !generations.some((g) => g.id === segment.selectedGenerationId)
+      ? await getGenerationById(supabase, segment.selectedGenerationId)
+      : null;
+
+  const allGenerations = selectedGeneration
+    ? [selectedGeneration, ...generations.filter((g) => g.id !== selectedGeneration.id)]
+    : generations;
+
   const mediaAssets = await listMediaAssetsByGenerationIds(
     supabase,
-    generations.map((generation) => generation.id),
+    allGenerations.map((generation) => generation.id),
   );
   const mediaAssetByGenerationId = new Map(
     mediaAssets.flatMap((asset) =>
@@ -163,7 +176,7 @@ export async function getSegmentReviewData(
     feedbacks,
     referenceResolutions,
     isLastSegmentOfVideo,
-    variants: generations.map((generation) => ({
+    variants: allGenerations.map((generation) => ({
       generation,
       mediaAsset:
         (generation.mediaAssetId

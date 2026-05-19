@@ -43,3 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# One-off incident recovery (hardcoded video/task IDs; local ops only)
+scripts/recover-seedance-segments.ts
