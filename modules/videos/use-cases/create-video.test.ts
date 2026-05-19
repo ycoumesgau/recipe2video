@@ -174,6 +174,28 @@ test("buildRecipeAgentMessagePayload omits reasoning for models without reasonin
   assert.doesNotMatch(payload?.message ?? "", /Cursor agent reasoning:/i);
 });
 
+test("buildRecipeAgentMessagePayload omits reasoning for Composer 2.5", () => {
+  const payload = buildRecipeAgentMessagePayload({
+    videoId: "video-1",
+    profileId: "user-1",
+    sourceSummary: textSource(),
+    productionDefaults: {
+      stylePreset: "asmr_food",
+      videoModel: "seedance2",
+      imageModel: "gpt_image_2",
+      ttsModel: "eleven_multilingual_v2",
+      sfxModel: "eleven_text_to_sound_v2",
+      cursorAgentModel: "composer-2.5",
+      cursorAgentFast: "true",
+    },
+    intent: "analyze",
+  });
+
+  assert.match(payload?.message ?? "", /Cursor agent model: composer-2.5/i);
+  assert.match(payload?.message ?? "", /Cursor agent fast mode: enabled/i);
+  assert.doesNotMatch(payload?.message ?? "", /Cursor agent reasoning:/i);
+});
+
 function textSource(): RecipeSourceSummary {
   return {
     type: "text",

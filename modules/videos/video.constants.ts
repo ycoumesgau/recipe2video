@@ -21,6 +21,7 @@ export const TARGET_DURATION_OPTIONS = [
 export const CURSOR_AGENT_MODEL_OPTIONS = [
   { value: "gpt-5.5", label: "GPT-5.5" },
   { value: "composer-2", label: "Composer 2" },
+  { value: "composer-2.5", label: "Composer 2.5" },
   { value: "claude-sonnet-4-6", label: "Sonnet 4.6" },
   { value: "claude-opus-4-7", label: "Opus 4.7" },
   { value: "gemini-3.1-pro", label: "Gemini 3.1 Pro" },
@@ -35,6 +36,7 @@ export const CURSOR_AGENT_REASONING_OPTIONS = {
     { value: "extra-high", label: "Extra High" },
   ],
   "composer-2": [],
+  "composer-2.5": [],
   "claude-sonnet-4-6": [
     { value: "low", label: "Low" },
     { value: "medium", label: "Medium" },
@@ -54,6 +56,7 @@ export const CURSOR_AGENT_REASONING_OPTIONS = {
 export const CURSOR_AGENT_FAST_BY_MODEL = {
   "gpt-5.5": "false",
   "composer-2": "true",
+  "composer-2.5": "true",
   "claude-sonnet-4-6": "false",
   "claude-opus-4-7": "false",
   "gemini-3.1-pro": "false",
@@ -62,6 +65,7 @@ export const CURSOR_AGENT_FAST_BY_MODEL = {
 export const CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL = {
   "gpt-5.5": "high",
   "composer-2": undefined,
+  "composer-2.5": undefined,
   "claude-sonnet-4-6": "medium",
   "claude-opus-4-7": "high",
   "gemini-3.1-pro": undefined,

@@ -229,8 +229,8 @@ function buildModelSelection(config: RecipeAgentConfig): ModelSelection {
 }
 
 function buildModelParams(config: RecipeAgentConfig): ModelSelection["params"] {
-  if (config.model === "composer-2") {
-    // Cost guardrail: Composer 2 is the only model allowed in fast mode.
+  if (config.model === "composer-2" || config.model === "composer-2.5") {
+    // Cost guardrail: Composer models are only allowed in fast mode.
     return [{ id: "fast", value: "true" }];
   }
 
