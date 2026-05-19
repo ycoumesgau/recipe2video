@@ -95,15 +95,15 @@ export function ReferenceReviewWorkflow({
             />
           ) : null}
           <ReferenceSection
-            emptyCopy="Global kitchen, mascot, expression, pose, and utensil references will appear here once seeded."
-            items={data.globalReferences}
-            title="Global references"
-            videoId={videoId}
-          />
-          <ReferenceSection
             emptyCopy="Upload recipe-specific raw, baked, filled, cut, glazed, or final states for this project."
             items={data.recipeReferences}
             title="Recipe-specific references"
+            videoId={videoId}
+          />
+          <ReferenceSection
+            emptyCopy="Global kitchen, mascot, expression, pose, and utensil references will appear here once seeded."
+            items={data.globalReferences}
+            title="Global references"
             videoId={videoId}
           />
           <ReferenceSection
