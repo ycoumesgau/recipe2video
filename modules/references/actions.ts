@@ -30,6 +30,7 @@ import {
   updateReferenceReviewStatus,
   uploadReferenceAssetToRunway,
 } from "./use-cases/manage-reference-review";
+import { selectReferenceImageVariant } from "./use-cases/select-reference-image-variant";
 import { extractSegmentFrameToReferenceAsset } from "./use-cases/extract-segment-frame";
 
 /**
@@ -83,6 +84,40 @@ export async function approveReferenceAction(formData: FormData) {
 
     revalidateReferencePath(videoId);
     redirectWithNotice(videoId, "success", "Reference approved.");
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(videoId, "error", getActionErrorMessage(error));
+  }
+}
+
+export async function selectReferenceImageVariantAction(formData: FormData) {
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    await assertCostlyActionAllowed();
+    const referenceId = requireString(formData, "referenceId");
+    const mediaAssetId = requireString(formData, "mediaAssetId");
+    const supabase = createSupabaseAdminClient();
+    const reference = await getReferenceAssetById(supabase, referenceId);
+
+    if (!reference) {
+      throw new Error("Reference asset not found.");
+    }
+
+    if (reference.videoId !== videoId) {
+      throw new Error("Reference does not belong to this project.");
+    }
+
+    await selectReferenceImageVariant(supabase, {
+      referenceId,
+      mediaAssetId,
+    });
+
+    revalidateReferencePath(videoId);
+    redirectWithNotice(videoId, "success", "Reference image variant selected.");
   } catch (error) {
     if (isNextRedirectError(error)) {
       throw error;

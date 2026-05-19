@@ -61,6 +61,7 @@ export async function finalizeReferenceImageOutput(
 
   const anchors = input.anchors ?? [];
   const blob = await downloadRunwayOutput(input.outputUrl);
+  const referenceVariantId = crypto.randomUUID();
 
   const mediaAsset = await persistMediaAssetFile({
     supabase: input.supabase,
@@ -69,6 +70,7 @@ export async function finalizeReferenceImageOutput(
     body: blob,
     videoId: reference.videoId,
     referenceId: input.referenceId,
+    referenceVariantId,
     mimeType: blob.type || "image/png",
     fileSizeBytes: blob.size,
     runwayOutputUrl: input.outputUrl,
@@ -76,6 +78,8 @@ export async function finalizeReferenceImageOutput(
       source: input.recovery
         ? "runway_text_to_image_recovery"
         : "runway_text_to_image",
+      referenceId: input.referenceId,
+      referenceVariantId,
       recovery: input.recovery ?? false,
       runwayTaskId: input.runwayTaskId,
       model: REFERENCE_IMAGE_MODEL,

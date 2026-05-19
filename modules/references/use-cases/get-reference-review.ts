@@ -6,12 +6,17 @@ import { tryCreateStorageSignedUrl } from "@/modules/media-assets/services/stora
 import { listSegmentsByVideoId } from "@/modules/storyboard/repositories/segment.repository";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
+import {
+  groupReferenceImageVariantsByReferenceId,
+  listReferenceImageMediaAssetsByVideoId,
+} from "@/modules/media-assets/repositories/media-asset.repository";
 import type { Database } from "@/shared/supabase/database.types";
 
 import type {
   ConditioningAnchorPreview,
   ReferenceAsset,
   ReferenceAssetReviewItem,
+  ReferenceImageVariantItem,
   ReferenceReviewData,
 } from "../reference.types";
 import { listReferenceAssetsForVideo } from "../repositories/reference.repository";
@@ -59,16 +64,20 @@ export async function getReferenceReviewData(
       .filter((id): id is string => Boolean(id)),
   );
 
-  const [libraryEntries, mediaAssets, conditioningIndex] = await Promise.all([
-    fetchAssetLibraryEntries(supabase, libraryAssetIds),
-    fetchMediaAssetsForReferences({
-      supabase,
-      videoId,
-      libraryAssetIds,
-      recipeReferences,
-    }),
-    resolveConditioningIndex(supabase, recipeReferences),
-  ]);
+  const [libraryEntries, mediaAssets, referenceImageVariants, conditioningIndex] =
+    await Promise.all([
+      fetchAssetLibraryEntries(supabase, libraryAssetIds),
+      fetchMediaAssetsForReferences({
+        supabase,
+        videoId,
+        libraryAssetIds,
+        recipeReferences,
+      }),
+      listReferenceImageMediaAssetsByVideoId(supabase, videoId).then(
+        groupReferenceImageVariantsByReferenceId,
+      ),
+      resolveConditioningIndex(supabase, recipeReferences),
+    ]);
 
   const segmentTitleById = new Map(segments.map((segment) => [segment.id, segment.title]));
   const usageByLibraryAsset = aggregateUsage(
@@ -99,6 +108,7 @@ export async function getReferenceReviewData(
         supabase,
         reference,
         mediaAsset: mediaAssets.get(reference.mediaAssetId ?? "") ?? null,
+        variantAssets: referenceImageVariants.get(reference.id) ?? [],
         usedInSegments: usageByRecipeReference.get(reference.id) ?? [],
         conditioningIndex,
       }),
@@ -270,6 +280,7 @@ async function buildRecipeReviewItem(input: {
   supabase: SupabaseDataClient;
   reference: ReferenceAsset;
   mediaAsset: MediaAsset | null;
+  variantAssets: MediaAsset[];
   usedInSegments: string[];
   conditioningIndex: ConditioningIndex;
 }): Promise<ReferenceAssetReviewItem> {
@@ -285,16 +296,47 @@ async function buildRecipeReviewItem(input: {
     input.conditioningIndex,
   );
 
+  const imageVariants = await buildReferenceImageVariants({
+    supabase: input.supabase,
+    reference: input.reference,
+    variantAssets: input.variantAssets,
+    activeMediaAssetId: mediaAsset?.id ?? input.reference.mediaAssetId ?? null,
+  });
+
   return {
     reference: input.reference,
     mediaAsset,
     previewUrl: await createPreviewUrl(input.supabase, mediaAsset),
+    imageVariants,
     usedInSegments: input.usedInSegments,
     isLibraryGlobal: false,
     conditioningAnchors: conditioning.anchors,
     conditioningUnresolved: conditioning.unresolved,
     conditioningExcluded: conditioning.excluded,
   };
+}
+
+async function buildReferenceImageVariants(input: {
+  supabase: SupabaseDataClient;
+  reference: ReferenceAsset;
+  variantAssets: MediaAsset[];
+  activeMediaAssetId: string | null;
+}): Promise<ReferenceImageVariantItem[]> {
+  if (input.variantAssets.length === 0) {
+    return [];
+  }
+
+  const variants: ReferenceImageVariantItem[] = [];
+
+  for (const asset of input.variantAssets) {
+    variants.push({
+      mediaAsset: asset,
+      previewUrl: await createPreviewUrl(input.supabase, asset),
+      isActive: asset.id === input.activeMediaAssetId,
+    });
+  }
+
+  return variants;
 }
 
 interface ConditioningIndex {

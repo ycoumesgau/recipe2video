@@ -26,6 +26,8 @@ export interface PersistMediaAssetFileInput {
   segmentId?: string | null;
   generationId?: string | null;
   referenceId?: string | null;
+  /** Per-generation suffix for recipe reference images (avoids Storage collisions). */
+  referenceVariantId?: string | null;
   compositionId?: string | null;
   storageFilename?: string | null;
   originalFilename?: string | null;
@@ -135,6 +137,7 @@ function buildStoragePath(input: PersistMediaAssetFileInput): string {
         type: input.type,
         videoId,
         referenceId: requireValue(input.referenceId, "referenceId"),
+        variantId: input.referenceVariantId ?? null,
         filename: input.originalFilename,
         mimeType: input.mimeType,
       });

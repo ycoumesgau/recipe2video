@@ -3,6 +3,7 @@ import type { Database } from "@/shared/supabase/database.types";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
 import { fromJson, toJson } from "@/shared/supabase/json";
 
+import { referenceIdFromMediaAsset } from "../reference-image-storage";
 import type {
   MediaAsset,
   MediaAssetStorageLocation,
@@ -146,6 +147,43 @@ export async function listRecipeSourceMediaAssetsByVideoIdAsc(
 
   throwIfSupabaseError(error, "listRecipeSourceMediaAssetsByVideoIdAsc failed");
   return data.map(mapMediaAsset);
+}
+
+/**
+ * All stored reference_image rows for a video, newest first. Used to build
+ * per-reference variant galleries (regenerations keep prior files).
+ */
+export async function listReferenceImageMediaAssetsByVideoId(
+  supabase: SupabaseDataClient,
+  videoId: string,
+): Promise<MediaAsset[]> {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("*")
+    .eq("video_id", videoId)
+    .eq("type", "reference_image")
+    .order("created_at", { ascending: false });
+
+  throwIfSupabaseError(error, "listReferenceImageMediaAssetsByVideoId failed");
+  return data.map(mapMediaAsset);
+}
+
+export function groupReferenceImageVariantsByReferenceId(
+  assets: MediaAsset[],
+): Map<string, MediaAsset[]> {
+  const grouped = new Map<string, MediaAsset[]>();
+
+  for (const asset of assets) {
+    const referenceId = referenceIdFromMediaAsset(asset);
+    if (!referenceId) {
+      continue;
+    }
+    const bucket = grouped.get(referenceId) ?? [];
+    bucket.push(asset);
+    grouped.set(referenceId, bucket);
+  }
+
+  return grouped;
 }
 
 export async function listMediaAssetsByGenerationIds(
