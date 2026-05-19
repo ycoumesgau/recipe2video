@@ -32,6 +32,7 @@ export async function createManualReferenceUpload(
   assertReferenceImageFile(input.file);
 
   const referenceId = crypto.randomUUID();
+  const referenceVariantId = crypto.randomUUID();
   await insertReferenceAsset(supabase, {
     id: referenceId,
     videoId: input.videoId,
@@ -49,12 +50,14 @@ export async function createManualReferenceUpload(
     body: input.file,
     videoId: input.videoId,
     referenceId,
+    referenceVariantId,
     originalFilename: input.file.name,
     mimeType: input.file.type,
     fileSizeBytes: input.file.size,
     metadata: {
       source: "manual_upload",
       referenceId,
+      referenceVariantId,
       referenceRole: input.role,
     },
     createdBy: input.createdBy ?? null,

@@ -39,6 +39,7 @@ import {
   generateReferenceImageAction,
   markReferencesReadyAction,
   rejectReferenceAction,
+  selectReferenceImageVariantAction,
   updateReferenceConditioningAction,
   updateReferencePromptAction,
   uploadManualReferenceAction,
@@ -47,6 +48,7 @@ import {
 import type {
   ConditioningAnchorPreview,
   ReferenceAssetReviewItem,
+  ReferenceImageVariantItem,
   ReferenceReviewData,
   SegmentReferenceReadiness,
 } from "../reference.types";
@@ -422,6 +424,10 @@ function ReferenceCard({
           />
         </div>
 
+        {!isReadOnly && (item.imageVariants?.length ?? 0) > 1 ? (
+          <ReferenceImageVariantsPanel item={item} videoId={videoId} />
+        ) : null}
+
         {isGenerating ? (
           <div className="space-y-1 rounded-lg border bg-muted/30 p-3">
             <p className="text-xs font-medium">Runway progress</p>
@@ -501,10 +507,10 @@ function ReferenceCard({
                 - When the card has no image yet (or the last try failed),
                   surface "Generate image" prominently — this is the new
                   primary action that actually calls GPT-Image 2.
-                - When an image exists, the same call is rendered as
-                  "Regenerate (new image)" so the operator knows clicking
-                  it overwrites the current preview AND clears the Runway
-                  URI (forcing a re-approve + re-upload before Seedance).
+                - When an image exists, the same call adds another variant
+                  (like Seedance segments). The preview switches to the
+                  newest take; older files stay in the variants list below.
+                  Runway URI is cleared on the new take (re-approve + re-upload).
                 - We disable the button while a generation is already in
                   flight to prevent a duplicate Runway charge from a
                   double-click.
@@ -517,7 +523,7 @@ function ReferenceCard({
                 isGenerating
                   ? "Generating…"
                   : hasImage
-                    ? "Regenerate (new image)"
+                    ? "Regenerate (keeps previous variants)"
                     : "Generate image"
               }
               referenceId={reference.id}
@@ -690,6 +696,87 @@ function ConditioningPanel({
         </Button>
       </form>
     </details>
+  );
+}
+
+function ReferenceImageVariantsPanel({
+  item,
+  videoId,
+}: {
+  item: ReferenceAssetReviewItem;
+  videoId: string;
+}) {
+  const variants = item.imageVariants ?? [];
+
+  return (
+    <details className="rounded-lg border bg-background/60 p-3 text-xs" open>
+      <summary className="cursor-pointer font-medium">
+        Image variants ({variants.length}) — compare takes before approving
+      </summary>
+      <div className="mt-3 space-y-3">
+        {variants.map((variant, index) => (
+          <ReferenceImageVariantRow
+            key={variant.mediaAsset.id}
+            index={index}
+            referenceId={item.reference.id}
+            variant={variant}
+            videoId={videoId}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ReferenceImageVariantRow({
+  index,
+  referenceId,
+  variant,
+  videoId,
+}: {
+  index: number;
+  referenceId: string;
+  variant: ReferenceImageVariantItem;
+  videoId: string;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-2 sm:flex-row sm:items-start">
+      {variant.previewUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt={`Variant ${index + 1}`}
+          className="h-20 w-20 shrink-0 rounded object-cover"
+          src={variant.previewUrl}
+        />
+      ) : (
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded border border-dashed bg-muted/40">
+          <ImageIcon className="h-5 w-5 text-muted-foreground" />
+        </div>
+      )}
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium">Variant {index + 1}</span>
+          {variant.isActive ? <Badge>Active preview</Badge> : null}
+        </div>
+        <form action={selectReferenceImageVariantAction}>
+          <input name="videoId" type="hidden" value={videoId} />
+          <input name="referenceId" type="hidden" value={referenceId} />
+          <input
+            name="mediaAssetId"
+            type="hidden"
+            value={variant.mediaAsset.id}
+          />
+          <Button
+            disabled={variant.isActive}
+            size="sm"
+            type="submit"
+            variant="outline"
+          >
+            Use this image
+          </Button>
+        </form>
+      </div>
+    </div>
   );
 }
 

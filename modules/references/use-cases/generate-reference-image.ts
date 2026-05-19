@@ -168,6 +168,7 @@ export async function generateReferenceImage(
     }
 
     const blob = await downloadRunwayOutput(finalTask.output[0]);
+    const referenceVariantId = crypto.randomUUID();
 
     const mediaAsset = await persistMediaAssetFile({
       supabase,
@@ -176,11 +177,14 @@ export async function generateReferenceImage(
       body: blob,
       videoId: reference.videoId,
       referenceId,
+      referenceVariantId,
       mimeType: blob.type || "image/png",
       fileSizeBytes: blob.size,
       runwayOutputUrl: finalTask.output[0],
       metadata: {
         source: "runway_text_to_image",
+        referenceId,
+        referenceVariantId,
         runwayTaskId: task.id,
         model: REFERENCE_IMAGE_MODEL,
         ratio: RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,

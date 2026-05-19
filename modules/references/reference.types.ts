@@ -60,10 +60,21 @@ export interface ReferenceAsset {
   runwayProgress?: number | null;
 }
 
+export interface ReferenceImageVariantItem {
+  mediaAsset: MediaAsset;
+  previewUrl: string | null;
+  isActive: boolean;
+}
+
 export interface ReferenceAssetReviewItem {
   reference: ReferenceAsset;
   mediaAsset?: MediaAsset | null;
   previewUrl?: string | null;
+  /**
+   * Historical GPT-Image 2 / manual uploads for this reference, newest first.
+   * Lets the operator compare regenerations before approving one.
+   */
+  imageVariants?: ReferenceImageVariantItem[];
   usedInSegments: string[];
   /**
    * True when the reference comes from the global `asset_library`. Library

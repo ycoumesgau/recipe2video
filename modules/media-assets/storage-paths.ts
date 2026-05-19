@@ -10,6 +10,11 @@ type StoragePathInput =
       type: "reference_image";
       videoId: string;
       referenceId: string;
+      /**
+       * Unique id per generation attempt. When omitted, uses the legacy
+       * flat path `{videoId}/{referenceId}.ext` (read-only for old rows).
+       */
+      variantId?: string | null;
       filename?: string | null;
       mimeType?: string | null;
     }
@@ -64,12 +69,17 @@ export function buildMediaStoragePath(input: StoragePathInput): string {
   switch (input.type) {
     case "recipe_source":
       return `${input.videoId}/${sanitizeStorageFileName(input.filename)}`;
-    case "reference_image":
-      return `${input.videoId}/${input.referenceId}.${getStorageFileExtension({
+    case "reference_image": {
+      const extension = getStorageFileExtension({
         type: input.type,
         filename: input.filename,
         mimeType: input.mimeType,
-      })}`;
+      });
+      if (input.variantId) {
+        return `${input.videoId}/${input.referenceId}/${input.variantId}.${extension}`;
+      }
+      return `${input.videoId}/${input.referenceId}.${extension}`;
+    }
     case "runway_output":
     case "accepted_clip":
       return `${input.videoId}/${input.segmentId}/${
