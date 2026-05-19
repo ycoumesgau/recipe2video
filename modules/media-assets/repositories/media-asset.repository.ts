@@ -168,6 +168,34 @@ export async function listReferenceImageMediaAssetsByVideoId(
   return data.map(mapMediaAsset);
 }
 
+export async function getReferenceImageMediaAssetByRunwayTaskId(
+  supabase: SupabaseDataClient,
+  input: {
+    videoId: string;
+    referenceId: string;
+    runwayTaskId: string;
+  },
+): Promise<MediaAsset | null> {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("*")
+    .eq("video_id", input.videoId)
+    .eq("type", "reference_image")
+    .contains("metadata", {
+      referenceId: input.referenceId,
+      runwayTaskId: input.runwayTaskId,
+    })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  throwIfSupabaseError(
+    error,
+    "getReferenceImageMediaAssetByRunwayTaskId failed",
+  );
+  return data ? mapMediaAsset(data) : null;
+}
+
 export function groupReferenceImageVariantsByReferenceId(
   assets: MediaAsset[],
 ): Map<string, MediaAsset[]> {

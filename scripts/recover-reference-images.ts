@@ -163,7 +163,7 @@ async function main() {
     const body = Buffer.from(await response.arrayBuffer());
     const mimeType = response.headers.get("content-type") ?? "image/png";
     const extension = extensionForMimeType(mimeType);
-    const storagePath = `${args.videoId}/${reference.id}.${extension}`;
+    const storagePath = `${args.videoId}/${reference.id}/${runwayTaskId}.${extension}`;
 
     const uploadResult = await supabase.storage
       .from(REFERENCE_IMAGES_BUCKET)
@@ -194,6 +194,7 @@ async function main() {
           source: "runway_text_to_image_recovery",
           recovery: true,
           referenceId: reference.id,
+          referenceVariantId: runwayTaskId,
           runwayTaskId,
           model: REFERENCE_IMAGE_MODEL,
         },

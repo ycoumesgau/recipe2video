@@ -104,6 +104,7 @@ export async function pollReferenceImageGenerationWorkflow(
       data: {
         referenceId: data.referenceId,
         taskId: data.taskId,
+        referenceVariantId: data.taskId,
         outputUrl,
         videoId: data.videoId,
         requestedByUserId: data.requestedByUserId,

@@ -8,6 +8,7 @@ import {
 import {
   RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
 } from "@/modules/generation/runway.constants";
+import { getReferenceImageMediaAssetByRunwayTaskId } from "@/modules/media-assets/repositories/media-asset.repository";
 import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
 
 import {
@@ -25,6 +26,11 @@ export interface FinalizeReferenceImageOutputInput {
   runwayTaskId: string;
   outputUrl: string;
   requestedByUserId: string;
+  /**
+   * Per-generation Storage suffix. When omitted, `runwayTaskId` is used so
+   * Inngest retries and duplicate persist events stay idempotent.
+   */
+  referenceVariantId?: string;
   promptText: string;
   anchors?: ConditioningAnchor[];
   unresolvedAnchorNames?: string[];
@@ -60,8 +66,27 @@ export async function finalizeReferenceImageOutput(
   }
 
   const anchors = input.anchors ?? [];
+  const referenceVariantId = input.referenceVariantId ?? input.runwayTaskId;
+
+  const existingMedia = await getReferenceImageMediaAssetByRunwayTaskId(
+    input.supabase,
+    {
+      videoId: reference.videoId,
+      referenceId: input.referenceId,
+      runwayTaskId: input.runwayTaskId,
+    },
+  );
+
+  if (existingMedia) {
+    return updateReferenceAssetMedia(input.supabase, {
+      referenceId: input.referenceId,
+      mediaAssetId: existingMedia.id,
+      status: "generated",
+      clearRunwayUri: true,
+    });
+  }
+
   const blob = await downloadRunwayOutput(input.outputUrl);
-  const referenceVariantId = crypto.randomUUID();
 
   const mediaAsset = await persistMediaAssetFile({
     supabase: input.supabase,
@@ -94,6 +119,7 @@ export async function finalizeReferenceImageOutput(
       conditioningExcluded: input.excludedAnchors ?? [],
     },
     createdBy: input.requestedByUserId,
+    upsert: true,
   });
 
   const updated = await updateReferenceAssetMedia(input.supabase, {

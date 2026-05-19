@@ -77,6 +77,7 @@ describe("pollReferenceImageGenerationWorkflow", () => {
 
     assert.equal(result.terminal, true);
     assert.equal(sent[0]?.name, "reference.output.persist.requested");
+    assert.equal(sent[0]?.data.referenceVariantId, "task-1");
   });
 
   test("marks failed and emits completion when the poll budget is exceeded", async () => {

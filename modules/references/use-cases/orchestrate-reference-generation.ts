@@ -45,6 +45,11 @@ export interface ReferenceOutputPersistRequestedData extends WorkflowAuthData {
   taskId: string;
   outputUrl: string;
   videoId: string;
+  /**
+   * Stable Storage suffix per Runway task (`{videoId}/{referenceId}/{variantId}.ext`).
+   * Defaults to `taskId` in finalize when omitted.
+   */
+  referenceVariantId?: string;
   awaitCompletionEvent?: boolean;
 }
 
@@ -225,6 +230,7 @@ export async function persistReferenceImageOutputWorkflow(
   await deps.finalizeReferenceOutput({
     referenceId: data.referenceId,
     runwayTaskId: data.taskId,
+    referenceVariantId: data.referenceVariantId ?? data.taskId,
     outputUrl: data.outputUrl,
     requestedByUserId: data.requestedByUserId,
     promptText: prepared.promptText,
