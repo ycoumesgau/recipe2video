@@ -59,7 +59,16 @@ import type {
   DashboardSortKey,
   VideoDashboardData,
   VideoDashboardProject,
+  VideoLibraryPagination,
 } from "@/modules/videos/video-dashboard.types";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 import { ProjectCardArchiveMenu } from "@/modules/videos/ui/project-card-archive-menu";
 
 type StatusFilter = "all" | VideoStatus;
@@ -98,9 +107,11 @@ const thumbnailToneClasses: Record<VideoDashboardProject["thumbnailTone"], strin
 export function VideoLibraryDashboard({
   data,
   libraryMode,
+  libraryPage,
 }: {
   data: VideoDashboardData;
   libraryMode: "active" | "archived";
+  libraryPage: number;
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -291,14 +302,21 @@ export function VideoLibraryDashboard({
                 title="No matching projects"
               />
             ) : (
-              <div className="grid min-w-0 gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                {filteredProjects.map((project) => (
-                  <ProjectCard
-                    key={project.id}
-                    libraryMode={libraryMode}
-                    project={project}
-                  />
-                ))}
+              <div className="space-y-4">
+                <div className="grid min-w-0 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                  {filteredProjects.map((project) => (
+                    <ProjectCard
+                      key={project.id}
+                      libraryMode={libraryMode}
+                      project={project}
+                    />
+                  ))}
+                </div>
+                <ProjectLibraryPagination
+                  libraryMode={libraryMode}
+                  libraryPage={libraryPage}
+                  pagination={data.pagination}
+                />
               </div>
             )}
           </CardContent>
@@ -585,6 +603,89 @@ function RecentlyUpdatedCard({
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+function ProjectLibraryPagination({
+  libraryMode,
+  libraryPage,
+  pagination,
+}: {
+  libraryMode: "active" | "archived";
+  libraryPage: number;
+  pagination: VideoLibraryPagination;
+}) {
+  if (pagination.totalPages <= 1) {
+    return null;
+  }
+
+  const pageHref = (page: number) => {
+    const params = new URLSearchParams();
+    if (libraryMode === "archived") {
+      params.set("archived", "1");
+    }
+    if (page > 1) {
+      params.set("page", String(page));
+    }
+    const query = params.toString();
+    return query.length > 0 ? `/?${query}` : "/";
+  };
+
+  const rangeStart = (libraryPage - 1) * pagination.pageSize + 1;
+  const rangeEnd = Math.min(
+    libraryPage * pagination.pageSize,
+    pagination.totalProjects,
+  );
+
+  return (
+    <div className="flex flex-col items-center gap-3 border-t pt-4 sm:flex-row sm:justify-between">
+      <p className="text-sm text-muted-foreground">
+        Showing {rangeStart}–{rangeEnd} of {pagination.totalProjects} projects
+      </p>
+      <Pagination>
+        <PaginationContent>
+          <PaginationItem>
+            <PaginationPrevious
+              aria-disabled={libraryPage <= 1}
+              className={
+                libraryPage <= 1
+                  ? "pointer-events-none opacity-50"
+                  : undefined
+              }
+              href={pageHref(libraryPage - 1)}
+              tabIndex={libraryPage <= 1 ? -1 : undefined}
+            />
+          </PaginationItem>
+          {Array.from({ length: pagination.totalPages }, (_, index) => {
+            const pageNumber = index + 1;
+            return (
+              <PaginationItem key={pageNumber}>
+                <PaginationLink
+                  href={pageHref(pageNumber)}
+                  isActive={pageNumber === libraryPage}
+                >
+                  {pageNumber}
+                </PaginationLink>
+              </PaginationItem>
+            );
+          })}
+          <PaginationItem>
+            <PaginationNext
+              aria-disabled={libraryPage >= pagination.totalPages}
+              className={
+                libraryPage >= pagination.totalPages
+                  ? "pointer-events-none opacity-50"
+                  : undefined
+              }
+              href={pageHref(libraryPage + 1)}
+              tabIndex={
+                libraryPage >= pagination.totalPages ? -1 : undefined
+              }
+            />
+          </PaginationItem>
+        </PaginationContent>
+      </Pagination>
+    </div>
   );
 }
 
