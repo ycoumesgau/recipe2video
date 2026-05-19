@@ -9,6 +9,11 @@ import type {
   SegmentMuxUploadRequestedData,
   SegmentOutputPersistRequestedData,
 } from "@/modules/generation/use-cases/orchestrate-segment-generation";
+import type {
+  ReferenceGenerationCompletedData,
+  ReferenceOutputPersistRequestedData,
+} from "@/modules/references/use-cases/orchestrate-reference-generation";
+import type { ReferenceGenerationPollRequestedData } from "@/modules/references/use-cases/reference-image-poll-workflow";
 
 interface WorkflowAuthEventData {
   requestedByUserId: string;
@@ -25,6 +30,9 @@ export const INNGEST_EVENTS = {
   videoStoryboardGenerateRequested: "video.storyboard.generate.requested",
   videoReferencesGenerateRequested: "video.references.generate.requested",
   videoReferenceGenerateRequested: "video.reference.generate.requested",
+  referenceGenerationPollRequested: "reference.generation.poll.requested",
+  referenceOutputPersistRequested: "reference.output.persist.requested",
+  referenceGenerationCompleted: "reference.generation.completed",
   segmentGenerationRequested: "segment.generation.requested",
   segmentGenerationPollRequested: "segment.generation.poll.requested",
   segmentOutputPersistRequested: "segment.output.persist.requested",
@@ -119,6 +127,9 @@ export type Recipe2VideoEventPayloads = {
   [INNGEST_EVENTS.videoStoryboardGenerateRequested]: StoryboardGenerateRequestedData;
   [INNGEST_EVENTS.videoReferencesGenerateRequested]: ReferencesGenerateRequestedData;
   [INNGEST_EVENTS.videoReferenceGenerateRequested]: SingleReferenceGenerateRequestedData;
+  [INNGEST_EVENTS.referenceGenerationPollRequested]: ReferenceGenerationPollRequestedData;
+  [INNGEST_EVENTS.referenceOutputPersistRequested]: ReferenceOutputPersistRequestedData;
+  [INNGEST_EVENTS.referenceGenerationCompleted]: ReferenceGenerationCompletedData;
   [INNGEST_EVENTS.segmentGenerationRequested]: SegmentGenerationRequestedData;
   [INNGEST_EVENTS.segmentGenerationPollRequested]: SegmentGenerationPollRequestedData;
   [INNGEST_EVENTS.segmentOutputPersistRequested]: SegmentOutputPersistRequestedData;

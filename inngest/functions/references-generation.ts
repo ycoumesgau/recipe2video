@@ -1,9 +1,22 @@
 import { assertAllowlistedUser } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { getRunwayTask } from "@/modules/generation/services/runway.service";
 import { generateReferenceImage } from "@/modules/references/use-cases/generate-reference-image";
+import { finalizeReferenceImageOutput } from "@/modules/references/use-cases/finalize-reference-image-output";
+import {
+  prepareReferenceImageGeneration,
+  persistReferenceImageOutputWorkflow,
+  type ReferenceOutputPersistRequestedData,
+} from "@/modules/references/use-cases/orchestrate-reference-generation";
+import {
+  pollReferenceImageGenerationWorkflow,
+  type ReferenceGenerationPollRequestedData,
+} from "@/modules/references/use-cases/reference-image-poll-workflow";
 import {
   getReferenceAssetById,
   listReferenceAssetsForVideo,
+  updateReferenceAssetRunwayPollState,
+  updateReferenceAssetStatus,
 } from "@/modules/references/repositories/reference.repository";
 import { updateVideoProjectStatus } from "@/modules/videos/repositories/video.repository";
 
@@ -29,6 +42,18 @@ import {
  */
 const PENDING_STATUSES = new Set(["planned", "failed"]);
 
+const DEFAULT_POLL_DELAY_SECONDS = 6;
+
+async function referenceWorkflowSendEvent(workflowEvent: {
+  name: string;
+  data: Record<string, unknown>;
+}): Promise<void> {
+  await inngest.send({
+    name: workflowEvent.name,
+    data: workflowEvent.data,
+  });
+}
+
 export const generateReferencesWorkflow = inngest.createFunction(
   {
     id: "generate-references-workflow",
@@ -46,11 +71,6 @@ export const generateReferencesWorkflow = inngest.createFunction(
     const supabase = createSupabaseAdminClient();
     const references = await listReferenceAssetsForVideo(supabase, data.videoId);
 
-    // The legacy "Mark references ready" path only regenerated `planned`
-    // entries with a prompt. The "Generate all missing" path additionally
-    // pulls in `failed` entries (so the operator can retry without first
-    // hand-resetting status), but still skips entries with no prompt
-    // (those require a manual upload).
     const candidates = references.filter((reference) => {
       if (reference.videoId !== data.videoId) {
         return false;
@@ -76,20 +96,42 @@ export const generateReferencesWorkflow = inngest.createFunction(
     }
 
     let generatedCount = 0;
+    const awaitCompletion = data.flipStatusOnCompletion ?? !data.generateAllMissing;
+
     for (const reference of candidates) {
-      // Each generation gets its own durable Inngest step so a failure on one
-      // reference does not lose the work already done on previous ones.
-      await step.run(`generate-reference-${reference.id}`, async () =>
+      await step.run(`start-reference-${reference.id}`, async () =>
         generateReferenceImage({
           supabase,
           referenceId: reference.id,
+          videoId: data.videoId,
           requestedByUserId: data.requestedByUserId,
+          awaitCompletionEvent: awaitCompletion,
+          sendEvent: referenceWorkflowSendEvent,
         }),
       );
-      generatedCount += 1;
+
+      if (awaitCompletion) {
+        const completion = await step.waitForEvent(
+          `wait-reference-${reference.id}`,
+          {
+            event: INNGEST_EVENTS.referenceGenerationCompleted,
+            timeout: "20m",
+            if: `async.data.referenceId == "${reference.id}"`,
+          },
+        );
+
+        const completionData = completion?.data as
+          | { status?: string }
+          | undefined;
+        if (completionData?.status === "generated") {
+          generatedCount += 1;
+        }
+      } else {
+        generatedCount += 1;
+      }
     }
 
-    if (data.flipStatusOnCompletion ?? !data.generateAllMissing) {
+    if (awaitCompletion) {
       await updateVideoProjectStatus(
         supabase,
         data.videoId,
@@ -103,12 +145,7 @@ export const generateReferencesWorkflow = inngest.createFunction(
 
 /**
  * Per-reference generation handler. Triggered by the "Generate" /
- * "Regenerate" button on a single reference card. Kept separate from the
- * batch workflow so:
- *   - the user can iterate on one anchor (edit prompt, regen, repeat)
- *     without waiting for the others;
- *   - one bad anchor cannot fail the whole batch;
- *   - the singular path never touches video project status.
+ * "Regenerate" button on a single reference card.
  */
 export const generateSingleReferenceWorkflow = inngest.createFunction(
   {
@@ -137,22 +174,82 @@ export const generateSingleReferenceWorkflow = inngest.createFunction(
     }
 
     if (reference.source === "asset_library") {
-      // Library globals must never be regenerated from a per-video page.
-      // The /library admin page owns that path. Failing fast prevents a
-      // mis-wired UI from silently rewriting global assets.
       throw new Error(
         `Reference ${data.referenceId} is a library global; use /library to regenerate it.`,
       );
     }
 
-    await step.run(`generate-reference-${reference.id}`, async () =>
+    await step.run(`start-reference-${reference.id}`, async () =>
       generateReferenceImage({
         supabase,
         referenceId: reference.id,
+        videoId: data.videoId,
         requestedByUserId: data.requestedByUserId,
+        sendEvent: referenceWorkflowSendEvent,
       }),
     );
 
     return { generatedCount: 1 };
+  },
+);
+
+export const pollReferenceGeneration = inngest.createFunction(
+  {
+    id: "poll-reference-generation",
+    triggers: [{ event: INNGEST_EVENTS.referenceGenerationPollRequested }],
+  },
+  async ({ event, step }) => {
+    const supabase = createSupabaseAdminClient();
+    const data = event.data as ReferenceGenerationPollRequestedData;
+
+    await assertAllowlistedUser(data.requestedByUserId);
+
+    const requestedDelaySeconds = Number(data.nextPollDelaySeconds);
+    const delaySeconds =
+      Number.isFinite(requestedDelaySeconds) && requestedDelaySeconds > 0
+        ? Math.max(5, Math.min(30, Math.round(requestedDelaySeconds)))
+        : DEFAULT_POLL_DELAY_SECONDS;
+    await step.sleep("wait before polling Runway", `${delaySeconds}s`);
+
+    return pollReferenceImageGenerationWorkflow(data, {
+      getReferenceAssetById: async (referenceId) => {
+        const reference = await getReferenceAssetById(supabase, referenceId);
+        if (!reference) {
+          return null;
+        }
+        return { id: reference.id, videoId: reference.videoId ?? null };
+      },
+      getRunwayTask,
+      updateReferenceAssetRunwayPollState: (input) =>
+        updateReferenceAssetRunwayPollState(supabase, input),
+      updateReferenceAssetStatus: async (referenceId, status) => {
+        await updateReferenceAssetStatus(supabase, { referenceId, status });
+      },
+      sendEvent: referenceWorkflowSendEvent,
+    });
+  },
+);
+
+export const persistReferenceOutput = inngest.createFunction(
+  {
+    id: "persist-reference-output",
+    retries: 0,
+    triggers: [{ event: INNGEST_EVENTS.referenceOutputPersistRequested }],
+  },
+  async ({ event }) => {
+    const supabase = createSupabaseAdminClient();
+    const data = event.data as ReferenceOutputPersistRequestedData;
+
+    await assertAllowlistedUser(data.requestedByUserId);
+
+    return persistReferenceImageOutputWorkflow(data, {
+      prepareReferenceGeneration: (referenceId) =>
+        prepareReferenceImageGeneration(supabase, referenceId),
+      finalizeReferenceOutput: (input) =>
+        finalizeReferenceImageOutput({ ...input, supabase }),
+      sendEvent: data.awaitCompletionEvent
+        ? referenceWorkflowSendEvent
+        : undefined,
+    });
   },
 );
