@@ -14,6 +14,28 @@ import type { Database } from "@/shared/supabase/database.types";
 
 type Db = SupabaseClient<Database>;
 
+type SegmentMuxRow = Pick<
+  Database["public"]["Tables"]["segments"]["Row"],
+  "position" | "id" | "selected_generation_id"
+>;
+type GenerationMuxRow = Pick<
+  Database["public"]["Tables"]["generations"]["Row"],
+  "id" | "media_asset_id"
+>;
+type MediaAssetMuxRow = Pick<
+  Database["public"]["Tables"]["media_assets"]["Row"],
+  | "id"
+  | "storage_bucket"
+  | "storage_path"
+  | "mux_playback_id"
+  | "mime_type"
+  | "original_filename"
+  | "duration_seconds"
+  | "segment_id"
+  | "video_id"
+  | "created_by"
+>;
+
 const MUX_VIDEO_API_BASE_URL = "https://api.mux.com/video/v1";
 const MUX_SIGNED_URL_TTL_SECONDS = 60 * 60;
 const MUX_BASIC_ESTIMATED_USD_PER_SECOND = 0.005;
@@ -28,12 +50,10 @@ async function main() {
     { auth: { persistSession: false } },
   );
 
-  const rows = await query(
+  const segments = await query<SegmentMuxRow[]>(
     supabase
       .from("segments")
-      .select(
-        "position, id, selected_generation_id, generations!segments_selected_generation_id_fkey(id, media_asset_id, media_assets!generations_media_asset_id_fkey(id, storage_bucket, storage_path, mux_playback_id, mime_type, original_filename, duration_seconds, segment_id, video_id, created_by))",
-      )
+      .select("position, id, selected_generation_id")
       .eq("video_id", args.videoId)
       .gte("position", args.from)
       .lte("position", args.to)
@@ -41,15 +61,43 @@ async function main() {
     "load segments failed",
   );
 
-  for (const row of rows) {
-    const position = row.position;
-    const generation = row.generations;
-    const asset = generation?.media_assets;
+  for (const segment of segments) {
+    const position = segment.position;
 
     console.log(`\n[seg ${position}] --- start ${new Date().toISOString()} ---`);
 
-    if (!generation?.media_asset_id || !asset) {
+    if (!segment.selected_generation_id) {
+      console.log(`[seg ${position}] skip: no selected generation`);
+      continue;
+    }
+
+    const generation = await queryMaybeSingle<GenerationMuxRow>(
+      supabase
+        .from("generations")
+        .select("id, media_asset_id")
+        .eq("id", segment.selected_generation_id)
+        .maybeSingle(),
+      "load generation failed",
+    );
+
+    if (!generation?.media_asset_id) {
       console.log(`[seg ${position}] skip: no media asset`);
+      continue;
+    }
+
+    const asset = await queryMaybeSingle<MediaAssetMuxRow>(
+      supabase
+        .from("media_assets")
+        .select(
+          "id, storage_bucket, storage_path, mux_playback_id, mime_type, original_filename, duration_seconds, segment_id, video_id, created_by",
+        )
+        .eq("id", generation.media_asset_id)
+        .maybeSingle(),
+      "load media asset failed",
+    );
+
+    if (!asset) {
+      console.log(`[seg ${position}] skip: media asset row missing`);
       continue;
     }
     if (asset.mux_playback_id) {
@@ -61,8 +109,14 @@ async function main() {
       continue;
     }
 
+    const assetWithStorage = {
+      ...asset,
+      storage_bucket: asset.storage_bucket,
+      storage_path: asset.storage_path,
+    };
+
     try {
-      const mux = await uploadAssetToMux({ supabase, asset });
+      const mux = await uploadAssetToMux({ supabase, asset: assetWithStorage });
       console.log(
         `[seg ${position}] ok muxPlaybackId=${mux.muxPlaybackId} muxAssetId=${mux.muxAssetId}`,
       );
@@ -79,14 +133,9 @@ async function main() {
 
 async function uploadAssetToMux(input: {
   supabase: Db;
-  asset: {
-    id: string;
+  asset: MediaAssetMuxRow & {
     storage_bucket: string;
     storage_path: string;
-    segment_id: string | null;
-    video_id: string | null;
-    duration_seconds: number | null;
-    created_by: string | null;
   };
 }) {
   const signed = await input.supabase.storage
@@ -151,6 +200,10 @@ async function uploadAssetToMux(input: {
           ),
         )
       : null;
+
+  if (!input.asset.video_id) {
+    throw new Error(`media asset ${input.asset.id} has no video_id for cost log`);
+  }
 
   await queryWrite(
     input.supabase.from("cost_logs").insert({
@@ -232,6 +285,15 @@ async function query<T>(
   const { data, error } = await promise;
   if (error) throw new Error(`${label}: ${error.message}`);
   return (data ?? []) as Exclude<T, null>;
+}
+
+async function queryMaybeSingle<T>(
+  promise: PromiseLike<{ data: T | null; error: { message: string } | null }>,
+  label: string,
+) {
+  const { data, error } = await promise;
+  if (error) throw new Error(`${label}: ${error.message}`);
+  return data;
 }
 
 async function queryWrite(
