@@ -1196,7 +1196,7 @@ After each agent run the application downloads all files from
 | `logical-scenes.json` | `LogicalScenesEnvelopeSchema` | `logical_scenes` table (replace) |
 | `seedance-segments.json` | `SeedanceSegmentsEnvelopeSchema` | `segments` table (replace) |
 | `reference-plan.json` | `ReferencePlanSchema` | `reference_assets` table (replace) |
-| `suno-prompt.json` | `SunoPromptV2Schema` | `videos.recipe_data.sunoPromptV2` + `sunoPromptV2SyncedAt` (merge) |
+| `suno-prompt.json` | `SunoPromptV2Schema` (includes optional `instructions.fullSongOperatorEdits` per agent-workspace `contracts/suno-music.md`) | `videos.recipe_data.sunoPromptV2` + `sunoPromptV2SyncedAt` (merge) |
 
 **Markdown artifacts — accepted as-is (no schema validation):**
 
