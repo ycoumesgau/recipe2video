@@ -7,11 +7,13 @@ import {
   applyOutroOverrideToSegments,
   buildOutroPrompt,
   buildOutroReferences,
+  FINAL_DISH_DESCRIPTION_MAX_CHARS,
   isOutroSegment,
   LICORN_OUTRO_ARC,
   LICORN_OUTRO_DURATION_SECONDS,
   LICORN_OUTRO_PROMPT_PLACEHOLDER,
   LICORN_OUTRO_REFERENCE_NAMES,
+  resolveFinalDishDescriptionForOutro,
 } from "./seedance-outro-template";
 
 function makeSegment(partial: Partial<SeedanceSegment> = {}): SeedanceSegment {
@@ -103,12 +105,42 @@ test("buildOutroPrompt rejects empty dish description", () => {
   );
 });
 
-test("buildOutroPrompt rejects descriptions longer than 280 chars", () => {
+test("buildOutroPrompt truncates unparseable descriptions longer than 280 chars", () => {
   const tooLong = "x".repeat(281);
-  assert.throws(
-    () => buildOutroPrompt({ finalDishDescription: tooLong }),
-    /under 280/,
-  );
+  const prompt = buildOutroPrompt({ finalDishDescription: tooLong });
+  assert.ok(prompt.length > 0);
+});
+
+test("resolveFinalDishDescriptionForOutro extracts dish identity from GPT-Image recipe_state boilerplate", () => {
+  const raw =
+    "Generate one vertical-reference still of the final Lemon Butter Orecchiette with Burrata in the Licorn kitchen on the light terrazzo island: one shallow hero bowl of glossy 2-3 cm orecchiette, one torn burrata with thick cream visible, generous roasted pistachio-caper-panko crunch, basil leaves, parmesan, black pepper and yellow lemon zest. The dish is intact and motionless, no utensil inside it, no spoon dive, no slice, no drip action. Keep it sexy, creamy, crunchy and high-contrast without changing the Licorn kitchen context.";
+
+  const resolved = resolveFinalDishDescriptionForOutro(raw);
+
+  assert.ok(resolved.length <= FINAL_DISH_DESCRIPTION_MAX_CHARS);
+  assert.match(resolved, /Lemon Butter Orecchiette with Burrata/);
+  assert.match(resolved, /orecchiette/);
+  assert.doesNotMatch(resolved, /Generate one vertical-reference still/i);
+  assert.doesNotMatch(resolved, /Keep it sexy/i);
+});
+
+test("applyOutroOverrideToSegments succeeds when FinalDishVisual prompt is a long GPT-Image generation block", () => {
+  const longFinalDishPrompt =
+    "Generate one vertical-reference still of the final Lemon Butter Orecchiette with Burrata in the Licorn kitchen on the light terrazzo island: one shallow hero bowl of glossy orecchiette and torn burrata. The dish is intact and motionless.";
+
+  const result = applyOutroOverrideToSegments({
+    segments: [
+      makeSegment({
+        id: "outro",
+        arc: LICORN_OUTRO_ARC,
+        prompt: LICORN_OUTRO_PROMPT_PLACEHOLDER,
+      }),
+    ],
+    finalDishDescription: longFinalDishPrompt,
+  });
+
+  assert.deepEqual(result.errors, []);
+  assert.match(result.segments[0].prompt, /Lemon Butter Orecchiette with Burrata/);
 });
 
 test("isOutroSegment matches the canonical arc, ignoring case and whitespace", () => {
