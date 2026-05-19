@@ -242,16 +242,34 @@ export const persistReferenceOutput = inngest.createFunction(
 
     await assertAllowlistedUser(data.requestedByUserId);
 
-    return step.run("finalize-reference-output", async () =>
-      persistReferenceImageOutputWorkflow(data, {
-        prepareReferenceGeneration: (referenceId) =>
-          prepareReferenceImageGeneration(supabase, referenceId),
-        finalizeReferenceOutput: (input) =>
-          finalizeReferenceImageOutput({ ...input, supabase }),
-        sendEvent: data.awaitCompletionEvent
-          ? referenceWorkflowSendEvent
-          : undefined,
-      }),
-    );
+    try {
+      return await step.run("finalize-reference-output", async () =>
+        persistReferenceImageOutputWorkflow(data, {
+          prepareReferenceGeneration: (referenceId) =>
+            prepareReferenceImageGeneration(supabase, referenceId),
+          finalizeReferenceOutput: (input) =>
+            finalizeReferenceImageOutput({ ...input, supabase }),
+          sendEvent: data.awaitCompletionEvent
+            ? referenceWorkflowSendEvent
+            : undefined,
+        }),
+      );
+    } catch (error) {
+      await updateReferenceAssetStatus(supabase, {
+        referenceId: data.referenceId,
+        status: "failed",
+      });
+      if (data.awaitCompletionEvent) {
+        await referenceWorkflowSendEvent({
+          name: "reference.generation.completed",
+          data: {
+            referenceId: data.referenceId,
+            videoId: data.videoId,
+            status: "failed",
+          },
+        });
+      }
+      throw error;
+    }
   },
 );

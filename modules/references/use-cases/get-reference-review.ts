@@ -161,11 +161,18 @@ function isMissingReference(item: ReferenceAssetReviewItem): boolean {
     return true;
   }
 
-  if (!reference.runwayUri) {
+  if (reference.status === "generated") {
     return true;
   }
 
-  return false;
+  if (
+    reference.status === "approved" ||
+    reference.status === "uploaded_to_runway"
+  ) {
+    return !reference.mediaAssetId;
+  }
+
+  return true;
 }
 
 function aggregateUsage(

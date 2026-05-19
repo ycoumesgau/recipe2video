@@ -31,9 +31,9 @@ test("buildSegmentReadiness treats uploaded reference assets as ready", () => {
   assert.deepEqual(readiness[0]?.missingRunwayUploads, []);
 });
 
-test("buildSegmentReadiness reports approved references missing Runway upload", () => {
+test("buildSegmentReadiness reports approved references missing stored media", () => {
   const readiness = buildSegmentReadiness(
-    [referenceAsset("KitchenIslandDefault", null, "approved")],
+    [referenceAsset("KitchenIslandDefault", null, "approved", null)],
     [
       segment({
         runwayUri: null,
@@ -43,6 +43,28 @@ test("buildSegmentReadiness reports approved references missing Runway upload", 
 
   assert.deepEqual(readiness[0]?.missingApprovedReferences, []);
   assert.deepEqual(readiness[0]?.missingRunwayUploads, ["KitchenIslandDefault"]);
+});
+
+test("buildSegmentReadiness treats approved references with stored media as ready without runwayUri", () => {
+  const readiness = buildSegmentReadiness(
+    [
+      referenceAsset(
+        "OrecchietteAlDenteReference",
+        null,
+        "approved",
+        "media-variant-1",
+      ),
+    ],
+    [
+      segment({
+        runwayUri: null,
+        referenceName: "OrecchietteAlDenteReference",
+      }),
+    ],
+  );
+
+  assert.deepEqual(readiness[0]?.missingApprovedReferences, []);
+  assert.deepEqual(readiness[0]?.missingRunwayUploads, []);
 });
 
 test("buildSegmentReadiness treats library globals as ready even without runwayUri", () => {
@@ -83,7 +105,11 @@ test("buildSegmentReadiness matches a segment reference declared by alias agains
   assert.deepEqual(readiness[0]?.missingRunwayUploads, []);
 });
 
-function segment(input: { runwayUri: string | null }): SeedanceSegment {
+function segment(input: {
+  runwayUri: string | null;
+  referenceName?: string;
+}): SeedanceSegment {
+  const referenceName = input.referenceName ?? "KitchenIslandDefault";
   return {
     id: "segment-1",
     videoId: "video-1",
@@ -98,8 +124,8 @@ function segment(input: { runwayUri: string | null }): SeedanceSegment {
     references: [
       {
         role: "global Licorn kitchen environment",
-        name: "KitchenIslandDefault",
-        label: "KitchenIslandDefault",
+        name: referenceName,
+        label: referenceName,
         runwayUri: input.runwayUri,
         required: true,
       },
@@ -131,11 +157,12 @@ function referenceAsset(
   canonicalName: string,
   runwayUri: string | null,
   status: ReferenceAsset["status"] = "uploaded_to_runway",
+  mediaAssetId: string | null = "media-default",
 ): ReferenceAsset {
   return {
     id: `reference-${canonicalName}`,
     videoId: "video-1",
-    mediaAssetId: null,
+    mediaAssetId,
     type: "kitchen",
     canonicalName,
     source: "agent_reference_plan",
