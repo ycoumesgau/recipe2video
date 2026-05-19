@@ -18,6 +18,10 @@ import { cn } from "@/lib/utils"
  *   - Outline bg  : transparent, text var(--primary)
  *   - Outline hov : var(--outline-hover) #feecf0 / light pink
  */
+/** Étend la zone cliquable sous l’ombre sticker (box-shadow non incluse dans le hit box). */
+const stickerHitSlop =
+  "relative overflow-visible after:absolute after:inset-0 after:bottom-[-4px] after:rounded-[inherit] after:content-['']"
+
 const buttonVariants = cva(
   [
     "group/button inline-flex shrink-0 items-center justify-center",
@@ -28,13 +32,14 @@ const buttonVariants = cva(
     "focus-visible:ring-3 focus-visible:ring-ring/60 focus-visible:ring-offset-1",
     "disabled:pointer-events-none disabled:opacity-40",
     "aria-invalid:ring-3 aria-invalid:ring-destructive/30",
-    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+    "[&_svg]:pointer-events-none [&_span]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   ].join(" "),
   {
     variants: {
       variant: {
         /** Primaire coral — fond plein + ombre sticker. */
         default: [
+          stickerHitSlop,
           "bg-primary text-primary-foreground",
           "shadow-[0_4px_0_0_var(--sticker-edge)]",
           "hover:bg-[var(--primary-hover)] hover:shadow-[0_6px_0_0_var(--sticker-edge)]",
@@ -42,6 +47,7 @@ const buttonVariants = cva(
         ].join(" "),
         /** Contour — transparent + texte coral + ombre sticker identique. */
         outline: [
+          stickerHitSlop,
           "bg-transparent text-primary border-sticker-edge",
           "shadow-[0_4px_0_0_var(--sticker-edge)]",
           "hover:bg-[var(--outline-hover)] hover:shadow-[0_6px_0_0_var(--sticker-edge)]",
@@ -50,6 +56,7 @@ const buttonVariants = cva(
         ].join(" "),
         /** Secondaire crème (light) — en dark : muted pour rester cohérent avec la nav. */
         secondary: [
+          stickerHitSlop,
           "bg-cream text-cream-foreground",
           "shadow-[0_4px_0_0_var(--sticker-edge)]",
           "hover:bg-[oklch(0.92_0.04_82)] hover:shadow-[0_6px_0_0_var(--sticker-edge)]",

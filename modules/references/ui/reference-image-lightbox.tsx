@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useCallback, useEffect } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -102,7 +103,7 @@ export function ReferenceImageLightbox({
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent
-        className="flex max-h-[min(96vh,900px)] w-full max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        className="flex max-h-[96vh] w-full max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         showCloseButton
       >
         <DialogHeader className="sr-only">
@@ -112,48 +113,48 @@ export function ReferenceImageLightbox({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/95 px-12 py-6">
-          {hasMultiple ? (
-            <Button
-              aria-label="Image précédente"
-              className="absolute top-1/2 left-2 z-10 -translate-y-1/2"
-              onClick={goPrev}
-              size="icon-sm"
-              type="button"
-              variant="outline"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-          ) : null}
+        <div className="relative h-[min(52vh,520px)] shrink-0 bg-black/95">
+          <div className="grid h-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-4">
+            {hasMultiple ? (
+              <LightboxNavButton
+                aria-label="Image précédente"
+                onClick={goPrev}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </LightboxNavButton>
+            ) : (
+              <div aria-hidden className="size-8 shrink-0" />
+            )}
 
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            alt={slide.canonicalName}
-            className="max-h-[min(72vh,720px)] w-auto max-w-full object-contain"
-            src={slide.previewUrl}
-          />
+            <div className="flex h-full min-h-0 min-w-0 items-center justify-center overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                alt={slide.canonicalName}
+                className="pointer-events-none max-h-full max-w-full object-contain"
+                src={slide.previewUrl}
+              />
+            </div>
+
+            {hasMultiple ? (
+              <LightboxNavButton
+                aria-label="Image suivante"
+                onClick={goNext}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </LightboxNavButton>
+            ) : (
+              <div aria-hidden className="size-8 shrink-0" />
+            )}
+          </div>
 
           {hasMultiple ? (
-            <Button
-              aria-label="Image suivante"
-              className="absolute top-1/2 right-2 z-10 -translate-y-1/2"
-              onClick={goNext}
-              size="icon-sm"
-              type="button"
-              variant="outline"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          ) : null}
-
-          {hasMultiple ? (
-            <p className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-background/90 px-3 py-1 text-xs font-medium text-foreground">
+            <p className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-background/90 px-3 py-1 text-xs font-medium text-foreground">
               {index + 1} / {slides.length}
             </p>
           ) : null}
         </div>
 
-        <div className="space-y-3 border-t bg-popover p-4">
+        <div className="min-h-0 shrink space-y-3 overflow-y-auto border-t bg-popover p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0 space-y-1">
               <p className="truncate font-heading text-base font-medium">
@@ -191,6 +192,28 @@ export function ReferenceImageLightbox({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function LightboxNavButton({
+  children,
+  onClick,
+  ...props
+}: {
+  children: ReactNode;
+  onClick: () => void;
+} & Omit<React.ComponentProps<typeof Button>, "onClick" | "size" | "variant">) {
+  return (
+    <Button
+      className="relative z-20 shrink-0"
+      onClick={onClick}
+      size="icon-sm"
+      type="button"
+      variant="outline"
+      {...props}
+    >
+      {children}
+    </Button>
   );
 }
 
