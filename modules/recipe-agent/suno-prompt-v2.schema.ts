@@ -4,6 +4,13 @@ import { z } from "zod";
  * Contractual Suno prompt artifact (`suno-prompt.json`) produced by the recipe
  * agent. Stored in `videos.recipe_data.sunoPromptV2` after successful sync.
  */
+const SunoFullSongOperatorEditsSchema = z
+  .object({
+    styleOfMusicSuffix: z.string(),
+    autoLyricsPrompt: z.array(z.string()),
+  })
+  .strict();
+
 export const SunoPromptV2Schema = z
   .object({
     schemaVersion: z.number().int().positive(),
@@ -30,12 +37,16 @@ export const SunoPromptV2Schema = z
         voice: z.string().optional(),
         structure: z.string().optional(),
         workflowNotes: z.string().optional(),
+        /** Operator-only Suno edits before generating the 2–3 min master (agent-workspace contract). */
+        fullSongOperatorEdits: SunoFullSongOperatorEditsSchema.optional(),
       })
       .strict()
       .optional(),
     qualityChecks: z.array(z.string()).optional(),
   })
   .strict();
+
+export type SunoFullSongOperatorEdits = z.infer<typeof SunoFullSongOperatorEditsSchema>;
 
 export type SunoPromptV2 = z.infer<typeof SunoPromptV2Schema>;
 
@@ -89,6 +100,20 @@ export function buildMarkdownPackFromV2(data: SunoPromptV2): string {
       lines.push(`Workflow: ${data.instructions.workflowNotes}`);
     }
     lines.push("```");
+    blocks.push(lines.join("\n"));
+  }
+
+  const operatorEdits = data.instructions?.fullSongOperatorEdits;
+  if (operatorEdits) {
+    const lines = [
+      "## Operator full song (manual)",
+      "```text",
+      `Style suffix: ${operatorEdits.styleOfMusicSuffix}`,
+      "",
+      "Lyrics edits before full generation:",
+      ...operatorEdits.autoLyricsPrompt.map((edit) => `- ${edit}`),
+      "```",
+    ];
     blocks.push(lines.join("\n"));
   }
 

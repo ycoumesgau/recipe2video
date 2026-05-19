@@ -150,6 +150,50 @@ test("buildRecipeAgentArtifactSyncPlan maps valid suno-prompt.json to sunoPrompt
   assert.equal(plan.sunoPromptV2?.fields.title, "Kitchen Glow");
 });
 
+test("buildRecipeAgentArtifactSyncPlan accepts suno-prompt.json with fullSongOperatorEdits", () => {
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "suno-prompt.json",
+        JSON.stringify({
+          schemaVersion: 1,
+          status: {
+            recipeName: "Lemon Butter Orecchiette",
+            goal: "Full song 2-3 min for streaming; 45-90s excerpt for vertical edit",
+          },
+          fields: {
+            title: "Lemon Butter Afterglow",
+            styleOfMusic: "Glossy K-pop electronic pop",
+            excludeStyles: "No metal",
+            autoLyricsPrompt: "Write original English song lyrics about pasta.",
+            shortVersionPlan: "Use chorus for the vertical cut.",
+          },
+          instructions: {
+            workflowNotes: "Operator applies edits before full generation.",
+            fullSongOperatorEdits: {
+              styleOfMusicSuffix: "2-3 minutes song.",
+              autoLyricsPrompt: [
+                'Opening line: change "Write original English song lyrics" to "Write original 2-3 minutes English song lyrics".',
+              ],
+            },
+          },
+          qualityChecks: ["Style has no 2-3 minutes suffix in committed artifact."],
+        }),
+      ),
+    ],
+  });
+
+  assert.equal(plan.valid, true);
+  assert.ok(plan.sunoPromptV2);
+  assert.equal(
+    plan.sunoPromptV2?.instructions?.fullSongOperatorEdits?.styleOfMusicSuffix,
+    "2-3 minutes song.",
+  );
+  const record = plan.artifactRecords.find((r) => r.artifactName === "suno-prompt.json");
+  assert.equal(record?.validationStatus, "valid");
+});
+
 test("buildRecipeAgentArtifactSyncPlan invalid suno-prompt.json does not add blocking errors", () => {
   const plan = buildRecipeAgentArtifactSyncPlan({
     videoId,

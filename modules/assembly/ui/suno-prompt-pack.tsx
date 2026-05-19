@@ -166,6 +166,14 @@ function buildSessionMetaLines(data: SunoPromptV2): string[] {
     if (data.instructions.voice) lines.push(`Voice: ${data.instructions.voice}`);
     if (data.instructions.structure) lines.push(`Structure: ${data.instructions.structure}`);
     if (data.instructions.workflowNotes) lines.push(`Workflow: ${data.instructions.workflowNotes}`);
+    const operatorEdits = data.instructions.fullSongOperatorEdits;
+    if (operatorEdits) {
+      lines.push("", "Operator full song (manual):");
+      lines.push(`  Style suffix: ${operatorEdits.styleOfMusicSuffix}`);
+      for (const edit of operatorEdits.autoLyricsPrompt) {
+        lines.push(`  - ${edit}`);
+      }
+    }
   }
   if (data.qualityChecks?.length) {
     lines.push("Quality checks:", ...data.qualityChecks.map((c) => `- ${c}`));
