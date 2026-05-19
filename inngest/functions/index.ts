@@ -11,6 +11,8 @@ import {
 import {
   generateReferencesWorkflow,
   generateSingleReferenceWorkflow,
+  persistReferenceOutput,
+  pollReferenceGeneration,
 } from "./references-generation";
 import { renderCompositionExport } from "./composition-render";
 import {
@@ -26,6 +28,8 @@ export const functions = [
   generateStoryboardWorkflow,
   generateReferencesWorkflow,
   generateSingleReferenceWorkflow,
+  pollReferenceGeneration,
+  persistReferenceOutput,
   requestSegmentGeneration,
   applySegmentFeedbackRegeneration,
   pollSegmentGeneration,
