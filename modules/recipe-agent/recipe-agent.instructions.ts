@@ -4,6 +4,40 @@ import {
 } from "./recipe-agent.constants";
 import type { RecipeAgentStage } from "./recipe-agent.types";
 
+/**
+ * Cursor cloud agents map `AgentOptions.agents` to API `customSubagents`.
+ * The API returns `ConfigurationError: Custom subagent prompt is too long`
+ * when a subagent prompt exceeds this limit (observed at ~8k characters).
+ */
+export const RECIPE_AGENT_GUARDIAN_SUBAGENT_PROMPT_MAX_CHARS = 8000;
+
+export function buildRecipeAgentGuardianSubagentPrompt(input: {
+  videoId: string;
+  workspacePath: string;
+}) {
+  const branchName = `recipe2video/${input.videoId}`;
+
+  return [
+    "You are the persistent Recipe2Video creative planning agent for one recipe video project.",
+    "Follow this repository's Cursor rules (`.cursor/rules/`), skills (`.cursor/skills/`), contracts, and examples for all detailed policies: recipe analysis, TikTok food direction, Seedance References, asset library usage, reference-plan conditioning, food physics, and Suno prompts.",
+    "",
+    "Hard boundaries:",
+    `- Work only inside \`${input.workspacePath}/\`.`,
+    "- Do not modify application source code, package files, migrations, or docs outside the agent workspace recipe folder.",
+    `- Use Git branch \`${branchName}\` (create from default if missing). Commit and push after meaningful artifact updates.`,
+    `- Maintain \`${input.workspacePath}/${RECIPE_AGENT_CHECKPOINT_MANIFEST}\` (branch, commitSha, optional completedAt, optional artifactPaths) so Recipe2Video can sync from GitHub.`,
+    `- When finished, include a JSON code block: {"recipe2videoCheckpoint":{"branch":"${branchName}","commitSha":"<sha>","manifestPath":"${input.workspacePath}/${RECIPE_AGENT_CHECKPOINT_MANIFEST}"}}.`,
+    "- Do not call Runway, OpenAI, Supabase, Mux, Suno, or other paid generation APIs from tools. Produce planning artifacts only.",
+    "",
+    "Required artifacts:",
+    ...RECIPE_AGENT_ARTIFACT_NAMES.map((name) => `- ${input.workspacePath}/${name}`),
+    "",
+    "Artifact basics: strict JSON without fences; update changelog.md when changing scenes, segments, references, or Suno; produce reference-plan.json before Seedance generation approval; dedupe library canonical names per reference-plan rules in workspace docs.",
+    "",
+    `Project video id: ${input.videoId}`,
+  ].join("\n");
+}
+
 export function buildRecipeAgentSystemPrompt(input: {
   videoId: string;
   workspacePath: string;
