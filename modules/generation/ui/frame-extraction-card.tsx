@@ -106,16 +106,16 @@ export function FrameExtractionCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="overflow-hidden rounded-lg border bg-muted/40">
+        <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border bg-black">
           {previewUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- Mux thumbnail must hit the public CDN directly; next/image cannot loader-rewrite this off-domain URL without explicit remote config.
             <img
               alt="Mux thumbnail preview"
-              className="aspect-[9/16] w-full object-cover"
+              className="max-h-full max-w-full object-contain"
               src={previewUrl}
             />
           ) : (
-            <div className="flex aspect-[9/16] items-center justify-center text-sm text-muted-foreground">
+            <div className="flex items-center justify-center text-sm text-muted-foreground">
               <ImageIcon className="mr-2 h-4 w-4" /> No preview available.
             </div>
           )}

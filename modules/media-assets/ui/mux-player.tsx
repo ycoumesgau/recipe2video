@@ -13,12 +13,17 @@ export function RecipeMuxPlayer({
   playbackId?: string | null;
   title?: string;
 }) {
+  const frameClassName = cn(
+    "aspect-video w-full overflow-hidden rounded-lg border bg-black",
+    className,
+  );
+
   if (!playbackId) {
     return (
       <div
         className={cn(
-          "flex aspect-video items-center justify-center rounded-lg border bg-muted text-sm text-muted-foreground",
-          className,
+          frameClassName,
+          "flex items-center justify-center bg-muted text-sm text-muted-foreground",
         )}
       >
         No Mux playback ID available.
@@ -27,14 +32,16 @@ export function RecipeMuxPlayer({
   }
 
   return (
-    <MuxPlayer
-      accentColor="#f59e0b"
-      className={cn("aspect-video w-full overflow-hidden rounded-lg", className)}
-      metadata={{
-        video_title: title ?? "Recipe2Video media asset",
-      }}
-      playbackId={playbackId}
-      streamType="on-demand"
-    />
+    <div className={frameClassName}>
+      <MuxPlayer
+        accentColor="#f59e0b"
+        className="h-full w-full [--media-object-fit:contain]"
+        metadata={{
+          video_title: title ?? "Recipe2Video media asset",
+        }}
+        playbackId={playbackId}
+        streamType="on-demand"
+      />
+    </div>
   );
 }
