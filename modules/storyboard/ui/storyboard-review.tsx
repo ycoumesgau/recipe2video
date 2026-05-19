@@ -23,6 +23,10 @@ import { VIDEO_STATUS_LABELS } from "@/modules/videos/video-status";
 import type { VideoProject } from "@/modules/videos/video.types";
 import { RUNWAY_SEEDANCE2_CREDITS_PER_SECOND } from "@/modules/generation/runway.constants";
 
+import {
+  buildSegmentLabelByPersistedSceneId,
+  listLogicalScenesForSegment,
+} from "../services/resolve-logical-scene-ids";
 import type { LogicalScene, SeedanceSegment } from "../storyboard.types";
 import { StoryboardActions } from "./storyboard-actions";
 
@@ -182,13 +186,10 @@ function LogicalScenesTable({
   logicalScenes: LogicalScene[];
   seedanceSegments: SeedanceSegment[];
 }) {
-  const segmentLabelBySceneId = new Map<string, string>();
-
-  for (const segment of seedanceSegments) {
-    for (const sceneId of segment.logicalSceneIds) {
-      segmentLabelBySceneId.set(sceneId, `S${segment.position}`);
-    }
-  }
+  const segmentLabelBySceneId = buildSegmentLabelByPersistedSceneId(
+    seedanceSegments,
+    logicalScenes,
+  );
 
   return (
     <Card>
@@ -258,14 +259,10 @@ function SeedanceSegmentCards({
   logicalScenes: LogicalScene[];
   seedanceSegments: SeedanceSegment[];
 }) {
-  const sceneById = new Map(logicalScenes.map((scene) => [scene.id, scene]));
-
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       {seedanceSegments.map((segment) => {
-        const includedScenes = segment.logicalSceneIds
-          .map((sceneId) => sceneById.get(sceneId))
-          .filter((scene): scene is LogicalScene => Boolean(scene));
+        const includedScenes = listLogicalScenesForSegment(segment, logicalScenes);
 
         return (
           <Card key={segment.id}>

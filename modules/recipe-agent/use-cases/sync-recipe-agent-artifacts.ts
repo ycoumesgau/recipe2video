@@ -9,9 +9,11 @@ import {
 } from "@/modules/videos/repositories/video.repository";
 import {
   replaceLogicalScenesForVideo,
+  updateLogicalSceneSegmentLinks,
   upsertLogicalScenesForVideoByPosition,
   type CreateLogicalSceneInput,
 } from "@/modules/storyboard/repositories/logical-scene.repository";
+import { resolvePersistedLogicalSceneIds } from "@/modules/storyboard/services/resolve-logical-scene-ids";
 import {
   listSegmentsByVideoId,
   replaceSegmentsForVideo,
@@ -139,6 +141,8 @@ export interface RecipeAgentArtifactSyncPlan {
     agentSyncedAt: string;
   } | null;
   logicalScenes: CreateLogicalSceneInput[];
+  /** Agent artifact scene id → editorial position (for segment ↔ scene linking). */
+  agentScenePositionById: Map<string, number>;
   segments: ReturnType<typeof toCreateSegmentInput>[];
   /**
    * Raw reference-plan entries from `reference-plan.json`. Resolution against
@@ -158,6 +162,7 @@ export function buildRecipeAgentArtifactSyncPlan(
   const errors: string[] = [];
   let recipePatch: RecipeAgentArtifactSyncPlan["recipePatch"] = null;
   let logicalScenes: CreateLogicalSceneInput[] = [];
+  const agentScenePositionById = new Map<string, number>();
   let segments: RecipeAgentArtifactSyncPlan["segments"] = [];
   let rawSegments: SeedanceSegment[] = [];
   let referencesRaw: ReferencePlanEntry[] = [];
@@ -216,8 +221,12 @@ export function buildRecipeAgentArtifactSyncPlan(
     }
 
     if (artifact.name === "logical-scenes.json") {
-      logicalScenes = (validation.value as { logicalScenes: LogicalScene[] })
-        .logicalScenes.map(toCreateLogicalSceneInput);
+      const agentLogicalScenes = (validation.value as { logicalScenes: LogicalScene[] })
+        .logicalScenes;
+      for (const scene of agentLogicalScenes) {
+        agentScenePositionById.set(scene.id, scene.position);
+      }
+      logicalScenes = agentLogicalScenes.map(toCreateLogicalSceneInput);
     }
 
     if (artifact.name === "seedance-segments.json") {
@@ -262,6 +271,7 @@ export function buildRecipeAgentArtifactSyncPlan(
     artifactRecords,
     recipePatch,
     logicalScenes,
+    agentScenePositionById,
     segments,
     referencesRaw,
     sunoPrompt,
@@ -291,15 +301,17 @@ export async function syncRecipeAgentArtifacts(
   const existingSegments = await listSegmentsByVideoId(supabase, input.videoId);
   const useNonDestructiveStoryboardSync = existingSegments.length > 0;
 
+  let persistedScenes: LogicalScene[] = [];
+
   if (plan.logicalScenes.length > 0) {
     if (useNonDestructiveStoryboardSync) {
-      await upsertLogicalScenesForVideoByPosition(
+      persistedScenes = await upsertLogicalScenesForVideoByPosition(
         supabase,
         input.videoId,
         plan.logicalScenes,
       );
     } else {
-      await replaceLogicalScenesForVideo(
+      persistedScenes = await replaceLogicalScenesForVideo(
         supabase,
         input.videoId,
         plan.logicalScenes,
@@ -307,21 +319,40 @@ export async function syncRecipeAgentArtifacts(
     }
   }
 
+  const segmentInputs =
+    persistedScenes.length > 0
+      ? remapSegmentInputsForPersistedScenes(
+          plan.segments,
+          persistedScenes,
+          plan.agentScenePositionById,
+        )
+      : plan.segments;
+
   let persistedSegments: SeedanceSegment[] = [];
 
-  if (plan.segments.length > 0) {
+  if (segmentInputs.length > 0) {
     if (useNonDestructiveStoryboardSync) {
       persistedSegments = await upsertSegmentsForVideoByPosition(
         supabase,
         input.videoId,
-        plan.segments,
+        segmentInputs,
       );
     } else {
       persistedSegments = await replaceSegmentsForVideo(
         supabase,
         input.videoId,
-        plan.segments,
+        segmentInputs,
       );
+    }
+
+    if (persistedScenes.length > 0) {
+      const segmentLinks: { sceneId: string; segmentId: string }[] = [];
+      for (const segment of persistedSegments) {
+        for (const sceneId of segment.logicalSceneIds) {
+          segmentLinks.push({ sceneId, segmentId: segment.id });
+        }
+      }
+      await updateLogicalSceneSegmentLinks(supabase, segmentLinks);
     }
 
     const segmentCountForSummary = useNonDestructiveStoryboardSync
@@ -558,6 +589,26 @@ function toCreateLogicalSceneInput(scene: LogicalScene): CreateLogicalSceneInput
     runwaySafeScore: scene.runwaySafeScore,
     segmentId: null,
   };
+}
+
+function remapSegmentInputsForPersistedScenes(
+  segments: ReturnType<typeof toCreateSegmentInput>[],
+  persistedScenes: LogicalScene[],
+  agentScenePositionById: ReadonlyMap<string, number>,
+): ReturnType<typeof toCreateSegmentInput>[] {
+  return segments.map((segment) => {
+    const mappedSceneIds = resolvePersistedLogicalSceneIds({
+      agentSceneIds: segment.logicalSceneIds,
+      persistedScenes,
+      agentScenePositionById,
+    });
+
+    return {
+      ...segment,
+      logicalSceneIds:
+        mappedSceneIds.length > 0 ? mappedSceneIds : persistedScenes.map((scene) => scene.id),
+    };
+  });
 }
 
 function toCreateSegmentInput(videoId: string, segment: SeedanceSegment) {

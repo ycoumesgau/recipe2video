@@ -9,6 +9,7 @@ import {
 } from "@/modules/storyboard/repositories/logical-scene.repository";
 import { replaceSegmentsForVideo } from "@/modules/storyboard/repositories/segment.repository";
 import { createGpt55PlanningPromptEngine } from "@/modules/storyboard/services/gpt55-planning-prompt-engine";
+import { resolvePersistedLogicalSceneIds } from "@/modules/storyboard/services/resolve-logical-scene-ids";
 import type {
   CreateSeedanceSegmentInput,
   LogicalScene,
@@ -226,18 +227,11 @@ function mapSegmentsForPersistence(
   persistedScenes: LogicalScene[],
   createdBy: string,
 ): CreateSeedanceSegmentInput[] {
-  // Translate the LLM-suggested logical scene IDs (which use the engine's
-  // identifier scheme) into the IDs we actually persisted in DB. We match
-  // by `position` because the engine assigns positions deterministically.
-  const sceneIdByPosition = new Map(
-    persistedScenes.map((scene) => [scene.position, scene.id]),
-  );
-
   return segments.map((segment, index) => {
-    const mappedSceneIds = segment.logicalSceneIds
-      .map((sceneId) => extractPositionFromSceneId(sceneId))
-      .map((position) => (position == null ? null : sceneIdByPosition.get(position)))
-      .filter((id): id is string => Boolean(id));
+    const mappedSceneIds = resolvePersistedLogicalSceneIds({
+      agentSceneIds: segment.logicalSceneIds,
+      persistedScenes,
+    });
 
     return {
       videoId,
@@ -257,19 +251,6 @@ function mapSegmentsForPersistence(
       createdBy,
     };
   });
-}
-
-/**
- * The planning engine emits scene IDs like `videoId-scene-NN`. We extract the
- * trailing position so we can match them back to the rows we just inserted.
- */
-function extractPositionFromSceneId(sceneId: string): number | null {
-  const match = /scene-(\d+)$/.exec(sceneId);
-  if (!match) {
-    return null;
-  }
-  const parsed = Number.parseInt(match[1], 10);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function extractTargetDurationSeconds(
