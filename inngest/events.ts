@@ -43,6 +43,8 @@ export const INNGEST_EVENTS = {
   recipeAgentCreateRequested: "recipe.agent.create.requested",
   recipeAgentMessageRequested: "recipe.agent.message.requested",
   recipeAgentSyncRequested: "recipe.agent.sync.requested",
+  songCoverGenerateRequested: "song.cover.generate.requested",
+  songCanvasGenerateRequested: "song.canvas.generate.requested",
 } as const;
 
 export type InngestEventName =
@@ -122,6 +124,32 @@ export interface CompositionRenderRequestedData extends WorkflowAuthEventData {
 
 export type CostLogRequestedData = WorkflowAuthEventData & CreateCostLogInput;
 
+/**
+ * Album cover generation request. The Inngest function reads the
+ * `song_cover_artifacts` row (kind=album_cover) for `videoId`, resolves
+ * the conditioning anchors against `asset_library` + per-video
+ * `reference_assets`, kicks off a GPT-Image 2 task on Runway (with
+ * 2880:2880 -> 2048:2048 ratio fallback), polls until terminal, and
+ * persists the resulting image to the `album-covers` bucket as a new
+ * variant. Existing variants stay intact; the new variant becomes the
+ * active one.
+ */
+export interface SongCoverGenerateRequestedData extends WorkflowAuthEventData {
+  videoId: string;
+}
+
+/**
+ * Spotify Canvas generation request. Same shape as the album cover
+ * event — the Inngest function reads the `song_cover_artifacts` row
+ * (kind=spotify_canvas) and drives a Seedance 2 text_to_video task at
+ * 1080:1920 for `duration_seconds` seconds with the planned image and
+ * video references. Result is persisted to the `spotify-canvases`
+ * bucket.
+ */
+export interface SongCanvasGenerateRequestedData extends WorkflowAuthEventData {
+  videoId: string;
+}
+
 export type Recipe2VideoEventPayloads = {
   [INNGEST_EVENTS.videoRecipeIngestRequested]: RecipeIngestRequestedData;
   [INNGEST_EVENTS.videoStoryboardGenerateRequested]: StoryboardGenerateRequestedData;
@@ -140,4 +168,6 @@ export type Recipe2VideoEventPayloads = {
   [INNGEST_EVENTS.recipeAgentCreateRequested]: RecipeAgentCreateRequestedData;
   [INNGEST_EVENTS.recipeAgentMessageRequested]: RecipeAgentMessageRequestedData;
   [INNGEST_EVENTS.recipeAgentSyncRequested]: RecipeAgentSyncRequestedData;
+  [INNGEST_EVENTS.songCoverGenerateRequested]: SongCoverGenerateRequestedData;
+  [INNGEST_EVENTS.songCanvasGenerateRequested]: SongCanvasGenerateRequestedData;
 };

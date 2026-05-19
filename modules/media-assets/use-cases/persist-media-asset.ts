@@ -29,6 +29,16 @@ export interface PersistMediaAssetFileInput {
   /** Per-generation suffix for recipe reference images (avoids Storage collisions). */
   referenceVariantId?: string | null;
   compositionId?: string | null;
+  /**
+   * `song_cover_artifacts.id` for `album_cover_image` and
+   * `spotify_canvas_video` variants. Required for those types.
+   */
+  songCoverArtifactId?: string | null;
+  /**
+   * Per-generation suffix for the song cover artifacts (avoids Storage
+   * collisions across regenerations). Required for the new types.
+   */
+  songCoverVariantId?: string | null;
   storageFilename?: string | null;
   originalFilename?: string | null;
   mimeType?: string | null;
@@ -165,6 +175,16 @@ function buildStoragePath(input: PersistMediaAssetFileInput): string {
         type: input.type,
         videoId,
         compositionId: requireValue(input.compositionId, "compositionId"),
+        filename: input.originalFilename,
+        mimeType: input.mimeType,
+      });
+    case "album_cover_image":
+    case "spotify_canvas_video":
+      return buildMediaStoragePath({
+        type: input.type,
+        videoId,
+        artifactId: requireValue(input.songCoverArtifactId, "songCoverArtifactId"),
+        variantId: requireValue(input.songCoverVariantId, "songCoverVariantId"),
         filename: input.originalFilename,
         mimeType: input.mimeType,
       });
