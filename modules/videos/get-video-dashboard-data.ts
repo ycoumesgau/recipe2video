@@ -6,8 +6,9 @@ import type {
   ActiveGenerationQueueItem,
   VideoDashboardData,
   VideoDashboardProject,
+  VideoLibraryPagination,
 } from "./video-dashboard.types";
-import type { VideoProject } from "./video.types";
+import type { VideoLibraryStats, VideoProject } from "./video.types";
 import type { RecipeAgentStatus } from "@/modules/recipe-agent/recipe-agent.types";
 
 const SEEDED_PROJECTS: VideoDashboardProject[] = [
@@ -119,6 +120,8 @@ export function getVideoDashboardData(
     includeSeededDemos?: boolean;
     runwayBalance?: RunwayOrganizationBalance | null;
     runwayCreditsUsedLogged?: number;
+    libraryStats?: VideoLibraryStats;
+    pagination?: Pick<VideoLibraryPagination, "page" | "pageSize" | "totalProjects">;
   } = {},
 ): VideoDashboardData {
   const includeSeededDemos = options.includeSeededDemos ?? false;
@@ -129,15 +132,35 @@ export function getVideoDashboardData(
     ),
     ...(includeSeededDemos ? SEEDED_PROJECTS : []),
   ];
-  const activeVideos = projects.filter(
-    (project) => project.status !== "exported" && project.status !== "failed",
-  ).length;
+
+  const page = options.pagination?.page ?? 1;
+  const pageSize = options.pagination?.pageSize ?? Math.max(projects.length, 1);
+  const persistedTotal =
+    options.pagination?.totalProjects ?? persistedProjects.length;
+  const totalProjects = includeSeededDemos
+    ? persistedTotal + SEEDED_PROJECTS.length
+    : persistedTotal;
+  const totalPages = Math.max(1, Math.ceil(totalProjects / pageSize));
+  const pagination: VideoLibraryPagination = {
+    page,
+    pageSize,
+    totalProjects,
+    totalPages,
+  };
+
+  const activeVideos =
+    options.libraryStats?.activeVideos ??
+    projects.filter(
+      (project) => project.status !== "exported" && project.status !== "failed",
+    ).length;
   const segmentsGenerating = activeQueue.filter(
     (task) => task.status === "processing" || task.status === "queued",
   ).length;
-  const projectsWaitingForReview = projects.filter((project) =>
-    ACTIONABLE_VIDEO_STATUSES.includes(project.status),
-  ).length;
+  const projectsWaitingForReview =
+    options.libraryStats?.projectsWaitingForReview ??
+    projects.filter((project) =>
+      ACTIONABLE_VIDEO_STATUSES.includes(project.status),
+    ).length;
   const creditsUsedProjectTotals = projects.reduce(
     (total, project) => total + project.totalCostCredits,
     0,
@@ -149,9 +172,9 @@ export function getVideoDashboardData(
     maxMonthlyCreditSpend: options.runwayBalance?.maxMonthlyCreditSpend ?? null,
   });
   const estimatedCreditsRemaining = budget.creditsRemaining;
-  const videosCompleted = projects.filter(
-    (project) => project.status === "exported",
-  ).length;
+  const videosCompleted =
+    options.libraryStats?.videosCompleted ??
+    projects.filter((project) => project.status === "exported").length;
 
   const creditsDisplayed = includeSeededDemos
     ? creditsUsedProjectTotals
@@ -175,6 +198,7 @@ export function getVideoDashboardData(
     budgetPercentRemaining: budget.percentRemaining,
     usesMockDashboardDemos: includeSeededDemos,
     runwayBalanceKnown: budget.runwayBalanceKnown,
+    pagination,
     kpis: [
       {
         label: "Active videos",

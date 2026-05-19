@@ -77,7 +77,22 @@ export interface CreateVideoProjectInput {
 }
 
 export interface ListVideoProjectsOptions {
-  status?: VideoStatus;
+  status?: VideoStatus | VideoStatus[];
   limit?: number;
+  offset?: number;
   archiveFilter?: VideoProjectArchiveFilter;
+}
+
+export interface CountVideoProjectsOptions {
+  status?: VideoStatus | VideoStatus[];
+  excludeStatuses?: VideoStatus[];
+  archiveFilter?: VideoProjectArchiveFilter;
+}
+
+/** Aggregated counts for dashboard KPIs (full library, not the current page). */
+export interface VideoLibraryStats {
+  total: number;
+  activeVideos: number;
+  projectsWaitingForReview: number;
+  videosCompleted: number;
 }

@@ -53,6 +53,13 @@ export interface DashboardKpi {
   helper: string;
 }
 
+export interface VideoLibraryPagination {
+  page: number;
+  pageSize: number;
+  totalProjects: number;
+  totalPages: number;
+}
+
 export interface VideoDashboardData {
   projects: VideoDashboardProject[];
   activeQueue: ActiveGenerationQueueItem[];
@@ -65,4 +72,5 @@ export interface VideoDashboardData {
   usesMockDashboardDemos: boolean;
   /** Mirrors Runway GET /v1/organization creditBalance availability. */
   runwayBalanceKnown: boolean;
+  pagination: VideoLibraryPagination;
 }

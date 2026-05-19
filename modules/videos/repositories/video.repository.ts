@@ -4,6 +4,7 @@ import { throwIfSupabaseError } from "@/shared/supabase/errors";
 import { fromJson, toJson } from "@/shared/supabase/json";
 
 import type {
+  CountVideoProjectsOptions,
   CreateVideoProjectInput,
   ListVideoProjectsOptions,
   RecipeData,
@@ -88,17 +89,61 @@ export async function listVideoProjects(
   }
   // "all": intentionally no filter on archived_at
 
-  if (options.status) {
-    query = query.eq("status", options.status);
-  }
+  query = applyVideoStatusFilter(query, options.status);
 
-  if (options.limit) {
+  if (options.limit != null && options.offset != null) {
+    query = query.range(
+      options.offset,
+      options.offset + options.limit - 1,
+    );
+  } else if (options.limit != null) {
     query = query.limit(options.limit);
   }
 
   const { data, error } = await query;
   throwIfSupabaseError(error, "listVideoProjects failed");
   return data.map(mapVideoProject);
+}
+
+export async function countVideoProjects(
+  supabase: SupabaseDataClient,
+  options: CountVideoProjectsOptions = {},
+): Promise<number> {
+  let query = supabase.from("videos").select("*", { count: "exact", head: true });
+
+  const archiveFilter = options.archiveFilter ?? "active";
+  if (archiveFilter === "active") {
+    query = query.is("archived_at", null);
+  } else if (archiveFilter === "archived") {
+    query = query.not("archived_at", "is", null);
+  }
+
+  query = applyVideoStatusFilter(query, options.status);
+
+  if (options.excludeStatuses?.length) {
+    for (const status of options.excludeStatuses) {
+      query = query.neq("status", status);
+    }
+  }
+
+  const { count, error } = await query;
+  throwIfSupabaseError(error, "countVideoProjects failed");
+  return count ?? 0;
+}
+
+function applyVideoStatusFilter<T extends { eq: (col: string, val: string) => T; in: (col: string, vals: string[]) => T }>(
+  query: T,
+  status: ListVideoProjectsOptions["status"] | undefined,
+): T {
+  if (!status) {
+    return query;
+  }
+
+  if (Array.isArray(status)) {
+    return status.length > 0 ? query.in("status", status) : query;
+  }
+
+  return query.eq("status", status);
 }
 
 export async function updateVideoProjectTitle(
