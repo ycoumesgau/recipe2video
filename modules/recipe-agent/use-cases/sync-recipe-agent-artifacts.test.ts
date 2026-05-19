@@ -118,7 +118,9 @@ test("buildRecipeAgentArtifactSyncPlan validates and maps complete artifacts", (
   assert.equal(plan.artifactRecords.every((record) => record.validationStatus === "valid"), true);
   assert.equal(plan.recipePatch?.normalized?.title, "Paris-Brest");
   assert.equal(plan.logicalScenes.length, 30);
+  assert.equal(plan.agentScenePositionById.get("scene-12"), 12);
   assert.equal(plan.segments.length, 5);
+  assert.deepEqual(plan.segments[0]?.logicalSceneIds, ["scene-1"]);
   assert.equal(plan.referencesRaw.length, 1);
   assert.equal(plan.referencesRaw[0]?.canonicalName, "KitchenIslandDefault");
   assert.equal(plan.sunoPrompt, "# Suno\n\nPrompt body");
