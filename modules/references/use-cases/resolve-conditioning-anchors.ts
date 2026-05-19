@@ -22,7 +22,7 @@ import { deriveRunwayTag, makeRunwayTagsUnique } from "./derive-runway-tag";
 
 type MediaAssetStoragePick = Pick<
   Database["public"]["Tables"]["media_assets"]["Row"],
-  "id" | "storage_bucket" | "storage_path"
+  "id" | "storage_bucket" | "storage_path" | "file_size_bytes" | "mime_type"
 >;
 
 /**
@@ -62,6 +62,13 @@ export interface ConditioningAnchor {
   tag: string;
   /** Fresh, short-lived HTTPS URL Runway can download. */
   uri: string;
+  /**
+   * Stored size of the library media in bytes. Used to fail fast before
+   * Runway rejects oversize anchors with `Asset size exceeds 16.0MB.`
+   */
+  fileSizeBytes: number;
+  /** Stored MIME type, surfaced in operator-facing size-cap errors. */
+  mimeType: string | null;
 }
 
 export interface ResolveConditioningAnchorsResult {
@@ -147,6 +154,8 @@ export async function resolveConditioningAnchors(
     requestedName: string;
     rawTag: string;
     uri: string;
+    fileSizeBytes: number;
+    mimeType: string | null;
   }> = [];
   const unresolvedNames: string[] = [];
   const excludedAnchors: ResolveConditioningAnchorsResult["excludedAnchors"] = [];
@@ -208,6 +217,8 @@ export async function resolveConditioningAnchors(
       requestedName,
       rawTag: deriveRunwayTag(sourceForTag),
       uri,
+      fileSizeBytes: storage.file_size_bytes ?? 0,
+      mimeType: storage.mime_type ?? null,
     });
   }
 
@@ -217,6 +228,8 @@ export async function resolveConditioningAnchors(
     requestedName: entry.requestedName,
     tag: uniqueTags[index]!,
     uri: entry.uri,
+    fileSizeBytes: entry.fileSizeBytes,
+    mimeType: entry.mimeType,
   }));
 
   return { anchors, unresolvedNames, excludedAnchors };
@@ -234,7 +247,7 @@ async function fetchMediaAssetStorageLocations(
 
   const { data, error } = await supabase
     .from("media_assets")
-    .select("id, storage_bucket, storage_path")
+    .select("id, storage_bucket, storage_path, file_size_bytes, mime_type")
     .in("id", mediaAssetIds);
 
   throwIfSupabaseError(error, "resolveConditioningAnchors media fetch failed");
