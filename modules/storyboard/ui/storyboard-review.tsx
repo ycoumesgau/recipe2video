@@ -220,7 +220,10 @@ function LogicalScenesTable({
               <TableRow key={scene.id}>
                 <TableCell>{scene.position}</TableCell>
                 <TableCell>
-                  <Badge variant="outline">
+                  <Badge
+                    variant="outline"
+                    className="licorn-storyboard-segment-chip"
+                  >
                     {segmentLabelBySceneId.get(scene.id) ?? "-"}
                   </Badge>
                 </TableCell>
