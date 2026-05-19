@@ -110,24 +110,25 @@ export function SegmentReviewHeadingNav({
 }
 
 function SegmentNavButton({
+  "aria-label": ariaLabel,
   children,
   disabled,
   href,
-  ...props
 }: {
+  "aria-label": string;
   children: ReactNode;
   disabled: boolean;
   href: string | null;
-} & Omit<React.ComponentProps<typeof Button>, "children" | "disabled">) {
+}) {
   if (disabled || !href) {
     return (
       <Button
+        aria-label={ariaLabel}
         className="shrink-0"
         disabled
         size="icon-sm"
         type="button"
         variant="outline"
-        {...props}
       >
         {children}
       </Button>
@@ -135,14 +136,8 @@ function SegmentNavButton({
   }
 
   return (
-    <Button
-      asChild
-      className="shrink-0"
-      size="icon-sm"
-      type="button"
-      variant="outline"
-    >
-      <Link href={href} {...props}>
+    <Button asChild className="shrink-0" size="icon-sm" variant="outline">
+      <Link aria-label={ariaLabel} href={href}>
         {children}
       </Link>
     </Button>
