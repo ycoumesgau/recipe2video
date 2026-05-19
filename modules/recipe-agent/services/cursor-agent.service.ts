@@ -2,7 +2,7 @@ import type { AgentOptions, ModelSelection, Run, SDKAgent } from "@cursor/sdk";
 
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
 import {
-  buildRecipeAgentSystemPrompt,
+  buildRecipeAgentGuardianSubagentPrompt,
   buildRecipeAgentUserMessage,
 } from "../recipe-agent.instructions";
 import type {
@@ -155,7 +155,7 @@ function buildAgentOptions(input: {
     },
   } satisfies AgentOptions;
 
-  const systemPrompt = buildRecipeAgentSystemPrompt({
+  const systemPrompt = buildRecipeAgentGuardianSubagentPrompt({
     videoId: input.videoId,
     workspacePath: input.workspacePath,
   });

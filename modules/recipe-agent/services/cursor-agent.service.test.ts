@@ -11,7 +11,11 @@ import type {
 } from "@cursor/sdk";
 
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
-import { buildRecipeAgentSystemPrompt } from "../recipe-agent.instructions";
+import {
+  buildRecipeAgentGuardianSubagentPrompt,
+  buildRecipeAgentSystemPrompt,
+  RECIPE_AGENT_GUARDIAN_SUBAGENT_PROMPT_MAX_CHARS,
+} from "../recipe-agent.instructions";
 import type { CursorAgentSdkAdapter } from "../recipe-agent.types";
 import { buildRecipeAgentWorkspace } from "../recipe-agent.workspace";
 import { createCursorRecipeAgentService } from "./cursor-agent.service";
@@ -90,6 +94,20 @@ test("buildRecipeAgentSystemPrompt forbids generation and app code edits", () =>
   assert.match(prompt, /Do not call Runway/);
   assert.match(prompt, /Do not modify application source code/);
   assert.match(prompt, /reference-plan\.json before any Seedance generation/);
+});
+
+test("buildRecipeAgentGuardianSubagentPrompt stays within Cursor custom subagent limit", () => {
+  const prompt = buildRecipeAgentGuardianSubagentPrompt({
+    videoId: "video-1",
+    workspacePath: "agent-recipes/video-1",
+  });
+
+  assert.ok(
+    prompt.length <= RECIPE_AGENT_GUARDIAN_SUBAGENT_PROMPT_MAX_CHARS,
+    `guardian subagent prompt is ${prompt.length} chars (max ${RECIPE_AGENT_GUARDIAN_SUBAGENT_PROMPT_MAX_CHARS})`,
+  );
+  assert.match(prompt, /Do not call Runway/);
+  assert.match(prompt, /\.cursor\/rules\//);
 });
 
 test("createRecipeAgent creates a cloud Cursor agent without PR automation", async () => {
