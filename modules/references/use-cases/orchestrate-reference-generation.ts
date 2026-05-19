@@ -9,7 +9,10 @@ import { startReferenceImageGeneration } from "@/modules/generation/services/run
 import { getReferenceAssetById } from "../repositories/reference.repository";
 import type { ReferenceStatus } from "../reference-status";
 import { buildReferenceImagePrompt } from "./build-reference-image-prompt";
-import { finalizeReferenceImageOutput } from "./finalize-reference-image-output";
+import {
+  finalizeReferenceImageOutput,
+  type FinalizeReferenceImageOutputInput,
+} from "./finalize-reference-image-output";
 import {
   resolveConditioningAnchors,
   type ConditioningAnchor,
@@ -75,7 +78,7 @@ export interface PersistReferenceOutputDeps {
     referenceId: string,
   ): Promise<PreparedReferenceGeneration>;
   finalizeReferenceOutput(
-    input: Parameters<typeof finalizeReferenceImageOutput>[0],
+    input: Omit<FinalizeReferenceImageOutputInput, "supabase">,
   ): Promise<Awaited<ReturnType<typeof finalizeReferenceImageOutput>>>;
   sendEvent?(event: {
     name: string;

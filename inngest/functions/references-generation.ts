@@ -44,13 +44,11 @@ const PENDING_STATUSES = new Set(["planned", "failed"]);
 
 const DEFAULT_POLL_DELAY_SECONDS = 6;
 
-function referenceWorkflowSendEvent(
-  workflowEvent: {
-    name: string;
-    data: Record<string, unknown>;
-  },
-) {
-  return inngest.send({
+async function referenceWorkflowSendEvent(workflowEvent: {
+  name: string;
+  data: Record<string, unknown>;
+}): Promise<void> {
+  await inngest.send({
     name: workflowEvent.name,
     data: workflowEvent.data,
   });
@@ -214,8 +212,13 @@ export const pollReferenceGeneration = inngest.createFunction(
     await step.sleep("wait before polling Runway", `${delaySeconds}s`);
 
     return pollReferenceImageGenerationWorkflow(data, {
-      getReferenceAssetById: (referenceId) =>
-        getReferenceAssetById(supabase, referenceId),
+      getReferenceAssetById: async (referenceId) => {
+        const reference = await getReferenceAssetById(supabase, referenceId);
+        if (!reference) {
+          return null;
+        }
+        return { id: reference.id, videoId: reference.videoId ?? null };
+      },
       getRunwayTask,
       updateReferenceAssetRunwayPollState: (input) =>
         updateReferenceAssetRunwayPollState(supabase, input),
@@ -243,7 +246,7 @@ export const persistReferenceOutput = inngest.createFunction(
       prepareReferenceGeneration: (referenceId) =>
         prepareReferenceImageGeneration(supabase, referenceId),
       finalizeReferenceOutput: (input) =>
-        finalizeReferenceImageOutput({ supabase, ...input }),
+        finalizeReferenceImageOutput({ ...input, supabase }),
       sendEvent: data.awaitCompletionEvent
         ? referenceWorkflowSendEvent
         : undefined,
