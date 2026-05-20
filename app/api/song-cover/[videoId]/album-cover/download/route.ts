@@ -11,13 +11,12 @@ import { getSongCoverArtifactForVideoByKind } from "@/modules/song-cover/reposit
 /**
  * Download the album cover at 3000x3000 JPEG.
  *
- * The Runway output is stored at the largest square ratio
- * `gpt_image_2` exposes (we try `2880:2880` first, fall back to
- * `2048:2048`). Distributors require 3000x3000 minimum, so we upscale
- * on the fly with sharp using `lanczos3` resampling.
+ * The Runway output is stored at `2048:2048` (2K tier). Distributors
+ * require 3000x3000 minimum, so we upscale on the fly with sharp using
+ * `lanczos3` resampling.
  *
- * No file is re-stored: the upscale is cheap (<200ms on a 2880x2880
- * source) and the source is already kept in the `album-covers` bucket.
+ * No file is re-stored: the upscale is cheap and the source is already
+ * kept in the `album-covers` bucket.
  */
 const FINAL_EDGE_PX = 3000;
 const JPEG_QUALITY = 95;

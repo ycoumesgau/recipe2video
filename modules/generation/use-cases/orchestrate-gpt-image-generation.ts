@@ -54,8 +54,8 @@ export interface GptImageGenerationRequest {
    * Ordered list of Runway ratio strings to try. The orchestrator
    * attempts them in order and stops at the first one that does not
    * trigger an `invalid_input`-class error. Useful for the album cover
-   * where the 4K-tier `2880:2880` is the preferred output but Runway
-   * may only expose 2K-tier `2048:2048`.
+   * Album cover uses `2048:2048` (2K tier); legacy rows may list
+   * additional fallbacks in `ratioAttempts`.
    */
   ratioCandidates: string[];
   model?: RunwayImageModel;
