@@ -15,6 +15,11 @@ import {
   serializeRenderProgress,
   type RenderProgress,
 } from "../render-progress";
+import {
+  insertPreset,
+  listPresetsByVideoId,
+  updatePresetAudioMediaAsset,
+} from "./assembly-presets.repository";
 import { serializePlacements } from "../timeline-state";
 
 type CompositionRow = Database["public"]["Tables"]["compositions"]["Row"];
@@ -22,6 +27,7 @@ type CompositionRow = Database["public"]["Tables"]["compositions"]["Row"];
 export interface SaveCompositionInput {
   id?: string;
   videoId: string;
+  presetId: string;
   /**
    * Ordered list of placements on the video track. Persisted in
    * `compositions.segment_order` as `{ schema: 'placements_v1', ... }`.
@@ -86,6 +92,22 @@ export async function getLatestCompositionByVideoId(
     .maybeSingle();
 
   throwIfSupabaseError(error, "getLatestCompositionByVideoId failed");
+  return data ? mapComposition(data) : null;
+}
+
+export async function getLatestCompositionByPresetId(
+  supabase: SupabaseDataClient,
+  presetId: string,
+): Promise<Composition | null> {
+  const { data, error } = await supabase
+    .from("compositions")
+    .select("*")
+    .eq("preset_id", presetId)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  throwIfSupabaseError(error, "getLatestCompositionByPresetId failed");
   return data ? mapComposition(data) : null;
 }
 
@@ -173,6 +195,7 @@ export async function createComposition(
     .insert({
       id: input.id,
       video_id: input.videoId,
+      preset_id: input.presetId,
       export_media_asset_id: input.exportMediaAssetId ?? null,
       segment_order: serializeSegmentOrderColumn(input),
       audio_media_asset_id: input.audioMediaAssetId ?? null,
@@ -189,34 +212,23 @@ export async function createComposition(
 }
 
 /**
- * Upsert the current draft composition for the given video. Used by
- * `saveAssemblySettingsAction` to avoid stacking a new row on every save.
- *
- * Strategy:
- *   - If a draft (`export_status = 'pending'`) already exists for the video,
- *     update it in place and keep the original `id` and `created_at`.
- *   - On update, `export_status` is only written when `exportStatus` is passed
- *     explicitly; omit it to preserve the current export state (e.g. while a
- *     cloud render is `rendering`).
- *   - Otherwise insert a new draft row.
- *
- * Final exports keep their own dedicated row created with `createComposition`
- * so the history of completed exports is preserved.
+ * Upsert the draft composition row for a specific assembly preset. Each preset
+ * keeps at most one `pending` composition used as the render job anchor.
  */
-export async function upsertDraftComposition(
+export async function upsertDraftCompositionForPreset(
   supabase: SupabaseDataClient,
   input: SaveCompositionInput,
 ): Promise<Composition> {
   const { data: existing, error: fetchError } = await supabase
     .from("compositions")
     .select("*")
-    .eq("video_id", input.videoId)
+    .eq("preset_id", input.presetId)
     .eq("export_status", "pending")
     .order("updated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  throwIfSupabaseError(fetchError, "upsertDraftComposition lookup failed");
+  throwIfSupabaseError(fetchError, "upsertDraftCompositionForPreset lookup failed");
 
   if (existing) {
     const { data, error } = await supabase
@@ -234,11 +246,19 @@ export async function upsertDraftComposition(
       .select("*")
       .single();
 
-    throwIfSupabaseError(error, "upsertDraftComposition update failed");
+    throwIfSupabaseError(error, "upsertDraftCompositionForPreset update failed");
     return mapComposition(data);
   }
 
   return createComposition(supabase, input);
+}
+
+/** @deprecated Use {@link upsertDraftCompositionForPreset} with a preset id. */
+export async function upsertDraftComposition(
+  supabase: SupabaseDataClient,
+  input: SaveCompositionInput,
+): Promise<Composition> {
+  return upsertDraftCompositionForPreset(supabase, input);
 }
 
 export async function linkCompositionAudio(
@@ -249,7 +269,41 @@ export async function linkCompositionAudio(
     createdBy?: string | null;
   },
 ): Promise<Composition> {
-  const existing = await getLatestCompositionByVideoId(supabase, input.videoId);
+  let presets = await listPresetsByVideoId(supabase, input.videoId);
+
+  if (presets.length === 0) {
+    const preset = await insertPreset(supabase, {
+      videoId: input.videoId,
+      name: "Default",
+      placements: [],
+      audioMediaAssetId: input.audioMediaAssetId,
+      remotionProps: {
+        fps: 30,
+        width: 1080,
+        height: 1920,
+        segments: [],
+        audio: null,
+        audioSync: {
+          offsetSeconds: 0,
+          cutFromSeconds: 0,
+          fadeInSeconds: 0,
+          fadeOutSeconds: 0,
+        },
+        audioClips: [],
+      },
+      createdBy: input.createdBy ?? null,
+    });
+    presets = [preset];
+  } else {
+    await updatePresetAudioMediaAsset(
+      supabase,
+      presets[0]!.id,
+      input.audioMediaAssetId,
+    );
+  }
+
+  const presetId = presets[0]!.id;
+  const existing = await getLatestCompositionByPresetId(supabase, presetId);
 
   if (existing) {
     const { data, error } = await supabase
@@ -269,6 +323,7 @@ export async function linkCompositionAudio(
     .from("compositions")
     .insert({
       video_id: input.videoId,
+      preset_id: presetId,
       audio_media_asset_id: input.audioMediaAssetId,
       segment_order: toJson([]),
       export_status: "pending",
@@ -311,6 +366,7 @@ export function mapComposition(row: CompositionRow): Composition {
   return {
     id: row.id,
     videoId: row.video_id,
+    presetId: row.preset_id,
     exportMediaAssetId: row.export_media_asset_id,
     segmentOrder: fromJson<Json>(row.segment_order) ?? [],
     audioMediaAssetId: row.audio_media_asset_id,

@@ -20,24 +20,25 @@ import type {
 import {
   buildClipsFromPlacements,
   getEmptyTimelineState,
-  projectLegacyAudioSync,
   readPlacementsState,
   readTimelineState,
 } from "./timeline-state";
 import {
-  tryClaimCompositionCloudRender,
-  upsertDraftComposition,
-} from "./repositories/assembly.repository";
+  countPresetsByVideoId,
+  deletePreset,
+  getPresetById,
+  renamePreset,
+} from "./repositories/assembly-presets.repository";
+import { tryClaimCompositionCloudRender } from "./repositories/assembly.repository";
 import { uploadSunoAudio } from "./use-cases/upload-suno-audio";
-import {
-  buildRemotionProps,
-  getAssemblyPageData,
-} from "./use-cases/get-assembly-data";
+import { getAssemblyPageData } from "./use-cases/get-assembly-data";
+import { saveAssemblyPresetSettings } from "./use-cases/save-assembly-preset-settings";
 
 export interface AssemblyActionState {
   status?: "success" | "error";
   message?: string;
   compositionId?: string;
+  presetId?: string;
 }
 
 export async function uploadSunoAudioAction(formData: FormData) {
@@ -76,59 +77,24 @@ export async function saveAssemblySettingsAction(
   try {
     const { profile } = await assertCostlyActionAllowed();
     const videoId = requireString(formData, "videoId");
-    const assemblyData = await getAssemblyPageData(videoId);
-    const placements = parsePlacementsPayload(
-      formData.get("placements"),
-      assemblyData.availableSegments,
-    );
-    const timelineState = parseTimelineState(formData.get("timelineState"));
-    const audioMediaAssetId = optionalString(formData, "audioMediaAssetId");
+    const presetIdFromForm = optionalString(formData, "presetId");
+    const assemblyData = await getAssemblyPageData(videoId, {
+      presetId: presetIdFromForm,
+    });
+    const presetId = presetIdFromForm ?? assemblyData.activePresetId;
+    const { placements, timelineState, audioMediaAssetId } =
+      parseAssemblyFormPayload(formData, assemblyData.availableSegments);
 
-    const orderedClips = buildClipsFromPlacements(
+    const { preset, composition } = await saveAssemblyPresetSettings({
+      supabase: createSupabaseAdminClient(),
+      videoId,
+      presetId,
       placements,
-      new Map(
-        assemblyData.availableSegments.map((segment) => [
-          segment.segmentId,
-          {
-            segmentId: segment.segmentId,
-            mediaAssetId: segment.mediaAssetId,
-            generationId: segment.generationId,
-            title: segment.title,
-            durationSeconds: segment.durationSeconds,
-            sourceUrl: segment.sourceUrl,
-            storageBucket: segment.storageBucket,
-            storagePath: segment.storagePath,
-          },
-        ]),
-      ),
-    );
-
-    if (orderedClips.length === 0) {
-      return {
-        status: "error",
-        message: "No accepted Supabase-stored segment clips are available yet.",
-      };
-    }
-
-    // Use upsertDraftComposition so repeated saves update the same row
-    // instead of stacking a new composition history every click.
-    const composition = await upsertDraftComposition(
-      createSupabaseAdminClient(),
-      {
-        videoId,
-        placements,
-        audioMediaAssetId,
-        audioSync: projectLegacyAudioSync(timelineState.audioClips),
-        timelineState,
-        remotionProps: buildRemotionProps({
-          segments: orderedClips,
-          audioTrack: assemblyData.audioTrack,
-          audioClips: timelineState.audioClips,
-        }),
-        exportStatus: "pending",
-        createdBy: profile.id,
-      },
-    );
+      timelineState,
+      audioMediaAssetId,
+      assemblyData,
+      createdBy: profile.id,
+    });
 
     await updateVideoProjectStatus(
       createSupabaseAdminClient(),
@@ -140,14 +106,125 @@ export async function saveAssemblySettingsAction(
 
     return {
       status: "success",
-      message: "Assembly settings saved for Remotion preview.",
+      message: `Assembly preset "${preset.name}" saved.`,
       compositionId: composition.id,
+      presetId: preset.id,
     };
   } catch (error) {
     return formatAssemblyActionError(
       error,
       "Unable to save assembly settings.",
     );
+  }
+}
+
+export async function saveAssemblyPresetAsNewAction(
+  _previousState: AssemblyActionState,
+  formData: FormData,
+): Promise<AssemblyActionState> {
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    const videoId = requireString(formData, "videoId");
+    const presetName = requireString(formData, "presetName");
+    const assemblyData = await getAssemblyPageData(videoId);
+    const { placements, timelineState, audioMediaAssetId } =
+      parseAssemblyFormPayload(formData, assemblyData.availableSegments);
+
+    const { preset, composition } = await saveAssemblyPresetSettings({
+      supabase: createSupabaseAdminClient(),
+      videoId,
+      presetId: null,
+      presetName,
+      placements,
+      timelineState,
+      audioMediaAssetId,
+      assemblyData,
+      createdBy: profile.id,
+    });
+
+    await updateVideoProjectStatus(
+      createSupabaseAdminClient(),
+      videoId,
+      "assembling",
+    );
+
+    revalidateAssemblyPaths(videoId);
+
+    return {
+      status: "success",
+      message: `New preset "${preset.name}" saved.`,
+      compositionId: composition.id,
+      presetId: preset.id,
+    };
+  } catch (error) {
+    return formatAssemblyActionError(
+      error,
+      "Unable to save new assembly preset.",
+    );
+  }
+}
+
+export async function renameAssemblyPresetAction(
+  _previousState: AssemblyActionState,
+  formData: FormData,
+): Promise<AssemblyActionState> {
+  try {
+    await assertCostlyActionAllowed();
+    const videoId = requireString(formData, "videoId");
+    const presetId = requireString(formData, "presetId");
+    const presetName = requireString(formData, "presetName");
+    const supabase = createSupabaseAdminClient();
+    const preset = await getPresetById(supabase, presetId);
+
+    if (!preset || preset.videoId !== videoId) {
+      return { status: "error", message: "Assembly preset not found." };
+    }
+
+    const renamed = await renamePreset(supabase, presetId, presetName);
+    revalidateAssemblyPaths(videoId);
+
+    return {
+      status: "success",
+      message: `Preset renamed to "${renamed.name}".`,
+      presetId: renamed.id,
+    };
+  } catch (error) {
+    return formatAssemblyActionError(error, "Unable to rename assembly preset.");
+  }
+}
+
+export async function deleteAssemblyPresetAction(
+  _previousState: AssemblyActionState,
+  formData: FormData,
+): Promise<AssemblyActionState> {
+  try {
+    await assertCostlyActionAllowed();
+    const videoId = requireString(formData, "videoId");
+    const presetId = requireString(formData, "presetId");
+    const supabase = createSupabaseAdminClient();
+    const preset = await getPresetById(supabase, presetId);
+
+    if (!preset || preset.videoId !== videoId) {
+      return { status: "error", message: "Assembly preset not found." };
+    }
+
+    const presetCount = await countPresetsByVideoId(supabase, videoId);
+    if (presetCount <= 1) {
+      return {
+        status: "error",
+        message: "Cannot delete the last assembly preset for this video.",
+      };
+    }
+
+    await deletePreset(supabase, presetId);
+    revalidateAssemblyPaths(videoId);
+
+    return {
+      status: "success",
+      message: `Preset "${preset.name}" deleted.`,
+    };
+  } catch (error) {
+    return formatAssemblyActionError(error, "Unable to delete assembly preset.");
   }
 }
 
@@ -158,13 +235,19 @@ export async function requestAssemblyRenderAction(
   try {
     const { profile } = await assertCostlyActionAllowed();
     const videoId = requireString(formData, "videoId");
-    const assemblyData = await getAssemblyPageData(videoId);
-    const placements = parsePlacementsPayload(
-      formData.get("placements"),
-      assemblyData.availableSegments,
-    );
-    const timelineState = parseTimelineState(formData.get("timelineState"));
-    const audioMediaAssetId = optionalString(formData, "audioMediaAssetId");
+    const presetId = requireString(formData, "presetId");
+    const assemblyData = await getAssemblyPageData(videoId, { presetId });
+    const activePreset = assemblyData.activePreset;
+
+    if (!activePreset || activePreset.id !== presetId) {
+      return {
+        status: "error",
+        message: "Assembly preset not found for this video.",
+      };
+    }
+
+    const { placements, timelineState, audioMediaAssetId } =
+      parseAssemblyFormPayload(formData, assemblyData.availableSegments);
 
     const orderedClips = buildClipsFromPlacements(
       placements,
@@ -193,17 +276,14 @@ export async function requestAssemblyRenderAction(
     }
 
     const supabase = createSupabaseAdminClient();
-    const composition = await upsertDraftComposition(supabase, {
+    const { preset, composition } = await saveAssemblyPresetSettings({
+      supabase,
       videoId,
+      presetId,
       placements,
-      audioMediaAssetId,
-      audioSync: projectLegacyAudioSync(timelineState.audioClips),
       timelineState,
-      remotionProps: buildRemotionProps({
-        segments: orderedClips,
-        audioTrack: assemblyData.audioTrack,
-        audioClips: timelineState.audioClips,
-      }),
+      audioMediaAssetId,
+      assemblyData,
       createdBy: profile.id,
     });
 
@@ -212,9 +292,9 @@ export async function requestAssemblyRenderAction(
       revalidateAssemblyPaths(videoId);
       return {
         status: "success",
-        message:
-          "A cloud render is already running for this assembly. You will be notified when it finishes.",
+        message: `A cloud render is already running for preset "${preset.name}".`,
         compositionId: composition.id,
+        presetId: preset.id,
       };
     }
 
@@ -225,6 +305,8 @@ export async function requestAssemblyRenderAction(
       data: {
         videoId,
         compositionId: composition.id,
+        presetId: preset.id,
+        presetName: preset.name,
         requestedByUserId: profile.id,
         isAllowlisted: true,
       },
@@ -234,9 +316,9 @@ export async function requestAssemblyRenderAction(
 
     return {
       status: "success",
-      message:
-        "Assembly saved and cloud render queued. This page refreshes while the export runs.",
+      message: `Preset "${preset.name}" saved and cloud render queued.`,
       compositionId: composition.id,
+      presetId: preset.id,
     };
   } catch (error) {
     return formatAssemblyActionError(
@@ -274,12 +356,20 @@ function getSunoActionErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Suno audio upload failed.";
 }
 
-/**
- * Decode the placements payload from the form. Validates against the
- * available segment catalogue (drops placements pointing to a missing
- * segmentId) using the same tolerant reader as the page-level loader, so
- * the action can ingest both the new shape and the legacy ones.
- */
+function parseAssemblyFormPayload(
+  formData: FormData,
+  availableSegments: Array<{ segmentId: string; durationSeconds: number }>,
+) {
+  const placements = parsePlacementsPayload(
+    formData.get("placements"),
+    availableSegments,
+  );
+  const timelineState = parseTimelineState(formData.get("timelineState"));
+  const audioMediaAssetId = optionalString(formData, "audioMediaAssetId");
+
+  return { placements, timelineState, audioMediaAssetId };
+}
+
 function parsePlacementsPayload(
   value: FormDataEntryValue | null,
   availableSegments: Array<{ segmentId: string; durationSeconds: number }>,

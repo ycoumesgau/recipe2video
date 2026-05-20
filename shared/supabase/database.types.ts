@@ -669,10 +669,50 @@ export type Database = {
         };
         Relationships: [];
       };
+      assembly_presets: {
+        Row: {
+          id: string;
+          video_id: string;
+          name: string;
+          segment_order: Json;
+          audio_media_asset_id: string | null;
+          audio_sync: Json | null;
+          remotion_props: Json | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          video_id: string;
+          name: string;
+          segment_order?: Json;
+          audio_media_asset_id?: string | null;
+          audio_sync?: Json | null;
+          remotion_props?: Json | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          video_id?: string;
+          name?: string;
+          segment_order?: Json;
+          audio_media_asset_id?: string | null;
+          audio_sync?: Json | null;
+          remotion_props?: Json | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       compositions: {
         Row: {
           id: string;
           video_id: string;
+          preset_id: string | null;
           export_media_asset_id: string | null;
           segment_order: Json;
           audio_media_asset_id: string | null;
@@ -687,6 +727,7 @@ export type Database = {
         Insert: {
           id?: string;
           video_id: string;
+          preset_id?: string | null;
           export_media_asset_id?: string | null;
           segment_order?: Json;
           audio_media_asset_id?: string | null;
@@ -701,6 +742,7 @@ export type Database = {
         Update: {
           id?: string;
           video_id?: string;
+          preset_id?: string | null;
           export_media_asset_id?: string | null;
           segment_order?: Json;
           audio_media_asset_id?: string | null;

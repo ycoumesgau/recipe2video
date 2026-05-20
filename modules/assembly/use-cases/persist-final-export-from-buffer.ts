@@ -20,6 +20,8 @@ export interface PersistFinalExportFromBufferInput {
   supabase: SupabaseDataClient;
   videoId: string;
   compositionId: string;
+  presetId: string;
+  presetName: string;
   createdBy: string;
   mp4Buffer: Buffer;
   placements: SegmentPlacement[];
@@ -59,6 +61,8 @@ export async function persistFinalExportFromBuffer(
     status: "stored",
     metadata: {
       compositionId: input.compositionId,
+      presetId: input.presetId,
+      presetName: input.presetName,
       placements: input.placements,
       timelineState: input.timelineState,
       source: input.source,
