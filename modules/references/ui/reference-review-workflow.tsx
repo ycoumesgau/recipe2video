@@ -39,6 +39,7 @@ import type {
   SegmentReferenceReadiness,
 } from "../reference.types";
 import type { ReferenceStatus } from "../reference-status";
+import { ReferenceFormSubmitButton } from "./reference-form-submit-button";
 import { ReferenceSectionGrid } from "./reference-section-grid";
 
 /**
@@ -64,6 +65,9 @@ export function ReferenceReviewWorkflow({
     (item) =>
       Boolean(item.reference.prompt) &&
       PENDING_GENERATION_STATUSES.includes(item.reference.status),
+  ).length;
+  const generatingRecipeReferenceCount = data.recipeReferences.filter(
+    (item) => item.reference.status === "generating",
   ).length;
 
   return (
@@ -116,6 +120,7 @@ export function ReferenceReviewWorkflow({
 
         <div className="space-y-4">
           <BulkGenerateCard
+            generatingCount={generatingRecipeReferenceCount}
             pendingCount={pendingRecipeReferenceCount}
             videoId={videoId}
           />
@@ -139,12 +144,22 @@ export function ReferenceReviewWorkflow({
  * before flipping the project status.
  */
 function BulkGenerateCard({
+  generatingCount,
   pendingCount,
   videoId,
 }: {
+  generatingCount: number;
   pendingCount: number;
   videoId: string;
 }) {
+  const bulkDisabled = pendingCount === 0;
+  const bulkLabel =
+    pendingCount === 0 && generatingCount > 0
+      ? `Generating ${generatingCount} reference${generatingCount === 1 ? "" : "s"}…`
+      : pendingCount === 0
+        ? "Nothing to generate"
+        : `Generate ${pendingCount} pending reference${pendingCount === 1 ? "" : "s"}`;
+
   return (
     <Card>
       <CardHeader>
@@ -161,12 +176,13 @@ function BulkGenerateCard({
       <CardContent className="space-y-3">
         <form action={generateAllMissingReferencesAction}>
           <input name="videoId" type="hidden" value={videoId} />
-          <Button disabled={pendingCount === 0} type="submit">
-            <Sparkles className="h-4 w-4" />
-            {pendingCount === 0
-              ? "Nothing to generate"
-              : `Generate ${pendingCount} pending reference${pendingCount === 1 ? "" : "s"}`}
-          </Button>
+          <ReferenceFormSubmitButton
+            disabled={bulkDisabled}
+            icon={<Sparkles className="h-4 w-4" />}
+            pendingLabel="Queueing generation…"
+          >
+            {bulkLabel}
+          </ReferenceFormSubmitButton>
         </form>
         <p className="text-xs text-muted-foreground">
           Each anchor is generated as a vertical 9:16 still grounded on the

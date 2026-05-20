@@ -34,13 +34,33 @@ import {
  * `failed`: the previous Runway task errored or timed out; the operator
  * triggered a regen.
  *
- * `generating` is intentionally excluded so a concurrent click does not
- * stack two tasks. `generated` / `approved` / `rejected` / `uploaded_to_runway`
- * are excluded because the operator must explicitly opt in to overwriting
- * an image they already vetted (per-reference Regenerate button covers
- * that path through the singular event below).
+ * `generating` without a `runwayTaskId` means the references UI queued the
+ * job (status flipped before Inngest) — the worker must still start Runway.
+ * `generating` with a task id is excluded so a concurrent click does not
+ * stack two tasks.
+ *
+ * `generated` / `approved` / `rejected` / `uploaded_to_runway` are
+ * excluded because the operator must explicitly opt in to overwriting an
+ * image they already vetted (per-reference Regenerate covers that path).
  */
-const PENDING_STATUSES = new Set(["planned", "failed"]);
+function referenceNeedsGenerationStart(
+  reference: {
+    status: string;
+    runwayTaskId?: string | null;
+  },
+  options: { includeFailed: boolean },
+): boolean {
+  if (reference.status === "generating" && !reference.runwayTaskId) {
+    return true;
+  }
+  if (reference.status === "planned") {
+    return true;
+  }
+  if (options.includeFailed && reference.status === "failed") {
+    return true;
+  }
+  return false;
+}
 
 const DEFAULT_POLL_DELAY_SECONDS = 6;
 
@@ -78,10 +98,9 @@ export const generateReferencesWorkflow = inngest.createFunction(
       if (!reference.prompt || reference.prompt.trim().length === 0) {
         return false;
       }
-      if (data.generateAllMissing) {
-        return PENDING_STATUSES.has(reference.status);
-      }
-      return reference.status === "planned";
+      return referenceNeedsGenerationStart(reference, {
+        includeFailed: Boolean(data.generateAllMissing),
+      });
     });
 
     if (candidates.length === 0) {
