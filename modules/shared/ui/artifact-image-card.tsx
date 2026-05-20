@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Expand, ImageIcon } from "lucide-react";
+import { Expand, ImageIcon, VideoIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,12 +57,19 @@ export const ARTIFACT_STATUS_BADGE_VARIANT: Record<
   failed: "destructive",
 };
 
+/** Matches reference cards (`h-40`) so album covers stay compact in the grid. */
+export const ARTIFACT_IMAGE_PREVIEW_MAX_HEIGHT_CLASS = "max-h-40";
+
+/** Slightly taller cap for 9:16 Canvas loops while keeping the card scannable. */
+export const ARTIFACT_VIDEO_PREVIEW_MAX_HEIGHT_CLASS = "max-h-56";
+
 export function ArtifactImageCard({
   title,
   subtitle,
   status,
   badges,
   previewUrl,
+  previewVideoUrl,
   previewAlt,
   aspectRatioClassName,
   runwayProgress,
@@ -77,11 +84,12 @@ export function ArtifactImageCard({
   status: ArtifactStatusValue;
   badges?: ReactNode;
   previewUrl?: string | null;
+  /** When set, renders a muted looping video in the preview slot (Canvas). */
+  previewVideoUrl?: string | null;
   previewAlt: string;
   /**
-   * Tailwind classes that lock the preview aspect ratio. Default is a
-   * 4:3 framing matching the references card; pass `"aspect-square"`
-   * for an album cover or `"aspect-[9/16]"` for a Spotify Canvas.
+   * Optional aspect-ratio hint on the media (`aspect-square`, `aspect-[9/16]`).
+   * Height is always capped — see {@link ARTIFACT_IMAGE_PREVIEW_MAX_HEIGHT_CLASS}.
    */
   aspectRatioClassName?: string;
   runwayProgress?: number | null;
@@ -98,6 +106,7 @@ export function ArtifactImageCard({
         aspectRatioClassName={aspectRatioClassName}
         onExpand={onExpandPreview}
         previewUrl={previewUrl}
+        previewVideoUrl={previewVideoUrl}
       />
       <CardHeader>
         <CardAction className="flex items-center gap-2">
@@ -127,35 +136,67 @@ export function ArtifactImagePreview({
   className,
   onExpand,
   previewUrl,
+  previewVideoUrl,
 }: {
   alt: string;
   aspectRatioClassName?: string;
   className?: string;
   onExpand?: () => void;
-  previewUrl: string | null | undefined;
+  previewUrl?: string | null;
+  previewVideoUrl?: string | null;
 }) {
+  if (previewVideoUrl) {
+    return (
+      <div
+        className={cn(
+          "mx-3 flex justify-center overflow-hidden rounded-lg border bg-black",
+          className,
+        )}
+      >
+        <video
+          autoPlay
+          className={cn(
+            "w-auto max-w-full object-contain",
+            ARTIFACT_VIDEO_PREVIEW_MAX_HEIGHT_CLASS,
+            aspectRatioClassName ?? "aspect-[9/16]",
+          )}
+          loop
+          muted
+          playsInline
+          src={previewVideoUrl}
+        >
+          <track default kind="captions" srcLang="en" />
+        </video>
+      </div>
+    );
+  }
+
   if (!previewUrl) {
     return (
       <div
         className={cn(
-          "mx-3 flex items-center justify-center rounded-lg border border-dashed bg-muted/40",
-          aspectRatioClassName ?? "h-40",
+          "mx-3 flex h-40 items-center justify-center rounded-lg border border-dashed bg-muted/40",
           className,
         )}
       >
-        <ImageIcon className="h-8 w-8 text-muted-foreground" />
+        {aspectRatioClassName?.includes("9/16") ? (
+          <VideoIcon className="h-8 w-8 text-muted-foreground" />
+        ) : (
+          <ImageIcon className="h-8 w-8 text-muted-foreground" />
+        )}
       </div>
     );
   }
 
   return (
-    <div className={cn("group/preview relative mx-3", className)}>
+    <div className={cn("group/preview relative mx-3 flex justify-center", className)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt={alt}
         className={cn(
-          "w-full rounded-lg object-cover",
-          aspectRatioClassName ?? "h-40",
+          "w-auto max-w-full rounded-lg object-contain",
+          ARTIFACT_IMAGE_PREVIEW_MAX_HEIGHT_CLASS,
+          aspectRatioClassName,
         )}
         src={previewUrl}
       />

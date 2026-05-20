@@ -47,33 +47,17 @@ export function SpotifyCanvasCard({
 
   return (
     <ArtifactImageCard
-      aspectRatioClassName="aspect-[9/16] h-80"
+      aspectRatioClassName="aspect-[9/16]"
       badges={<Badge variant="outline">Spotify Canvas</Badge>}
       isGenerating={isGenerating}
       previewAlt="Spotify Canvas preview"
-      previewUrl={null}
+      previewVideoUrl={review.previewUrl ?? null}
       runwayProgress={artifact.runwayProgress}
       runwayTaskStatus={artifact.runwayTaskStatus}
       status={artifact.status}
       subtitle={`Vertical 9:16 loop, ${artifact.durationSeconds ?? "?"}s, ${artifact.loopAnchorReferenceName ? `loops on @${artifact.loopAnchorReferenceName}` : "no loop anchor set"}.`}
       title="Spotify Canvas"
     >
-      {/* Video preview replaces the still preview when a media asset exists. */}
-      {review.previewUrl ? (
-        <div className="mx-0 overflow-hidden rounded-lg border">
-          <video
-            autoPlay
-            className="aspect-[9/16] w-full bg-black object-cover"
-            loop
-            muted
-            playsInline
-            src={review.previewUrl}
-          >
-            <track default kind="captions" srcLang="en" />
-          </video>
-        </div>
-      ) : null}
-
       {review.unresolvedImageReferences.length +
         review.unresolvedVideoReferences.length >
       0 ? (
