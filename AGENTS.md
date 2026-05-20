@@ -32,6 +32,24 @@ Set `DEV_AUTH_BYPASS_ALLOWLIST_EMAIL` to a valid allowlisted email (e.g. `yoann@
 
 Cloud agent secret: `DEV_AUTH_BYPASS_ALLOWLIST_EMAIL=yoann@licorn.org` (injected via Cursor Cloud Agents → Secrets).
 
+### Linked repository: `recipe2video-agent-workspace`
+
+This repo has a companion repository — `recipe2video-agent-workspace` — which is the dedicated workspace where Cursor SDK recipe agents write their artifacts (`recipe-analysis.json`, `decisions.md`, `logical-scenes.json`, `seedance-segments.json`, etc.).
+
+**Boundary rule:** any modification that belongs to the agent workspace (agent artifacts, agent workspace docs, agent-specific configs) MUST be committed and PR'd on `recipe2video-agent-workspace`, NOT on `recipe2video`. Do not pollute the current repo with files or changes that belong to the agent workspace.
+
+**How to push to the agent workspace:** the secret `RECIPE_AGENT_GITHUB_TOKEN` is a fine-grained GitHub PAT with read-write permissions on **Contents** and **Pull Requests** for `recipe2video-agent-workspace`. Agents can use it to:
+- Clone / fetch the agent workspace repo (HTTPS with token auth).
+- Create branches, commit, and push changes.
+- Create pull requests via the GitHub API (`gh` CLI or REST).
+
+Example git clone with token auth:
+```
+git clone https://x-access-token:${RECIPE_AGENT_GITHUB_TOKEN}@github.com/ycoumesgau/recipe2video-agent-workspace.git
+```
+
+This ensures a clean separation: `recipe2video` contains the application code, and `recipe2video-agent-workspace` contains the per-recipe agent artifacts managed autonomously by Cursor SDK agents.
+
 ### Gotchas
 
 - The Supabase config (`modules/auth/supabase/config.ts`) throws on missing env vars rather than returning undefined. The dashboard layout catches these at the page level, but without a `.env.local` the app will error on any route that touches auth.
