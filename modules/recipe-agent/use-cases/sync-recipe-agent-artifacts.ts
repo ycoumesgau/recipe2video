@@ -20,7 +20,7 @@ import {
   upsertSegmentsForVideoByPosition,
 } from "@/modules/storyboard/repositories/segment.repository";
 import {
-  replaceAgentReferenceAssetsForVideo,
+  upsertAgentReferenceAssetsForVideo,
   type CreateReferenceAssetInput,
 } from "@/modules/references/repositories/reference.repository";
 import { findAssetLibraryByCanonicalNames } from "@/modules/references/repositories/asset-library.repository";
@@ -437,7 +437,7 @@ export async function syncRecipeAgentArtifacts(
       conditioningCanonicalNames: entry.conditioningReferences ?? [],
     }));
 
-  const persistedRecipeRefs = await replaceAgentReferenceAssetsForVideo(
+  const persistedRecipeRefs = await upsertAgentReferenceAssetsForVideo(
     supabase,
     input.videoId,
     recipeSpecificInputs,
