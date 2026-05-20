@@ -177,6 +177,37 @@ export async function listSegmentsByVideoId(
   return data.map(mapSeedanceSegment);
 }
 
+export type SegmentProgressRow = {
+  id: string;
+  videoId: string;
+  status: SegmentStatus;
+};
+
+/**
+ * Lightweight segment rows for dashboard cards (status counts per project).
+ */
+export async function listSegmentProgressByVideoIds(
+  supabase: SupabaseDataClient,
+  videoIds: string[],
+): Promise<SegmentProgressRow[]> {
+  if (videoIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("segments")
+    .select("id, video_id, status")
+    .in("video_id", videoIds);
+
+  throwIfSupabaseError(error, "listSegmentProgressByVideoIds failed");
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    videoId: row.video_id,
+    status: row.status as SegmentStatus,
+  }));
+}
+
 export async function getSegmentById(
   supabase: SupabaseDataClient,
   segmentId: string,

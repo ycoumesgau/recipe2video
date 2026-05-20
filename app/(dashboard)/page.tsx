@@ -7,6 +7,7 @@ import { getVideoDashboardData } from "@/modules/videos/get-video-dashboard-data
 import { resolveProjectCardThumbnailUrls } from "@/modules/videos/use-cases/resolve-project-card-thumbnail-urls";
 import { getVideoLibraryStats } from "@/modules/videos/get-video-library-stats";
 import { listVideoProjects } from "@/modules/videos/repositories/video.repository";
+import { loadVideoLibraryCardMetrics } from "@/modules/videos/use-cases/load-video-library-card-metrics";
 import { VideoLibraryDashboard } from "@/modules/videos/ui/video-library-dashboard";
 
 export const VIDEO_LIBRARY_PAGE_SIZE = 12;
@@ -35,16 +36,20 @@ export default async function DashboardPage({
     dataMode === "mock" && libraryMode === "active" && page === 1;
 
   const supabase = createSupabaseAdminClient();
-  const thumbnailUrlByProjectId = await resolveProjectCardThumbnailUrls(
-    supabase,
-    projects.map((project) => project.id),
-    thumbnailByProjectId,
-  );
+  const [thumbnailUrlByProjectId, cardMetricsByVideoId] = await Promise.all([
+    resolveProjectCardThumbnailUrls(
+      supabase,
+      projects.map((project) => project.id),
+      thumbnailByProjectId,
+    ),
+    loadVideoLibraryCardMetrics(supabase, projects),
+  ]);
   const data = getVideoDashboardData(projects, thumbnailUrlByProjectId, {
     includeSeededDemos,
     runwayBalance,
     runwayCreditsUsedLogged,
     libraryStats,
+    cardMetricsByVideoId,
     pagination: {
       page,
       pageSize: VIDEO_LIBRARY_PAGE_SIZE,
