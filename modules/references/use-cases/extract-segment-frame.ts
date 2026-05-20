@@ -14,7 +14,8 @@ import {
 import { uploadStorageObject } from "@/modules/media-assets/services/storage.service";
 
 import {
-  insertExtractedFrameReferenceAsset,
+  getReferenceAssetByCanonicalNameForVideo,
+  upsertExtractedFrameReferenceAsset,
 } from "../repositories/reference.repository";
 import type { ReferenceAsset } from "../reference.types";
 
@@ -67,13 +68,13 @@ interface SegmentMediaAssetLookupRow {
  *   5. Insert a recipe-specific `reference_assets` row with
  *      `kind = extracted_frame` and `source_segment_id` populated.
  *
- * The function is idempotent on storage (`upsert: true` on the same path
- * overwrites the previous PNG), but each call inserts a NEW
- * `media_assets` and `reference_assets` pair so the operator gets a
- * stable id to attach to a downstream segment. Re-extracting at the same
- * timestamp is therefore safe but also creates a fresh reference; this
- * matches the operator's mental model ("I want to grab another frame at
- * 2.5s for a different downstream segment").
+ * Storage is idempotent on the same `(segment, timestamp)` path
+ * (`upsert: true` overwrites the PNG at that path). Each call always
+ * inserts a new `media_assets` row. The `reference_assets` row is keyed
+ * by `canonical_name`: reusing a name updates the existing reference in
+ * place (same id, new active image) so planner wiring and
+ * `segment_references` links stay valid — the same semantics as clicking
+ * Regenerate on the references page.
  *
  * Throws when the source segment has not been uploaded to Mux yet, or
  * when the Mux thumbnail endpoint refuses to serve the timestamp after
@@ -121,6 +122,19 @@ export async function extractSegmentFrameToReferenceAsset(
     );
   }
 
+  const canonicalName =
+    input.canonicalName?.trim() ||
+    buildDefaultExtractedFrameCanonicalName({
+      sourceSegmentTitle: segment.title ?? null,
+      sourceSegmentId: input.sourceSegmentId,
+      timestampSeconds,
+    });
+
+  const existingReference = await getReferenceAssetByCanonicalNameForVideo(
+    supabase,
+    { videoId: segment.video_id, canonicalName },
+  );
+
   const thumbnail = await fetchMuxThumbnail({
     muxPlaybackId: segmentMedia.mux_playback_id,
     timestampSeconds,
@@ -155,6 +169,7 @@ export async function extractSegmentFrameToReferenceAsset(
     status: "stored",
     metadata: {
       source: "extracted_frame",
+      ...(existingReference ? { referenceId: existingReference.id } : {}),
       sourceSegmentId: input.sourceSegmentId,
       sourceTimestampSeconds: timestampSeconds,
       muxPlaybackId: segmentMedia.mux_playback_id,
@@ -163,15 +178,7 @@ export async function extractSegmentFrameToReferenceAsset(
     createdBy: input.createdBy,
   });
 
-  const canonicalName =
-    input.canonicalName?.trim() ||
-    buildDefaultExtractedFrameCanonicalName({
-      sourceSegmentTitle: segment.title ?? null,
-      sourceSegmentId: input.sourceSegmentId,
-      timestampSeconds,
-    });
-
-  const reference = await insertExtractedFrameReferenceAsset(supabase, {
+  const reference = await upsertExtractedFrameReferenceAsset(supabase, {
     videoId: segment.video_id,
     mediaAssetId: mediaAsset.id,
     canonicalName,

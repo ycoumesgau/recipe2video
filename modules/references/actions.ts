@@ -536,7 +536,7 @@ export async function extractSegmentFrameAction(formData: FormData) {
     redirectWithNotice(
       videoId,
       "success",
-      `Frame extracted at ${timestampSeconds.toFixed(2)}s as '${result.reference.canonicalName}'. Attach it to a downstream segment to consume it.`,
+      `Frame extracted at ${timestampSeconds.toFixed(2)}s as '${result.reference.canonicalName}'. It is ready wherever that reference name is already wired.`,
     );
   } catch (error) {
     if (isNextRedirectError(error)) {

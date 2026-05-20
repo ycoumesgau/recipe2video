@@ -5,6 +5,7 @@ import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 
 import {
   upsertAgentReferenceAssetsForVideo,
+  upsertExtractedFrameReferenceAsset,
   type CreateReferenceAssetInput,
 } from "./reference.repository";
 
@@ -71,6 +72,10 @@ function fakeSupabase(state: State): SupabaseDataClient {
         return selectBuilder(predicate);
       },
       single() {
+        const rows = state.rows.filter(predicate);
+        return Promise.resolve({ data: rows[0] ?? null, error: null });
+      },
+      maybeSingle() {
         const rows = state.rows.filter(predicate);
         return Promise.resolve({ data: rows[0] ?? null, error: null });
       },
@@ -301,4 +306,56 @@ test("upsertAgentReferenceAssetsForVideo returns existing-first ordering in the 
     result.map((reference) => reference.canonicalName),
     ["B", "A", "C"],
   );
+});
+
+test("upsertExtractedFrameReferenceAsset updates an existing canonical name in place", async () => {
+  const existing = makeRow({
+    id: "ref-existing",
+    canonical_name: "ParisBrestFilledSlice",
+    media_asset_id: "media-old",
+    status: "generated",
+    source: "agent_reference_plan",
+    runway_uri: "runway://stale",
+    runway_task_id: "task-old",
+    runway_task_status: "SUCCEEDED",
+    runway_progress: 100,
+  });
+  const state: State = { rows: [existing], operations: [], insertCounter: 0 };
+  const supabase = fakeSupabase(state);
+
+  const result = await upsertExtractedFrameReferenceAsset(supabase, {
+    videoId: "video-1",
+    mediaAssetId: "media-frame",
+    canonicalName: "ParisBrestFilledSlice",
+    sourceSegmentId: "seg-1",
+    sourceTimestampSeconds: 2.5,
+    prompt: "slice missing",
+  });
+
+  assert.equal(result.id, "ref-existing");
+  assert.equal(result.mediaAssetId, "media-frame");
+  assert.equal(result.status, "approved");
+  assert.equal(result.kind, "extracted_frame");
+  assert.equal(result.runwayUri, null);
+  assert.equal(result.runwayTaskId, null);
+  assert.equal(state.operations.filter((op) => op.kind === "insert").length, 0);
+  assert.equal(state.operations.filter((op) => op.kind === "update").length, 1);
+});
+
+test("upsertExtractedFrameReferenceAsset inserts when the canonical name is new", async () => {
+  const state: State = { rows: [], operations: [], insertCounter: 0 };
+  const supabase = fakeSupabase(state);
+
+  const result = await upsertExtractedFrameReferenceAsset(supabase, {
+    videoId: "video-1",
+    mediaAssetId: "media-frame",
+    canonicalName: "FreshExtractedFrame",
+    sourceSegmentId: "seg-2",
+    sourceTimestampSeconds: 1,
+  });
+
+  assert.equal(result.canonicalName, "FreshExtractedFrame");
+  assert.equal(result.mediaAssetId, "media-frame");
+  assert.equal(result.kind, "extracted_frame");
+  assert.equal(state.operations.filter((op) => op.kind === "insert").length, 1);
 });
