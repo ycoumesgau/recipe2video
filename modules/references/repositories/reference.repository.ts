@@ -112,7 +112,8 @@ export async function insertReferenceAsset(
 
 /**
  * Non-destructive sync of agent-authored references for a video, keyed by
- * `(video_id, canonical_name)`.
+ * `(video_id, canonical_name)` across every `reference_assets` source
+ * (including `extracted_frame` rows created during segment review).
  *
  * Why upsert (not replace): the previous `replace` implementation deleted
  * every existing `agent_reference_plan` row before inserting the new
@@ -147,10 +148,11 @@ export async function upsertAgentReferenceAssetsForVideo(
   videoId: string,
   references: CreateReferenceAssetInput[],
 ): Promise<ReferenceAsset[]> {
-  const existingRows = await listAgentReferenceAssetsForVideo(
-    supabase,
-    videoId,
-  );
+  // Load every recipe-specific row for the video, not only
+  // `agent_reference_plan`. Operator-generated images (e.g.
+  // `extracted_frame`) already occupy `(video_id, canonical_name)` and
+  // must be updated in place when the agent re-syncs reference-plan.json.
+  const existingRows = await listReferenceAssetsForVideo(supabase, videoId);
   const existingByCanonicalName = new Map(
     existingRows.map((reference) => [reference.canonicalName, reference]),
   );
@@ -177,7 +179,9 @@ export async function upsertAgentReferenceAssetsForVideo(
         error,
         "upsertAgentReferenceAssetsForVideo update failed",
       );
-      persistedByCanonicalName.set(reference.canonicalName, mapReferenceAsset(data));
+      const persisted = mapReferenceAsset(data);
+      persistedByCanonicalName.set(reference.canonicalName, persisted);
+      existingByCanonicalName.set(reference.canonicalName, persisted);
       continue;
     }
 
@@ -203,7 +207,9 @@ export async function upsertAgentReferenceAssetsForVideo(
       error,
       "upsertAgentReferenceAssetsForVideo insert failed",
     );
-    persistedByCanonicalName.set(reference.canonicalName, mapReferenceAsset(data));
+    const persisted = mapReferenceAsset(data);
+    persistedByCanonicalName.set(reference.canonicalName, persisted);
+    existingByCanonicalName.set(reference.canonicalName, persisted);
   }
 
   // Preserve existing rows absent from the incoming batch so their

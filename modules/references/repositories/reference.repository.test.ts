@@ -248,6 +248,41 @@ test("upsertAgentReferenceAssetsForVideo preserves media_asset_id, status, runwa
   ]);
 });
 
+test("upsertAgentReferenceAssetsForVideo updates extracted_frame rows when the agent plan reuses the same canonical name", async () => {
+  const existing = makeRow({
+    canonical_name: "FriedGoldenAranciniBall",
+    source: "extracted_frame",
+    media_asset_id: "media-extracted",
+    status: "approved",
+    prompt: "frame extracted from segment",
+    conditioning_canonical_names: [],
+  });
+  const state: State = { rows: [existing], operations: [], insertCounter: 0 };
+  const supabase = fakeSupabase(state);
+
+  const result = await upsertAgentReferenceAssetsForVideo(supabase, "video-1", [
+    asInput({
+      canonicalName: "FriedGoldenAranciniBall",
+      prompt: "agent reference-plan prompt",
+      conditioningCanonicalNames: ["KitchenIslandDefault"],
+    }),
+  ]);
+
+  assert.equal(
+    state.operations.some((op) => op.kind === "insert"),
+    false,
+    "must not insert when extracted_frame already owns the canonical name",
+  );
+  assert.equal(state.operations.length, 1);
+  assert.equal(state.operations[0].kind, "update");
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, existing.id);
+  assert.equal(result[0].source, "extracted_frame");
+  assert.equal(result[0].mediaAssetId, "media-extracted");
+  assert.equal(result[0].status, "approved");
+  assert.equal(result[0].prompt, "agent reference-plan prompt");
+});
+
 test("upsertAgentReferenceAssetsForVideo inserts new canonical names not present in the DB", async () => {
   const state: State = { rows: [], operations: [], insertCounter: 0 };
   const supabase = fakeSupabase(state);
