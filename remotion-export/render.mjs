@@ -37,7 +37,14 @@ console.log(
 const bundleStartedAt = Date.now();
 const serveUrl = await bundle({
   entryPoint,
-  webpackOverride: (config) => config,
+  webpackOverride: (config) => {
+    config.resolve ??= {};
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "@": repoRoot,
+    };
+    return config;
+  },
 });
 console.log(
   `[render] bundle_done elapsed_ms=${Date.now() - bundleStartedAt} serve_url=${serveUrl}`,

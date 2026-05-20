@@ -34,38 +34,22 @@ import type {
   SegmentPlacement,
 } from "./assembly.types";
 
+import {
+  clampPlacementPlaybackRate,
+  getPlacementSourceTrimSeconds,
+  getPlacementTimelineDurationSeconds,
+} from "./placement-timing";
+
+export {
+  clampPlacementPlaybackRate,
+  getPlacementSourceTrimSeconds,
+  getPlacementTimelineDurationSeconds,
+};
+
 const TIMELINE_SCHEMA = "timeline_v2" as const;
 const PLACEMENTS_SCHEMA = "placements_v1" as const;
 const MIN_TRIM_WINDOW = 0.1;
-const MIN_PLAYBACK_RATE = 0.25;
-const MAX_PLAYBACK_RATE = 4;
 const DEFAULT_PLAYBACK_RATE = 1;
-
-export function clampPlacementPlaybackRate(value: number) {
-  return clamp(value, MIN_PLAYBACK_RATE, MAX_PLAYBACK_RATE);
-}
-
-export function getPlacementSourceTrimSeconds(placement: {
-  inSeconds: number;
-  outSeconds: number;
-}) {
-  return Math.max(placement.outSeconds - placement.inSeconds, 0);
-}
-
-/**
- * How long a placement occupies the assembly timeline, accounting for speed.
- */
-export function getPlacementTimelineDurationSeconds(placement: {
-  inSeconds: number;
-  outSeconds: number;
-  playbackRate?: number;
-}) {
-  const sourceTrim = getPlacementSourceTrimSeconds(placement);
-  const rate = clampPlacementPlaybackRate(
-    placement.playbackRate ?? DEFAULT_PLAYBACK_RATE,
-  );
-  return sourceTrim / rate;
-}
 
 export function getDefaultAudioSync(): AssemblyAudioSync {
   return {

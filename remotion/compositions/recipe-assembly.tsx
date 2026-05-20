@@ -11,11 +11,11 @@ import type {
   AssemblyAudioTrack,
   AssemblyRemotionProps,
   AssemblySegmentClip,
-} from "@/modules/assembly/assembly.types";
+} from "../../modules/assembly/assembly.types";
 import {
   clampPlacementPlaybackRate,
   getPlacementTimelineDurationSeconds,
-} from "@/modules/assembly/timeline-state";
+} from "../../modules/assembly/placement-timing";
 
 export function RecipeAssemblyComposition({
   audio,
