@@ -37,6 +37,35 @@ import type {
 const TIMELINE_SCHEMA = "timeline_v2" as const;
 const PLACEMENTS_SCHEMA = "placements_v1" as const;
 const MIN_TRIM_WINDOW = 0.1;
+const MIN_PLAYBACK_RATE = 0.25;
+const MAX_PLAYBACK_RATE = 4;
+const DEFAULT_PLAYBACK_RATE = 1;
+
+export function clampPlacementPlaybackRate(value: number) {
+  return clamp(value, MIN_PLAYBACK_RATE, MAX_PLAYBACK_RATE);
+}
+
+export function getPlacementSourceTrimSeconds(placement: {
+  inSeconds: number;
+  outSeconds: number;
+}) {
+  return Math.max(placement.outSeconds - placement.inSeconds, 0);
+}
+
+/**
+ * How long a placement occupies the assembly timeline, accounting for speed.
+ */
+export function getPlacementTimelineDurationSeconds(placement: {
+  inSeconds: number;
+  outSeconds: number;
+  playbackRate?: number;
+}) {
+  const sourceTrim = getPlacementSourceTrimSeconds(placement);
+  const rate = clampPlacementPlaybackRate(
+    placement.playbackRate ?? DEFAULT_PLAYBACK_RATE,
+  );
+  return sourceTrim / rate;
+}
 
 export function getDefaultAudioSync(): AssemblyAudioSync {
   return {
@@ -184,6 +213,7 @@ export function readPlacementsState(
           inSeconds,
           outSeconds,
           volume: 1,
+          playbackRate: DEFAULT_PLAYBACK_RATE,
         },
       ];
     });
@@ -202,9 +232,14 @@ export function buildClipsFromPlacements(
   placements: SegmentPlacement[],
   availableBySegmentId: Map<
     string,
-    Omit<
+      Omit<
       AssemblySegmentClip,
-      "placementId" | "position" | "inSeconds" | "outSeconds" | "volume"
+      | "placementId"
+      | "position"
+      | "inSeconds"
+      | "outSeconds"
+      | "volume"
+      | "playbackRate"
     >
   >,
 ): AssemblySegmentClip[] {
@@ -228,6 +263,7 @@ export function buildClipsFromPlacements(
       inSeconds,
       outSeconds,
       volume: clamp(placement.volume, 0, 2),
+      playbackRate: clampPlacementPlaybackRate(placement.playbackRate),
     });
   });
   return clips;
@@ -247,6 +283,7 @@ export function defaultPlacementsForSegments(
     inSeconds: 0,
     outSeconds: Math.max(segment.durationSeconds, MIN_TRIM_WINDOW),
     volume: 1,
+    playbackRate: DEFAULT_PLAYBACK_RATE,
   }));
 }
 
@@ -490,6 +527,7 @@ export function serializePlacements(placements: SegmentPlacement[]) {
       inSeconds: placement.inSeconds,
       outSeconds: placement.outSeconds,
       volume: placement.volume,
+      playbackRate: clampPlacementPlaybackRate(placement.playbackRate),
     })),
   };
 }
@@ -534,6 +572,9 @@ function buildPlacementFromRecord(
       inSeconds,
       outSeconds,
       volume: clamp(readNumber(raw.volume, 1), 0, 2),
+      playbackRate: clampPlacementPlaybackRate(
+        readNumber(raw.playbackRate, DEFAULT_PLAYBACK_RATE),
+      ),
     },
   ];
 }

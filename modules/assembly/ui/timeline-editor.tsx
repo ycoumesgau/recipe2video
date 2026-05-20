@@ -27,6 +27,7 @@ import type {
   AssemblyAudioTrack,
   AssemblySegmentClip,
 } from "@/modules/assembly/assembly.types";
+import { getPlacementTimelineDurationSeconds } from "@/modules/assembly/timeline-state";
 
 import {
   computeDropInsertIndex,
@@ -268,9 +269,9 @@ export function TimelineEditor({
     const result: Array<{ startSeconds: number; durationSeconds: number }> = [];
     let cursor = 0;
     for (const segment of segments) {
-      const trimmed = Math.max(segment.outSeconds - segment.inSeconds, 0);
-      result.push({ startSeconds: cursor, durationSeconds: trimmed });
-      cursor += trimmed;
+      const timelineSeconds = getPlacementTimelineDurationSeconds(segment);
+      result.push({ startSeconds: cursor, durationSeconds: timelineSeconds });
+      cursor += timelineSeconds;
     }
     return result;
   }, [segments]);
@@ -910,7 +911,9 @@ export function TimelineEditor({
     ) {
       return;
     }
-    const splitInSource = segment.inSeconds + offsetIntoPlacement;
+    const playbackRate = segment.playbackRate ?? 1;
+    const splitInSource =
+      segment.inSeconds + offsetIntoPlacement * playbackRate;
     const newPlacementId = generatePlacementId();
     const result = splitPlacementAtSourceSeconds(
       segments,
@@ -1413,7 +1416,8 @@ function SegmentClipBox({
   translateX: number;
   widthPx: number;
 }) {
-  const trimmedDuration = Math.max(segment.outSeconds - segment.inSeconds, 0);
+  const timelineDuration = getPlacementTimelineDurationSeconds(segment);
+  const speedPercent = Math.round((segment.playbackRate ?? 1) * 100);
   return (
     <div
       className={cn(
@@ -1446,8 +1450,8 @@ function SegmentClipBox({
       <div className="flex min-w-0 flex-1 flex-col justify-between px-2 py-1 text-[11px] text-foreground">
         <div className="truncate font-medium">{segment.title}</div>
         <div className="truncate tabular-nums text-foreground/70">
-          {trimmedDuration.toFixed(1)}s · in {segment.inSeconds.toFixed(1)}s ·
-          out {segment.outSeconds.toFixed(1)}s
+          {timelineDuration.toFixed(1)}s · {speedPercent}% · in{" "}
+          {segment.inSeconds.toFixed(1)}s · out {segment.outSeconds.toFixed(1)}s
         </div>
       </div>
       <TrimHandle

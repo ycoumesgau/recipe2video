@@ -38,6 +38,11 @@ export interface SegmentPlacement {
    * sub-placement.
    */
   volume: number;
+  /**
+   * Playback speed multiplier for this placement. `1` = 100% (normal speed).
+   * Timeline duration is `(outSeconds - inSeconds) / playbackRate`.
+   */
+  playbackRate: number;
 }
 
 /**
@@ -73,6 +78,10 @@ export interface AssemblySegmentClip {
    * See {@link SegmentPlacement.volume} for the mixing semantics.
    */
   volume: number;
+  /**
+   * Playback speed multiplier. See {@link SegmentPlacement.playbackRate}.
+   */
+  playbackRate: number;
   sourceUrl: string;
   storageBucket: string;
   storagePath: string;

@@ -53,7 +53,12 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60;
  */
 type SegmentCatalogueEntry = Omit<
   AssemblySegmentClip,
-  "placementId" | "position" | "inSeconds" | "outSeconds" | "volume"
+  | "placementId"
+  | "position"
+  | "inSeconds"
+  | "outSeconds"
+  | "volume"
+  | "playbackRate"
 >;
 
 export interface AssemblyFinalExport {
@@ -180,6 +185,7 @@ export async function getAssemblyPageData(
       // Bin entries are not on the timeline; the value here is only used as
       // the default volume for placements materialised from this entry.
       volume: 1,
+      playbackRate: 1,
     }),
   );
 
