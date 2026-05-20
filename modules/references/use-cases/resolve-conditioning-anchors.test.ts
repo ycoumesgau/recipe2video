@@ -118,6 +118,14 @@ function fakeSupabase(data: FakeData): SupabaseDataClient {
       from() {
         return {
           createSignedUrl(path: string) {
+            const primaryMissing =
+              path === "library/utensil/silicone_spatula.png";
+            if (primaryMissing) {
+              return Promise.resolve({
+                data: null,
+                error: { message: "Object not found" },
+              });
+            }
             const signed = signedUrls.get(path) ?? `https://signed.invalid/${path}`;
             return Promise.resolve({
               data: { signedUrl: signed },
@@ -180,6 +188,14 @@ const library: LibraryRow[] = [
     media_asset_id: "media-pose",
     status: "active",
   },
+  {
+    id: "lib-silicone-spatula",
+    canonical_name: "silicone_spatula",
+    aliases: ["SiliconeSpatula", "Maryse", "RubberSpatula", "Spatula"],
+    category: "utensil",
+    media_asset_id: "media-silicone-spatula",
+    status: "active",
+  },
 ];
 
 const media: MediaRow[] = [
@@ -216,6 +232,13 @@ const media: MediaRow[] = [
     storage_bucket: "reference-images",
     storage_path: "library/character/Luma-front-pose.png",
     file_size_bytes: 3 * 1024 * 1024,
+    mime_type: "image/png",
+  },
+  {
+    id: "media-silicone-spatula",
+    storage_bucket: "reference-images",
+    storage_path: "library/utensil/silicone_spatula.png",
+    file_size_bytes: 512 * 1024,
     mime_type: "image/png",
   },
 ];
@@ -273,6 +296,28 @@ test("resolveConditioningAnchors falls back to the canonical name as tag when no
   // identifier-like form GPT-Image 2 expects in `@Mentions`. The first
   // letter is also promoted to upper-case for readability in Runway logs.
   assert.equal(result.anchors[0]?.tag, "Tongs");
+});
+
+test("resolveConditioningAnchors resolves SiliconeSpatula via legacy storage and spatula alias", async () => {
+  const supabase = fakeSupabase({
+    library,
+    media,
+    signedUrls: new Map([
+      ["library/utensil/spatula.png", "https://signed.invalid/library/utensil/spatula.png"],
+    ]),
+  });
+
+  for (const requestedName of ["SiliconeSpatula", "Spatula", "spatula"]) {
+    const result = await resolveConditioningAnchors(supabase, [requestedName]);
+    assert.equal(result.anchors.length, 1, requestedName);
+    assert.equal(result.anchors[0]?.canonicalName, "silicone_spatula", requestedName);
+    assert.equal(result.anchors[0]?.tag, "SiliconeSpatula", requestedName);
+    assert.ok(
+      result.anchors[0]?.uri.includes("library/utensil/spatula.png"),
+      requestedName,
+    );
+    assert.deepEqual(result.unresolvedNames, [], requestedName);
+  }
 });
 
 test("resolveConditioningAnchors deduplicates two names that resolve to the same library entry", async () => {
