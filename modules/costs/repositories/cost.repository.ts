@@ -99,6 +99,35 @@ export async function sumRunwayCreditsUsed(
   );
 }
 
+/**
+ * Sum Runway credits logged per video. Used by dashboard project cards so
+ * totals match the project cost overview (aggregated from cost_logs).
+ */
+export async function sumRunwayCreditsByVideoIds(
+  supabase: SupabaseDataClient,
+  videoIds: string[],
+): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  if (videoIds.length === 0) {
+    return totals;
+  }
+
+  const { data, error } = await supabase
+    .from("cost_logs")
+    .select("video_id, credits_used")
+    .eq("provider", "runway")
+    .in("video_id", videoIds);
+
+  throwIfSupabaseError(error, "sumRunwayCreditsByVideoIds failed");
+
+  for (const row of data ?? []) {
+    const current = totals.get(row.video_id) ?? 0;
+    totals.set(row.video_id, current + (row.credits_used ?? 0));
+  }
+
+  return totals;
+}
+
 export function mapCostLog(row: CostLogRow): CostLog {
   return {
     id: row.id,

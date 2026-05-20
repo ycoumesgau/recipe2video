@@ -126,6 +126,36 @@ export async function countActiveGenerationsForSegments(
   return count ?? 0;
 }
 
+/**
+ * Active generation counts keyed by segment id (for dashboard card rollups).
+ */
+export async function countActiveGenerationsBySegmentIds(
+  supabase: SupabaseDataClient,
+  segmentIds: string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (segmentIds.length === 0) {
+    return counts;
+  }
+
+  const { data, error } = await supabase
+    .from("generations")
+    .select("segment_id")
+    .in("segment_id", segmentIds)
+    .in("status", ACTIVE_GENERATION_STATUSES);
+
+  throwIfSupabaseError(error, "countActiveGenerationsBySegmentIds failed");
+
+  for (const row of data ?? []) {
+    if (!row.segment_id) {
+      continue;
+    }
+    counts.set(row.segment_id, (counts.get(row.segment_id) ?? 0) + 1);
+  }
+
+  return counts;
+}
+
 export async function hasActiveGenerationForSegment(
   supabase: SupabaseDataClient,
   segmentId: string,

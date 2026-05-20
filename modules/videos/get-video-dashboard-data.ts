@@ -8,6 +8,7 @@ import type {
   VideoDashboardProject,
   VideoLibraryPagination,
 } from "./video-dashboard.types";
+import type { VideoLibraryCardMetricsByVideoId } from "./video-library-card-metrics.types";
 import type { VideoLibraryStats, VideoProject } from "./video.types";
 import type { RecipeAgentStatus } from "@/modules/recipe-agent/recipe-agent.types";
 
@@ -122,13 +123,19 @@ export function getVideoDashboardData(
     runwayCreditsUsedLogged?: number;
     libraryStats?: VideoLibraryStats;
     pagination?: Pick<VideoLibraryPagination, "page" | "pageSize" | "totalProjects">;
+    cardMetricsByVideoId?: VideoLibraryCardMetricsByVideoId;
   } = {},
 ): VideoDashboardData {
   const includeSeededDemos = options.includeSeededDemos ?? false;
+  const cardMetricsByVideoId = options.cardMetricsByVideoId ?? new Map();
   const activeQueue = includeSeededDemos ? SEEDED_ACTIVE_QUEUE : [];
   const projects = [
     ...persistedProjects.map((project) =>
-      mapPersistedProject(project, thumbnailByProjectId.get(project.id) ?? null),
+      mapPersistedProject(
+        project,
+        thumbnailByProjectId.get(project.id) ?? null,
+        cardMetricsByVideoId.get(project.id),
+      ),
     ),
     ...(includeSeededDemos ? SEEDED_PROJECTS : []),
   ];
@@ -241,6 +248,14 @@ export function getVideoDashboardData(
 function mapPersistedProject(
   project: VideoProject,
   thumbnailUrl: string | null,
+  metrics?: {
+    acceptedSegments: number;
+    totalSegments: number;
+    activeTaskCount: number;
+    totalCostCredits: number;
+    ownerName: string;
+    nextAction: string;
+  },
 ): VideoDashboardProject {
   const source = project.recipeData?.source as
     | { type?: string; demoRecipeId?: string | null; uploadedFileNames?: string[] }
@@ -257,13 +272,13 @@ function mapPersistedProject(
     thumbnailLabel: project.title,
     thumbnailTone: recipeSourceKind === "demo_fixture" ? "amber" : "sky",
     thumbnailUrl,
-    acceptedSegments: 0,
-    totalSegments: 0,
-    activeTaskCount: 0,
-    totalCostCredits: project.totalCostCredits,
+    acceptedSegments: metrics?.acceptedSegments ?? 0,
+    totalSegments: metrics?.totalSegments ?? 0,
+    activeTaskCount: metrics?.activeTaskCount ?? 0,
+    totalCostCredits: metrics?.totalCostCredits ?? project.totalCostCredits,
     updatedAt: project.updatedAt,
-    ownerName: "Licorn Ops",
-    nextAction: "Analyze recipe",
+    ownerName: metrics?.ownerName ?? "Licorn Ops",
+    nextAction: metrics?.nextAction ?? "Awaiting recipe ingest",
     archivedAt: project.archivedAt ?? null,
     canArchive: true,
   };
