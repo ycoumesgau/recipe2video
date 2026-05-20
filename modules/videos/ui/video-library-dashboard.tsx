@@ -88,6 +88,10 @@ const thumbnailToneClasses: Record<VideoDashboardProject["thumbnailTone"], strin
   sky: "from-sky-500/35 via-cyan-400/20 to-background",
 };
 
+/** Kitchen default-view photos place the dish ~⅓ up from the bottom; anchor crop there. */
+const projectCardThumbnailClassName =
+  "h-full w-full object-cover object-[center_66.67%]";
+
 export function VideoLibraryDashboard({
   data,
   libraryMode,
@@ -370,7 +374,7 @@ function ProjectCard({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             alt={project.thumbnailLabel}
-            className="h-full w-full object-cover"
+            className={projectCardThumbnailClassName}
             src={project.thumbnailUrl}
           />
           <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/70 to-transparent p-3">
