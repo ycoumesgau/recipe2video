@@ -28,7 +28,8 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
     totalCostCredits: 3820,
     updatedAt: "2026-05-08T18:42:00.000Z",
     ownerName: "Yoann",
-    nextAction: "Review Segment 5",
+    nextAction: "Open segments",
+    nextActionHref: "/videos/paris-brest-demo/segments",
     archivedAt: null,
     canArchive: false,
   },
@@ -47,7 +48,8 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
     totalCostCredits: 760,
     updatedAt: "2026-05-08T17:15:00.000Z",
     ownerName: "Licorn Ops",
-    nextAction: "Approve references",
+    nextAction: "Open references",
+    nextActionHref: "/videos/tarte-citron-reference-pass/references",
     archivedAt: null,
     canArchive: false,
   },
@@ -67,6 +69,7 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
     updatedAt: "2026-05-08T15:30:00.000Z",
     ownerName: "Yoann",
     nextAction: "Review storyboard",
+    nextActionHref: "/videos/cookie-dough-storyboard/storyboard",
     archivedAt: null,
     canArchive: false,
   },
@@ -255,6 +258,7 @@ function mapPersistedProject(
     totalCostCredits: number;
     ownerName: string;
     nextAction: string;
+    nextActionHref: string | null;
   },
 ): VideoDashboardProject {
   const source = project.recipeData?.source as
@@ -279,6 +283,7 @@ function mapPersistedProject(
     updatedAt: project.updatedAt,
     ownerName: metrics?.ownerName ?? "Licorn Ops",
     nextAction: metrics?.nextAction ?? "Awaiting recipe ingest",
+    nextActionHref: metrics?.nextActionHref ?? null,
     archivedAt: project.archivedAt ?? null,
     canArchive: true,
   };

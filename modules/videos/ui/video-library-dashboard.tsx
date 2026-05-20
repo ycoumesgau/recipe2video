@@ -12,7 +12,7 @@ import {
   Clapperboard,
   Clock3,
   Filter,
-  PlayCircle,
+  LayoutDashboard,
   PlusCircle,
   Search,
   Sparkles,
@@ -55,6 +55,7 @@ import {
   VIDEO_STATUSES,
   type VideoStatus,
 } from "@/modules/videos/video-status";
+import { resolveNextActionNavIcon } from "@/modules/videos/next-action-nav";
 import type {
   ActiveGenerationQueueItem,
   DashboardSortKey,
@@ -362,10 +363,11 @@ function ProjectCard({
 }) {
   const completion = getSegmentProgress(project);
   const agentStatus = project.agentStatus ?? "idle";
-  const projectHref =
+  const overviewHref =
     project.recipeSourceKind === "demo_fixture" && project.id === "paris-brest-demo"
       ? "/demo"
       : `/videos/${project.id}`;
+  const NextActionIcon = resolveNextActionNavIcon(project.nextActionHref);
 
   return (
     <Card className="min-w-0" size="sm">
@@ -453,17 +455,24 @@ function ProjectCard({
 
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button asChild className="flex-1" variant="outline">
-            <Link href={projectHref}>
-              Open project
-              <ChevronRight className="h-4 w-4" />
+            <Link href={overviewHref}>
+              Overview
+              <LayoutDashboard className="h-4 w-4" />
             </Link>
           </Button>
-          <Button asChild className="flex-1">
-            <Link href={projectHref}>
-              Resume
-              <PlayCircle className="h-4 w-4" />
-            </Link>
-          </Button>
+          {project.nextActionHref ? (
+            <Button asChild className="flex-1">
+              <Link href={project.nextActionHref}>
+                {project.nextAction}
+                <NextActionIcon className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <Button className="flex-1" disabled type="button">
+              {project.nextAction}
+              <NextActionIcon className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
