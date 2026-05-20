@@ -168,8 +168,9 @@ export function FrameExtractionCard({
             />
             <p className="text-xs text-muted-foreground">
               Leave blank to auto-generate a name from the segment title and
-              timestamp. The canonical name is what the agent uses in
-              `seedance-segments.json` and in `reference-plan.json`.
+              timestamp. Reusing a name from `reference-plan.json` replaces that
+              reference image in place (same as Regenerate) so downstream
+              segments keep using it.
             </p>
           </div>
           <div className="space-y-2">

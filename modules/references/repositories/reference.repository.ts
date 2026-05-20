@@ -60,6 +60,29 @@ export async function getReferenceAssetById(
   return data ? mapReferenceAsset(data) : null;
 }
 
+/**
+ * Resolve a recipe-specific reference by its stable `(video_id,
+ * canonical_name)` key. Returns null when the name is unused on this
+ * video.
+ */
+export async function getReferenceAssetByCanonicalNameForVideo(
+  supabase: SupabaseDataClient,
+  input: { videoId: string; canonicalName: string },
+): Promise<ReferenceAsset | null> {
+  const { data, error } = await supabase
+    .from("reference_assets")
+    .select("*")
+    .eq("video_id", input.videoId)
+    .eq("canonical_name", input.canonicalName)
+    .maybeSingle();
+
+  throwIfSupabaseError(
+    error,
+    "getReferenceAssetByCanonicalNameForVideo failed",
+  );
+  return data ? mapReferenceAsset(data) : null;
+}
+
 export async function insertReferenceAsset(
   supabase: SupabaseDataClient,
   input: CreateReferenceAssetInput,
@@ -527,27 +550,63 @@ export interface InsertExtractedFrameReferenceAssetInput {
 }
 
 /**
- * Insert a recipe-specific reference asset that points at a frame
- * extracted from another segment's render. The row is created with
- * `kind = 'extracted_frame'` and `status = 'approved'` so it is
- * immediately usable as a Seedance reference once linked to a
- * `segment_references` row.
+ * Insert or replace a recipe-specific reference asset that points at a
+ * frame extracted from another segment's render.
+ *
+ * When `canonical_name` already exists on the video (planner-declared
+ * reference, prior GPT-Image 2 generation, or an earlier extraction),
+ * the existing row is updated in place so `segment_references` and
+ * downstream Seedance conditioning keep the same `reference_assets.id`.
+ * A new `media_assets` row is linked as the active image; prior images
+ * remain in Storage as historical variants (same semantics as
+ * Regenerate on the references page).
+ *
+ * Fresh names insert a new row with `kind = 'extracted_frame'` and
+ * `status = 'approved'` so the frame is immediately usable as a
+ * Seedance reference once linked via `segment_references`.
  */
-export async function insertExtractedFrameReferenceAsset(
+export async function upsertExtractedFrameReferenceAsset(
   supabase: SupabaseDataClient,
   input: InsertExtractedFrameReferenceAssetInput,
 ): Promise<ReferenceAsset> {
-  const insertRow: Record<string, unknown> = {
-    video_id: input.videoId,
+  const extractedFramePatch: Record<string, unknown> = {
     media_asset_id: input.mediaAssetId,
     type: "recipe_extracted_frame",
-    canonical_name: input.canonicalName,
     source: "extracted_frame",
     prompt: input.prompt ?? null,
     status: "approved" as ReferenceStatus,
     kind: "extracted_frame" satisfies ReferenceAssetKind,
     source_segment_id: input.sourceSegmentId,
     source_timestamp_seconds: input.sourceTimestampSeconds,
+    runway_uri: null,
+    runway_task_id: null,
+    runway_task_status: null,
+    runway_progress: null,
+  };
+
+  const existing = await getReferenceAssetByCanonicalNameForVideo(supabase, {
+    videoId: input.videoId,
+    canonicalName: input.canonicalName,
+  });
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from("reference_assets")
+      .update(
+        extractedFramePatch as unknown as Database["public"]["Tables"]["reference_assets"]["Update"],
+      )
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+
+    throwIfSupabaseError(error, "upsertExtractedFrameReferenceAsset update failed");
+    return mapReferenceAsset(data);
+  }
+
+  const insertRow: Record<string, unknown> = {
+    video_id: input.videoId,
+    canonical_name: input.canonicalName,
+    ...extractedFramePatch,
   };
 
   const { data, error } = await supabase
@@ -558,8 +617,18 @@ export async function insertExtractedFrameReferenceAsset(
     .select("*")
     .single();
 
-  throwIfSupabaseError(error, "insertExtractedFrameReferenceAsset failed");
+  throwIfSupabaseError(error, "upsertExtractedFrameReferenceAsset insert failed");
   return mapReferenceAsset(data);
+}
+
+/**
+ * @deprecated Use `upsertExtractedFrameReferenceAsset`.
+ */
+export async function insertExtractedFrameReferenceAsset(
+  supabase: SupabaseDataClient,
+  input: InsertExtractedFrameReferenceAssetInput,
+): Promise<ReferenceAsset> {
+  return upsertExtractedFrameReferenceAsset(supabase, input);
 }
 
 /**
