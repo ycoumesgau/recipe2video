@@ -14,6 +14,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import { ARTIFACT_STATUS_BADGE_VARIANT } from "@/modules/shared/ui/artifact-image-card";
+
 import type { ReferenceStatus } from "../reference-status";
 
 export type ReferenceLightboxSlide = {
@@ -26,19 +28,6 @@ export type ReferenceLightboxSlide = {
   storageStatus: string;
   runwayStatus: string;
   prompt?: string | null;
-};
-
-const statusBadgeVariant: Record<
-  ReferenceStatus,
-  "default" | "secondary" | "destructive" | "outline"
-> = {
-  planned: "outline",
-  generating: "default",
-  generated: "secondary",
-  approved: "default",
-  rejected: "destructive",
-  uploaded_to_runway: "secondary",
-  failed: "destructive",
 };
 
 export function ReferenceImageLightbox({
@@ -162,7 +151,7 @@ export function ReferenceImageLightbox({
               </p>
               <p className="text-sm text-muted-foreground">{slide.type}</p>
             </div>
-            <Badge variant={statusBadgeVariant[slide.status]}>
+            <Badge variant={ARTIFACT_STATUS_BADGE_VARIANT[slide.status]}>
               {slide.status}
             </Badge>
           </div>

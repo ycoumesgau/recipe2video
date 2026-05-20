@@ -780,7 +780,13 @@ function ReferenceResolutionRow({
 function computeResolutionStatus(resolution: SegmentReferenceResolutionItem): {
   label: string;
   description: string;
-  variant: "default" | "secondary" | "destructive" | "outline";
+  variant:
+    | "default"
+    | "secondary"
+    | "destructive"
+    | "outline"
+    | "success"
+    | "warning";
 } {
   if (!resolution.resolvedCanonicalName) {
     return {
@@ -796,7 +802,7 @@ function computeResolutionStatus(resolution: SegmentReferenceResolutionItem): {
       label: "image generating",
       description:
         "GPT-Image 2 is running on Runway for this recipe-specific anchor. This card refreshes automatically when the image lands in Storage.",
-      variant: "secondary",
+      variant: "warning",
     };
   }
 
@@ -812,14 +818,14 @@ function computeResolutionStatus(resolution: SegmentReferenceResolutionItem): {
     return {
       label: "ready · library global",
       description: `Resolved to ${resolution.resolvedCanonicalName}. Streamed to Runway just-in-time with a fresh signed URL — no manual upload needed.`,
-      variant: "secondary",
+      variant: "success",
     };
   }
 
   return {
     label: "ready · recipe-specific",
     description: `Resolved to ${resolution.resolvedCanonicalName}. Will be streamed to Runway with a fresh signed URL at generation time.`,
-    variant: "default",
+    variant: "success",
   };
 }
 

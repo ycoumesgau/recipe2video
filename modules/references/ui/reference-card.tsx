@@ -38,21 +38,10 @@ import type {
   ReferenceImageVariantItem,
 } from "../reference.types";
 import type { ReferenceStatus } from "../reference-status";
+import { ARTIFACT_STATUS_BADGE_VARIANT } from "@/modules/shared/ui/artifact-image-card";
+
 import { ReferenceCardPreview } from "./reference-card-preview";
 import { ReferenceFormSubmitButton } from "./reference-form-submit-button";
-
-const statusBadgeVariant: Record<
-  ReferenceStatus,
-  "default" | "secondary" | "destructive" | "outline"
-> = {
-  planned: "outline",
-  generating: "default",
-  generated: "secondary",
-  approved: "default",
-  rejected: "destructive",
-  uploaded_to_runway: "secondary",
-  failed: "destructive",
-};
 
 const PENDING_GENERATION_STATUSES: ReferenceStatus[] = ["planned", "failed"];
 
@@ -85,7 +74,7 @@ export function ReferenceCard({
           {isReadOnly ? (
             <Badge variant="outline">Library · read-only</Badge>
           ) : null}
-          <Badge variant={statusBadgeVariant[reference.status]}>
+          <Badge variant={ARTIFACT_STATUS_BADGE_VARIANT[reference.status]}>
             {reference.status}
           </Badge>
         </CardAction>
