@@ -33,6 +33,7 @@
 import "server-only";
 
 import type { CreateCostLogInput } from "@/modules/costs/cost.types";
+import { estimateGptImage2Credits } from "@/modules/generation/runway.constants";
 import { startReferenceImageGeneration } from "@/modules/generation/services/runway.service";
 import type {
   ReferenceImageInput,
@@ -121,6 +122,7 @@ export async function startGptImageGeneration(
       const task = await startReferenceImageGeneration(input);
 
       if (request.logCost) {
+        const estimatedCredits = estimateGptImage2Credits(ratio);
         await request.logCost({
           videoId: request.videoId,
           segmentId: null,
@@ -130,7 +132,7 @@ export async function startGptImageGeneration(
             request.artifactKind === "album_cover"
               ? "album_cover_generation_started"
               : "reference_image_generation_started",
-          creditsUsed: null,
+          creditsUsed: estimatedCredits,
           metadata: {
             ...(request.costMetadata ?? {}),
             artifactKind: request.artifactKind,
@@ -140,6 +142,7 @@ export async function startGptImageGeneration(
             runwayTaskId: task.id,
             endpoint: task.endpoint,
             estimated: true,
+            estimatedCredits,
           },
           createdBy: request.requestedByUserId,
         });

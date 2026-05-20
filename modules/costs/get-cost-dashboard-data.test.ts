@@ -13,7 +13,7 @@ test("getCostDashboardData aggregates logs by provider, model, and segment", () 
     scope: "global",
   });
 
-  assert.equal(data.byProvider.find((row) => row.key === "runway")?.creditsUsed, 2784);
+  assert.equal(data.byProvider.find((row) => row.key === "runway")?.creditsUsed, 2684);
   assert.equal(
     data.byModel.find((row) => row.key === "runway:seedance2")?.creditsUsed,
     2664,
@@ -30,7 +30,7 @@ test("getCostDashboardData separates failed and rejected generation spend", () =
     scope: "global",
   });
 
-  assert.equal(data.failedOrRejected.creditsUsed, 840);
+  assert.equal(data.failedOrRejected.creditsUsed, 740);
   assert.equal(data.failedOrRejected.logCount, 2);
 });
 

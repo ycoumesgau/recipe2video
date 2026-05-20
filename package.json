@@ -12,6 +12,7 @@
     "test": "tsx --test \"modules/**/*.test.ts\"",
     "seed:asset-library": "tsx --env-file=.env.local scripts/seed-asset-library.ts",
     "normalize:asset-library": "tsx --env-file=.env.local scripts/normalize-asset-library-images.ts",
+    "backfill:gpt-image-cost-credits": "tsx --env-file=.env.local scripts/backfill-gpt-image-cost-credits.ts",
     "postinstall": "node scripts/ensure-sqlite3.mjs"
   },
   "dependencies": {

@@ -7,6 +7,7 @@ import {
 } from "@/modules/generation/services/runway.service";
 import {
   RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+  estimateGptImage2Credits,
 } from "@/modules/generation/runway.constants";
 import { getReferenceImageMediaAssetByRunwayTaskId } from "@/modules/media-assets/repositories/media-asset.repository";
 import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
@@ -129,6 +130,10 @@ export async function finalizeReferenceImageOutput(
     clearRunwayUri: true,
   });
 
+  const estimatedCredits = estimateGptImage2Credits(
+    RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+  );
+
   await logCost(input.supabase, {
     videoId: reference.videoId,
     segmentId: null,
@@ -144,6 +149,9 @@ export async function finalizeReferenceImageOutput(
       mediaAssetId: mediaAsset.id,
       conditioningAnchorCount: anchors.length,
       recovery: input.recovery ?? false,
+      estimated: true,
+      ratio: RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+      estimatedCredits,
     },
     createdBy: input.requestedByUserId,
   });

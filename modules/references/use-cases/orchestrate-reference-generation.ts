@@ -3,6 +3,7 @@ import { logCost } from "@/modules/costs/repositories/cost.repository";
 import {
   RUNWAY_MAX_REFERENCE_BYTES,
   RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+  estimateGptImage2Credits,
 } from "@/modules/generation/runway.constants";
 import { startReferenceImageGeneration } from "@/modules/generation/services/runway.service";
 
@@ -177,19 +178,24 @@ export async function requestReferenceImageGenerationWorkflow(
         : undefined,
   });
 
+  const estimatedCredits = estimateGptImage2Credits(
+    RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+  );
+
   await deps.logCost({
     videoId: prepared.videoId,
     segmentId: null,
     provider: "runway",
     model: REFERENCE_IMAGE_MODEL,
     operation: "reference_image_generation_started",
-    creditsUsed: null,
+    creditsUsed: estimatedCredits,
     metadata: {
       referenceId: data.referenceId,
       runwayTaskId: task.id,
       endpoint: task.endpoint,
       estimated: true,
       ratio: RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+      estimatedCredits,
       conditioningResolvedTags: prepared.anchors.map((anchor) => anchor.tag),
       conditioningUnresolved: prepared.unresolvedAnchorNames,
       conditioningExcluded: prepared.excludedAnchors,

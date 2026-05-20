@@ -40,3 +40,60 @@ export const RUNWAY_SEEDANCE2_MAX_DURATION_SECONDS = 15;
  * `scripts/normalize-asset-library-images.ts` for the offline fixer.
  */
 export const RUNWAY_MAX_REFERENCE_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Runway `gpt_image_2` pricing (default quality `high`, 2026-05 docs).
+ * @see https://docs.dev.runwayml.com/guides/pricing/
+ */
+export const RUNWAY_GPT_IMAGE_2_CREDITS_1K_2K_HIGH = 20;
+export const RUNWAY_GPT_IMAGE_2_CREDITS_4K_HIGH = 41;
+
+/** Longest edge above this value bills at the 4K tier (`auto` included). */
+export const RUNWAY_GPT_IMAGE_2_4K_LONG_EDGE_MIN = 2561;
+
+/**
+ * Estimates Runway credits for one `gpt_image_2` `text_to_image` task.
+ * Runway does not return per-task credit usage; we mirror their published
+ * quality/resolution table with default quality `high`.
+ */
+export function estimateGptImage2Credits(
+  ratio: string,
+  quality: "low" | "medium" | "high" | "auto" = "high",
+): number {
+  const tier = isGptImage2FourKRatio(ratio) ? "4k" : "1k_2k";
+  const table =
+    tier === "4k"
+      ? {
+          low: 2,
+          medium: 11,
+          high: RUNWAY_GPT_IMAGE_2_CREDITS_4K_HIGH,
+          auto: RUNWAY_GPT_IMAGE_2_CREDITS_4K_HIGH,
+        }
+      : {
+          low: 1,
+          medium: 5,
+          high: RUNWAY_GPT_IMAGE_2_CREDITS_1K_2K_HIGH,
+          auto: RUNWAY_GPT_IMAGE_2_CREDITS_1K_2K_HIGH,
+        };
+
+  return table[quality];
+}
+
+function isGptImage2FourKRatio(ratio: string): boolean {
+  if (ratio === "auto") {
+    return true;
+  }
+
+  const match = /^(\d+):(\d+)$/.exec(ratio.trim());
+  if (!match) {
+    return false;
+  }
+
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    return false;
+  }
+
+  return Math.max(width, height) >= RUNWAY_GPT_IMAGE_2_4K_LONG_EDGE_MIN;
+}
