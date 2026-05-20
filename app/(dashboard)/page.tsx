@@ -1,6 +1,5 @@
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
-import { sumRunwayCreditsUsed } from "@/modules/costs/repositories/cost.repository";
-import { fetchRunwayOrganizationBalance } from "@/modules/costs/runway-organization-balance";
+import { loadRunwayBudgetSnapshot } from "@/modules/costs/load-runway-budget-snapshot";
 import { readDashboardDataMode } from "@/modules/dashboard/dashboard-data-mode";
 import { getProjectThumbnailPlaybackIds } from "@/modules/media-assets/repositories/media-asset.repository";
 import { getVideoDashboardData } from "@/modules/videos/get-video-dashboard-data";
@@ -9,6 +8,8 @@ import { getVideoLibraryStats } from "@/modules/videos/get-video-library-stats";
 import { listVideoProjects } from "@/modules/videos/repositories/video.repository";
 import { loadVideoLibraryCardMetrics } from "@/modules/videos/use-cases/load-video-library-card-metrics";
 import { VideoLibraryDashboard } from "@/modules/videos/ui/video-library-dashboard";
+
+export const dynamic = "force-dynamic";
 
 export const VIDEO_LIBRARY_PAGE_SIZE = 12;
 
@@ -22,15 +23,11 @@ export default async function DashboardPage({
   const requestedPage = parseLibraryPage(pageParam);
   const dataMode = await readDashboardDataMode();
 
-  const [
-    { projects, thumbnailByProjectId, libraryStats, page },
-    runwayBalance,
-    runwayCreditsUsedLogged,
-  ] = await Promise.all([
-    loadProjectsForDashboard(libraryMode, requestedPage),
-    fetchRunwayOrganizationBalance(),
-    loadRunwayCreditsUsedLogged(),
-  ]);
+  const [{ projects, thumbnailByProjectId, libraryStats, page }, runwaySnapshot] =
+    await Promise.all([
+      loadProjectsForDashboard(libraryMode, requestedPage),
+      loadRunwayBudgetSnapshot(),
+    ]);
 
   const includeSeededDemos =
     dataMode === "mock" && libraryMode === "active" && page === 1;
@@ -46,8 +43,8 @@ export default async function DashboardPage({
   ]);
   const data = getVideoDashboardData(projects, thumbnailUrlByProjectId, {
     includeSeededDemos,
-    runwayBalance,
-    runwayCreditsUsedLogged,
+    runwayBalance: runwaySnapshot.runwayBalance,
+    runwayCreditsUsedLogged: runwaySnapshot.creditsUsed,
     libraryStats,
     cardMetricsByVideoId,
     pagination: {
@@ -117,11 +114,3 @@ async function loadProjectsForDashboard(
   }
 }
 
-async function loadRunwayCreditsUsedLogged() {
-  try {
-    const supabase = createSupabaseAdminClient();
-    return await sumRunwayCreditsUsed(supabase);
-  } catch {
-    return 0;
-  }
-}
