@@ -30,6 +30,7 @@ import { RecipeAgentPanel } from "@/modules/recipe-agent/ui/recipe-agent-panel";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { listRecipeSourceImagePreviewUrls } from "@/modules/media-assets/use-cases/list-recipe-source-image-preview-urls";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
+import { getCursorAgentSelectionDisplay } from "@/modules/videos/production-defaults-from-recipe-data";
 import { getRecipeSourceSummaryFromRecipeData } from "@/modules/videos/recipe-source-from-recipe-data";
 import type { RecipeSourceSummary, VideoProject } from "@/modules/videos/video.types";
 import { EditableProjectTitle } from "@/modules/videos/ui/editable-project-title";
@@ -62,6 +63,9 @@ export default async function VideoDetailPage({
     (segment) => segment.status === "accepted",
   ).length;
   const recipeSource = readRecipeSourceSummary(project);
+  const cursorAgentSelection = project
+    ? getCursorAgentSelectionDisplay(project.recipeData)
+    : null;
   const nextAction = project
     ? computeNextAction({
         project,
@@ -198,7 +202,19 @@ export default async function VideoDetailPage({
                   switching model behind the user.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                {cursorAgentSelection ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <OverviewItem
+                      label="Cursor agent model"
+                      value={cursorAgentSelection.modelLabel}
+                    />
+                    <OverviewItem
+                      label="Cursor agent reasoning"
+                      value={cursorAgentSelection.reasoningLabel}
+                    />
+                  </div>
+                ) : null}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <OverviewItem
                     label="Video"
