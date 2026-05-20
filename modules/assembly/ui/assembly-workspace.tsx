@@ -213,6 +213,7 @@ export function AssemblyWorkspace({
       ...initialRemotionProps,
       segments,
       audioClips,
+      showSegmentTitles: initialRemotionProps.showSegmentTitles ?? true,
     }),
     [audioClips, initialRemotionProps, segments],
   );

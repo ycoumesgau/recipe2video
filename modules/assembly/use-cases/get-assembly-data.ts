@@ -286,6 +286,8 @@ export function buildRemotionProps(input: {
   segments: AssemblySegmentClip[];
   audioTrack: AssemblyAudioTrack | null;
   audioClips: AssemblyAudioClip[];
+  /** Defaults to true (editor preview). Cloud export passes false. */
+  showSegmentTitles?: boolean;
 }): AssemblyRemotionProps {
   return {
     fps: DEFAULT_FPS,
@@ -295,6 +297,7 @@ export function buildRemotionProps(input: {
     audio: input.audioTrack,
     audioSync: legacyFromAudioClips(input.audioClips),
     audioClips: input.audioClips,
+    showSegmentTitles: input.showSegmentTitles ?? true,
   };
 }
 
@@ -517,5 +520,6 @@ export async function buildRemotionPropsForCompositionRow(
     segments: orderedSegments,
     audioTrack,
     audioClips: timelineState.audioClips,
+    showSegmentTitles: false,
   });
 }

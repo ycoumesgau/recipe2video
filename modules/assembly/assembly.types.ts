@@ -115,6 +115,12 @@ export interface AssemblyRemotionProps {
   audioSync: AssemblyAudioSync;
   /** Free-positioned audio clips on the timeline. */
   audioClips: AssemblyAudioClip[];
+  /**
+   * When true, each segment clip shows its storyboard label (e.g. `S3. Title`)
+   * in the Remotion preview while editing. Final cloud exports set this to false
+   * so labels are not burned into the delivered MP4.
+   */
+  showSegmentTitles?: boolean;
 }
 
 /**

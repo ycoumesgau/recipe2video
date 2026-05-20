@@ -18,6 +18,7 @@ export function RecipeAssemblyComposition({
   audioClips,
   fps,
   segments,
+  showSegmentTitles = true,
 }: AssemblyRemotionProps) {
   const segmentTimeline = computeSegmentTimeline(segments, fps);
   const totalDurationFrames = computeTotalDurationFrames({
@@ -51,7 +52,9 @@ export function RecipeAssemblyComposition({
               }}
               volume={clamp(segment.volume ?? 1, 0, 2)}
             />
-            <SegmentTitle title={segment.title} />
+            {showSegmentTitles ? (
+              <SegmentTitle title={segment.title} />
+            ) : null}
           </Sequence>
         );
       })}

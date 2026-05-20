@@ -20,6 +20,7 @@ const defaultAssemblyProps: AssemblyRemotionProps = {
     fadeOutSeconds: 0,
   },
   audioClips: [],
+  showSegmentTitles: true,
 };
 
 function RemotionRoot() {
