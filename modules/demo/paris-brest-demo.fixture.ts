@@ -261,7 +261,7 @@ const demoCostLogs: CostLog[] = [
   costLog("cost-openai-diff", "openai", "gpt-5.5-high", "prompt_diff_generated", null, 0.08, 0, 1840),
   costLog("cost-runway-segment-1", "runway", "seedance2", "seedance_segment_generation_succeeded", 432, null),
   costLog("cost-runway-segment-2", "runway", "seedance2", "seedance_segment_generation_succeeded", 864, null),
-  costLog("cost-runway-reference", "runway", "gpt_image_2", "reference_image_generated", 120, null),
+  costLog("cost-runway-reference", "runway", "gpt_image_2", "reference_image_generation_started", 20, null),
   costLog("cost-mux-playback", "mux", "basic_on_demand", "media_asset_uploaded_to_mux", null, 0.12),
 ];
 
