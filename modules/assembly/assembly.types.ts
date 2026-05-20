@@ -133,9 +133,23 @@ export interface AssemblyTimelineState {
   audioClips: AssemblyAudioClip[];
 }
 
+export interface AssemblyPreset {
+  id: string;
+  videoId: string;
+  name: string;
+  segmentOrder: Json;
+  audioMediaAssetId?: string | null;
+  audioSync?: Json | null;
+  remotionProps?: Json | null;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Composition {
   id: string;
   videoId: string;
+  presetId?: string | null;
   exportMediaAssetId?: string | null;
   segmentOrder: Json;
   audioMediaAssetId?: string | null;

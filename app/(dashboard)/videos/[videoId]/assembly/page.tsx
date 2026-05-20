@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { AlertTriangle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -11,11 +12,14 @@ import { VIDEO_STATUS_LABELS } from "@/modules/videos/video-status";
 
 export default async function AssemblyPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ videoId: string }>;
+  searchParams: Promise<{ preset?: string }>;
 }) {
   const { videoId } = await params;
-  const data = await loadAssemblyPageData(videoId);
+  const { preset: presetQuery } = await searchParams;
+  const data = await loadAssemblyPageData(videoId, presetQuery);
 
   if (data.error || !data.assemblyData) {
     return (
@@ -68,30 +72,39 @@ export default async function AssemblyPage({
         </p>
       </div>
 
-      <AssemblyWorkspace
-        availableSegments={data.assemblyData.availableSegments}
-        compositionExportStatus={
-          data.assemblyData.composition?.exportStatus ?? "pending"
-        }
-        finalExports={data.assemblyData.finalExports}
-        initialRemotionProps={data.assemblyData.remotionProps}
-        initialTimelineState={data.assemblyData.timelineState}
-        missingAcceptedSegments={data.assemblyData.missingAcceptedSegments}
-        projectStatus={data.assemblyData.projectStatus}
-        projectTitle={data.assemblyData.projectTitle}
-        renderProgress={data.assemblyData.renderProgress}
-        videoId={videoId}
-      />
+      <Suspense fallback={<p className="text-sm text-muted-foreground">Loading assembly editor…</p>}>
+        <AssemblyWorkspace
+          key={data.assemblyData.activePresetId ?? "no-preset"}
+          activePresetId={data.assemblyData.activePresetId}
+          availableSegments={data.assemblyData.availableSegments}
+          compositionExportStatus={
+            data.assemblyData.composition?.exportStatus ?? "pending"
+          }
+          finalExports={data.assemblyData.finalExports}
+          initialRemotionProps={data.assemblyData.remotionProps}
+          initialTimelineState={data.assemblyData.timelineState}
+          missingAcceptedSegments={data.assemblyData.missingAcceptedSegments}
+          presets={data.assemblyData.presets}
+          projectStatus={data.assemblyData.projectStatus}
+          projectTitle={data.assemblyData.projectTitle}
+          renderProgress={data.assemblyData.renderProgress}
+          videoId={videoId}
+        />
+      </Suspense>
     </div>
   );
 }
 
-async function loadAssemblyPageData(videoId: string) {
+async function loadAssemblyPageData(videoId: string, presetQuery?: string) {
   try {
     const supabase = createSupabaseAdminClient();
+    const presetId =
+      typeof presetQuery === "string" && presetQuery.trim()
+        ? presetQuery.trim()
+        : null;
     const [project, assemblyData] = await Promise.all([
       getVideoProjectById(supabase, videoId),
-      getAssemblyPageData(videoId),
+      getAssemblyPageData(videoId, { presetId }),
     ]);
 
     return {

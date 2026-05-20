@@ -16,8 +16,12 @@ import {
   Download,
   Film,
   Loader2,
+  MoreHorizontal,
   Music2,
+  Pencil,
+  Plus,
   Save,
+  Trash2,
 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -30,16 +34,42 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import type {
   AssemblyAudioClip,
+  AssemblyPreset,
   AssemblyRemotionProps,
   AssemblySegmentClip,
   AssemblyTimelineState,
 } from "@/modules/assembly/assembly.types";
 import {
+  deleteAssemblyPresetAction,
+  renameAssemblyPresetAction,
   requestAssemblyRenderAction,
+  saveAssemblyPresetAsNewAction,
   saveAssemblySettingsAction,
   type AssemblyActionState,
 } from "@/modules/assembly/actions";
@@ -54,6 +84,7 @@ import {
   AddAudioClipButton,
   TimelineEditor,
 } from "@/modules/assembly/ui/timeline-editor";
+import { useActivePresetId } from "@/modules/assembly/ui/use-active-preset-id";
 import { RecipeMuxPlayer } from "@/modules/media-assets/ui/mux-player";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import {
@@ -63,18 +94,23 @@ import {
 
 const initialActionState: AssemblyActionState = {};
 
+const ALL_PRESETS_FILTER = "__all__";
+
 export function AssemblyWorkspace({
+  activePresetId: serverActivePresetId,
   availableSegments,
   compositionExportStatus = "pending",
   finalExports,
   initialRemotionProps,
   initialTimelineState,
   missingAcceptedSegments,
+  presets,
   projectStatus,
   projectTitle,
   renderProgress = null,
   videoId,
 }: {
+  activePresetId: string | null;
   /**
    * Catalogue of every accepted Seedance segment that has a stored media
    * asset. Drives the {@link SegmentBin} sidebar and is also the source of
@@ -89,6 +125,7 @@ export function AssemblyWorkspace({
   initialRemotionProps: AssemblyRemotionProps;
   initialTimelineState: AssemblyTimelineState;
   missingAcceptedSegments: SeedanceSegment[];
+  presets: AssemblyPreset[];
   projectStatus: string;
   projectTitle: string;
   /**
@@ -105,15 +142,68 @@ export function AssemblyWorkspace({
   const [audioClips, setAudioClips] = useState<AssemblyAudioClip[]>(
     initialTimelineState.audioClips,
   );
+  const { activePresetId, setActivePresetId } = useActivePresetId(
+    videoId,
+    presets,
+    serverActivePresetId,
+  );
+  const activePreset = presets.find((preset) => preset.id === activePresetId);
+  const [saveAsNewOpen, setSaveAsNewOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [renamePresetName, setRenamePresetName] = useState(
+    activePreset?.name ?? "",
+  );
+  const [playbackPresetFilter, setPlaybackPresetFilter] = useState<string>(
+    activePresetId ?? ALL_PRESETS_FILTER,
+  );
+  const playerRef = useRef<PlayerRef | null>(null);
+
+  const saveAsNewActionWrapper = useCallback(
+    async (
+      previousState: AssemblyActionState,
+      formData: FormData,
+    ): Promise<AssemblyActionState> => {
+      const result = await saveAssemblyPresetAsNewAction(previousState, formData);
+      if (result.status === "success" && result.presetId) {
+        setSaveAsNewOpen(false);
+        setNewPresetName("");
+        setActivePresetId(result.presetId);
+        setPlaybackPresetFilter(result.presetId);
+      }
+      return result;
+    },
+    [setActivePresetId],
+  );
+
   const [saveState, saveAction] = useActionState(
     saveAssemblySettingsAction,
+    initialActionState,
+  );
+  const [saveAsNewState, saveAsNewAction] = useActionState(
+    saveAsNewActionWrapper,
+    initialActionState,
+  );
+  const [renameState, renameAction] = useActionState(
+    renameAssemblyPresetAction,
+    initialActionState,
+  );
+  const [deleteState, deleteAction] = useActionState(
+    deleteAssemblyPresetAction,
     initialActionState,
   );
   const [renderState, renderAction] = useActionState(
     requestAssemblyRenderAction,
     initialActionState,
   );
-  const playerRef = useRef<PlayerRef | null>(null);
+
+  const handleSelectPreset = useCallback(
+    (presetId: string) => {
+      setActivePresetId(presetId);
+      setPlaybackPresetFilter(presetId);
+    },
+    [setActivePresetId],
+  );
 
   const remotionProps = useMemo(
     () => ({
@@ -134,6 +224,7 @@ export function AssemblyWorkspace({
           segmentId: segment.segmentId,
           inSeconds: segment.inSeconds,
           outSeconds: segment.outSeconds,
+          volume: segment.volume,
         })),
       }),
     [segments],
@@ -197,6 +288,17 @@ export function AssemblyWorkspace({
     [handleAddSegmentFromBin, segments.length],
   );
 
+  const filteredFinalExports = useMemo(() => {
+    if (playbackPresetFilter === ALL_PRESETS_FILTER) {
+      return finalExports;
+    }
+    return finalExports.filter(
+      (entry) => entry.presetId === playbackPresetFilter,
+    );
+  }, [finalExports, playbackPresetFilter]);
+
+  const latestFilteredExport = filteredFinalExports[0] ?? null;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -220,6 +322,9 @@ export function AssemblyWorkspace({
       </div>
 
       <ActionNotice state={saveState} title="Assembly settings" />
+      <ActionNotice state={saveAsNewState} title="New assembly preset" />
+      <ActionNotice state={renameState} title="Rename preset" />
+      <ActionNotice state={deleteState} title="Delete preset" />
       <ActionNotice state={renderState} title="Cloud render" />
 
       {compositionExportStatus === "rendering" && renderProgress ? (
@@ -388,10 +493,26 @@ export function AssemblyWorkspace({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <AssemblyPresetToolbar
+              activePreset={activePreset}
+              activePresetId={activePresetId}
+              onRenameOpen={() => {
+                setRenamePresetName(activePreset?.name ?? "");
+                setRenameOpen(true);
+              }}
+              onSaveAsNewOpen={() => setSaveAsNewOpen(true)}
+              deleteAction={deleteAction}
+              deleteState={deleteState}
+              onSelectPreset={handleSelectPreset}
+              presets={presets}
+              videoId={videoId}
+            />
+
             <form action={saveAction} className="space-y-3">
               <HiddenAssemblyFields
                 audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
                 placements={placementsJson}
+                presetId={activePresetId}
                 timelineState={timelineStateJson}
                 videoId={videoId}
               />
@@ -402,19 +523,21 @@ export function AssemblyWorkspace({
               <HiddenAssemblyFields
                 audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
                 placements={placementsJson}
+                presetId={activePresetId}
                 timelineState={timelineStateJson}
                 videoId={videoId}
               />
               <RenderCloudButton
                 disabled={
                   segments.length === 0 ||
+                  !activePresetId ||
                   compositionExportStatus === "rendering"
                 }
               />
             </form>
 
             <DownloadLatestExportButton
-              latestExport={finalExports[0] ?? null}
+              latestExport={latestFilteredExport}
               renderInFlight={compositionExportStatus === "rendering"}
             />
 
@@ -442,21 +565,51 @@ export function AssemblyWorkspace({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {finalExports.length > 0 ? (
-              <LatestExportPreview export={finalExports[0]} />
+            <PlaybackPresetFilter
+              activePresetId={activePresetId}
+              onChange={setPlaybackPresetFilter}
+              presets={presets}
+              value={playbackPresetFilter}
+            />
+            {latestFilteredExport ? (
+              <LatestExportPreview export={latestFilteredExport} />
             ) : (
               <p className="text-sm text-muted-foreground">
-                No final export has been stored yet. Run the cloud render to
-                produce one.
+                {finalExports.length > 0
+                  ? "No export matches this preset filter yet."
+                  : "No final export has been stored yet. Run the cloud render to produce one."}
               </p>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {finalExports.length > 1 ? (
-        <ExportHistoryCard exports={finalExports} />
+      {filteredFinalExports.length > 1 ? (
+        <ExportHistoryCard exports={filteredFinalExports} />
       ) : null}
+
+      <SaveAsNewPresetDialog
+        audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
+        newPresetName={newPresetName}
+        onNameChange={setNewPresetName}
+        onOpenChange={setSaveAsNewOpen}
+        open={saveAsNewOpen}
+        placementsJson={placementsJson}
+        saveAsNewAction={saveAsNewAction}
+        segmentsCount={segments.length}
+        timelineStateJson={timelineStateJson}
+        videoId={videoId}
+      />
+
+      <RenamePresetDialog
+        activePresetId={activePresetId}
+        onNameChange={setRenamePresetName}
+        onOpenChange={setRenameOpen}
+        open={renameOpen}
+        presetName={renamePresetName}
+        renameAction={renameAction}
+        videoId={videoId}
+      />
     </div>
   );
 }
@@ -464,17 +617,22 @@ export function AssemblyWorkspace({
 function HiddenAssemblyFields({
   audioMediaAssetId,
   placements,
+  presetId,
   timelineState,
   videoId,
 }: {
   audioMediaAssetId?: string | null;
   placements: string;
+  presetId?: string | null;
   timelineState: string;
   videoId: string;
 }) {
   return (
     <>
       <input name="videoId" type="hidden" value={videoId} />
+      {presetId ? (
+        <input name="presetId" type="hidden" value={presetId} />
+      ) : null}
       <input name="placements" type="hidden" value={placements} />
       <input name="timelineState" type="hidden" value={timelineState} />
       <input
@@ -483,6 +641,262 @@ function HiddenAssemblyFields({
         value={audioMediaAssetId ?? ""}
       />
     </>
+  );
+}
+
+function AssemblyPresetToolbar({
+  activePreset,
+  activePresetId,
+  deleteAction,
+  deleteState,
+  onRenameOpen,
+  onSaveAsNewOpen,
+  onSelectPreset,
+  presets,
+  videoId,
+}: {
+  activePreset?: AssemblyPreset;
+  activePresetId: string | null;
+  deleteAction: (
+    state: AssemblyActionState,
+    formData: FormData,
+  ) => Promise<AssemblyActionState>;
+  deleteState: AssemblyActionState;
+  onRenameOpen: () => void;
+  onSaveAsNewOpen: () => void;
+  onSelectPreset: (presetId: string) => void;
+  presets: AssemblyPreset[];
+  videoId: string;
+}) {
+  return (
+    <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-[12rem] flex-1 space-y-1">
+          <Label htmlFor="assembly-preset-select">Assembly preset</Label>
+          <Select
+            onValueChange={onSelectPreset}
+            value={activePresetId ?? undefined}
+          >
+            <SelectTrigger className="w-full" id="assembly-preset-select">
+              <SelectValue
+                placeholder={
+                  presets.length > 0 ? "Select preset" : "No presets yet"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {presets.map((preset) => (
+                <SelectItem key={preset.id} value={preset.id}>
+                  {preset.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="icon" type="button" variant="outline">
+              <MoreHorizontal className="h-4 w-4" />
+              <span className="sr-only">Preset actions</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled={!activePresetId} onClick={onRenameOpen}>
+              <Pencil className="h-4 w-4" />
+              Rename preset
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild disabled={!activePresetId || presets.length <= 1}>
+              <form action={deleteAction}>
+                <input name="videoId" type="hidden" value={videoId} />
+                <input name="presetId" type="hidden" value={activePresetId ?? ""} />
+                <button
+                  className="flex w-full items-center gap-2 text-destructive"
+                  disabled={!activePresetId || presets.length <= 1}
+                  type="submit"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete preset
+                </button>
+              </form>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {activePreset ? (
+        <p className="text-xs text-muted-foreground">
+          Editing <span className="font-medium text-foreground">{activePreset.name}</span>.
+          Save overwrites this preset; cloud render uses it too.
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          No preset saved yet. Save creates a &quot;Default&quot; preset, or use
+          Save as new to pick a name.
+        </p>
+      )}
+      <Button onClick={onSaveAsNewOpen} size="sm" type="button" variant="secondary">
+        <Plus className="h-4 w-4" />
+        Save as new preset…
+      </Button>
+      {deleteState.message ? (
+        <p
+          className={`text-xs ${deleteState.status === "error" ? "text-destructive" : "text-muted-foreground"}`}
+        >
+          {deleteState.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function PlaybackPresetFilter({
+  activePresetId,
+  onChange,
+  presets,
+  value,
+}: {
+  activePresetId: string | null;
+  onChange: (value: string) => void;
+  presets: AssemblyPreset[];
+  value: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label htmlFor="playback-preset-filter">Show exports for</Label>
+      <Select onValueChange={onChange} value={value}>
+        <SelectTrigger className="w-full" id="playback-preset-filter">
+          <SelectValue placeholder="Filter exports" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={ALL_PRESETS_FILTER}>All presets</SelectItem>
+          {presets.map((preset) => (
+            <SelectItem key={preset.id} value={preset.id}>
+              {preset.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {activePresetId && value === activePresetId ? (
+        <p className="text-xs text-muted-foreground">
+          Showing exports for the active editing preset.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function SaveAsNewPresetDialog({
+  audioMediaAssetId,
+  newPresetName,
+  onNameChange,
+  onOpenChange,
+  open,
+  placementsJson,
+  saveAsNewAction,
+  segmentsCount,
+  timelineStateJson,
+  videoId,
+}: {
+  audioMediaAssetId?: string | null;
+  newPresetName: string;
+  onNameChange: (value: string) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  placementsJson: string;
+  saveAsNewAction: (
+    state: AssemblyActionState,
+    formData: FormData,
+  ) => Promise<AssemblyActionState>;
+  segmentsCount: number;
+  timelineStateJson: string;
+  videoId: string;
+}) {
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Save as new preset</DialogTitle>
+          <DialogDescription>
+            Create a separate named preset with the current timeline and mix
+            settings. Your existing presets stay unchanged.
+          </DialogDescription>
+        </DialogHeader>
+        <form action={saveAsNewAction} className="space-y-4">
+          <HiddenAssemblyFields
+            audioMediaAssetId={audioMediaAssetId}
+            placements={placementsJson}
+            timelineState={timelineStateJson}
+            videoId={videoId}
+          />
+          <div className="space-y-2">
+            <Label htmlFor="presetName">Preset name</Label>
+            <Input
+              id="presetName"
+              name="presetName"
+              onChange={(event) => onNameChange(event.target.value)}
+              placeholder="e.g. Canvas / Spotify"
+              required
+              value={newPresetName}
+            />
+          </div>
+          <DialogFooter>
+            <SaveAsNewPresetButton disabled={segmentsCount === 0} />
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RenamePresetDialog({
+  activePresetId,
+  onNameChange,
+  onOpenChange,
+  open,
+  presetName,
+  renameAction,
+  videoId,
+}: {
+  activePresetId: string | null;
+  onNameChange: (value: string) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  presetName: string;
+  renameAction: (
+    state: AssemblyActionState,
+    formData: FormData,
+  ) => Promise<AssemblyActionState>;
+  videoId: string;
+}) {
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rename preset</DialogTitle>
+          <DialogDescription>
+            Rename the active assembly preset.
+          </DialogDescription>
+        </DialogHeader>
+        {activePresetId ? (
+          <form action={renameAction} className="space-y-4">
+            <input name="videoId" type="hidden" value={videoId} />
+            <input name="presetId" type="hidden" value={activePresetId} />
+            <div className="space-y-2">
+              <Label htmlFor="renamePresetName">Preset name</Label>
+              <Input
+                id="renamePresetName"
+                name="presetName"
+                onChange={(event) => onNameChange(event.target.value)}
+                required
+                value={presetName}
+              />
+            </div>
+            <DialogFooter>
+              <RenamePresetButton />
+            </DialogFooter>
+          </form>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -691,7 +1105,33 @@ function SaveButton({ disabled }: { disabled: boolean }) {
       ) : (
         <Save className="h-4 w-4" />
       )}
-      Save assembly settings
+      Save
+    </Button>
+  );
+}
+
+function SaveAsNewPresetButton({ disabled }: { disabled: boolean }) {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button disabled={disabled || pending} type="submit">
+      {pending ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Plus className="h-4 w-4" />
+      )}
+      Save as new preset
+    </Button>
+  );
+}
+
+function RenamePresetButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button disabled={pending} type="submit">
+      {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+      Rename
     </Button>
   );
 }
@@ -769,6 +1209,9 @@ function LatestExportPreview({ export: entry }: { export: AssemblyFinalExport })
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="secondary">{asset.status}</Badge>
         <Badge variant="outline">latest</Badge>
+        {entry.presetName ? (
+          <Badge variant="outline">{entry.presetName}</Badge>
+        ) : null}
         <span className="text-xs text-muted-foreground">
           Rendered {formatExportDate(asset.createdAt)}
         </span>
@@ -824,11 +1267,16 @@ function ExportHistoryCard({
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{filename}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Rendered {formatExportDate(asset.createdAt)}
-                    {asset.fileSizeBytes != null ? (
-                      <> · {formatBytes(asset.fileSizeBytes)}</>
+                  <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                    {entry.presetName ? (
+                      <Badge variant="outline">{entry.presetName}</Badge>
                     ) : null}
+                    <span>
+                      Rendered {formatExportDate(asset.createdAt)}
+                      {asset.fileSizeBytes != null ? (
+                        <> · {formatBytes(asset.fileSizeBytes)}</>
+                      ) : null}
+                    </span>
                   </p>
                 </div>
                 <Button
