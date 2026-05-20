@@ -36,6 +36,7 @@ test("getVideoDashboardData applies card metrics for persisted projects", () => 
           totalCostCredits: 2600,
           ownerName: "Yoann",
           nextAction: "Open assembly",
+          nextActionHref: "/videos/legacy-video/assembly",
         },
       ],
     ]),
@@ -46,6 +47,7 @@ test("getVideoDashboardData applies card metrics for persisted projects", () => 
   assert.equal(project?.totalSegments, 7);
   assert.equal(project?.totalCostCredits, 2600);
   assert.equal(project?.nextAction, "Open assembly");
+  assert.equal(project?.nextActionHref, "/videos/legacy-video/assembly");
 });
 
 test("getVideoDashboardData defaults missing agent status to idle", () => {

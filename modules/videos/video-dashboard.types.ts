@@ -28,6 +28,7 @@ export interface VideoDashboardProject {
   updatedAt: string;
   ownerName: string;
   nextAction: string;
+  nextActionHref: string | null;
   archivedAt?: string | null;
   /** Real persisted rows (Supabase) can be archived; seeded demos cannot. */
   canArchive: boolean;
