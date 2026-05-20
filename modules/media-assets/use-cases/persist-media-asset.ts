@@ -134,6 +134,7 @@ function buildStoragePath(input: PersistMediaAssetFileInput): string {
 
   switch (input.type) {
     case "recipe_source":
+    case "agent_message_attachment":
       return buildMediaStoragePath({
         type: input.type,
         videoId,

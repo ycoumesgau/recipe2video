@@ -82,6 +82,23 @@ export async function insertStoredMediaAsset(
   return mapMediaAsset(data);
 }
 
+export async function listMediaAssetsByIds(
+  supabase: SupabaseDataClient,
+  mediaAssetIds: string[],
+): Promise<MediaAsset[]> {
+  if (mediaAssetIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("*")
+    .in("id", mediaAssetIds);
+
+  throwIfSupabaseError(error, "listMediaAssetsByIds failed");
+  return (data ?? []).map(mapMediaAsset);
+}
+
 export async function getMediaAssetById(
   supabase: SupabaseDataClient,
   mediaAssetId: string,

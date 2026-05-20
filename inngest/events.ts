@@ -110,6 +110,8 @@ export interface RecipeAgentMessageRequestedData extends WorkflowAuthEventData {
   videoId: string;
   stage: RecipeAgentStage;
   message: string;
+  /** `media_assets.id` rows (`agent_message_attachment`) sent as Cursor SDK vision images. */
+  attachmentMediaAssetIds?: string[];
 }
 
 export interface RecipeAgentSyncRequestedData extends WorkflowAuthEventData {

@@ -7,6 +7,11 @@ type StoragePathInput =
       filename: string;
     }
   | {
+      type: "agent_message_attachment";
+      videoId: string;
+      filename: string;
+    }
+  | {
       type: "reference_image";
       videoId: string;
       referenceId: string;
@@ -49,6 +54,7 @@ type StoragePathInput =
 
 const DEFAULT_EXTENSION_BY_TYPE: Record<MediaAssetType, string> = {
   recipe_source: "bin",
+  agent_message_attachment: "jpg",
   reference_image: "png",
   runway_output: "mp4",
   accepted_clip: "mp4",
@@ -79,6 +85,8 @@ export function buildMediaStoragePath(input: StoragePathInput): string {
   switch (input.type) {
     case "recipe_source":
       return `${input.videoId}/${sanitizeStorageFileName(input.filename)}`;
+    case "agent_message_attachment":
+      return `${input.videoId}/agent-attachments/${sanitizeStorageFileName(input.filename)}`;
     case "reference_image": {
       const extension = getStorageFileExtension({
         type: input.type,

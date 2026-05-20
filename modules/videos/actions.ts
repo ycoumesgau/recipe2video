@@ -47,6 +47,9 @@ export async function createVideoDraftAction(
         formData,
         "complementaryAgentInstructions",
       ),
+      complementaryAgentAttachmentFiles: formData
+        .getAll("complementaryAgentAttachments")
+        .filter((value): value is File => value instanceof File),
     });
 
     redirect(`/videos/${result.videoId}`);

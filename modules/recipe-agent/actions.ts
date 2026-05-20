@@ -9,7 +9,9 @@ import {
 import { inngest } from "@/inngest/client";
 import { INNGEST_EVENTS } from "@/inngest/events";
 
+import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { createSupabaseServerClient } from "@/modules/auth/supabase/server";
+import { persistAgentMessageAttachments } from "@/modules/media-assets/use-cases/persist-agent-message-attachments";
 
 import type { RecipeAgentStage } from "./recipe-agent.types";
 import { syncRecipeAgentArtifactsFromGithubOnly } from "./use-cases/sync-recipe-agent-from-github";
@@ -33,6 +35,18 @@ export async function submitRecipeAgentMessageAction(
       throw new Error("Add a little more detail before asking the recipe agent.");
     }
 
+    const attachmentFiles = formData
+      .getAll("agentAttachments")
+      .filter((value): value is File => value instanceof File && value.size > 0);
+
+    const supabase = createSupabaseAdminClient();
+    const attachments = await persistAgentMessageAttachments({
+      supabase,
+      videoId,
+      files: attachmentFiles,
+      createdBy: profile.id,
+    });
+
     await inngest.send({
       name: INNGEST_EVENTS.recipeAgentMessageRequested,
       data: {
@@ -41,6 +55,9 @@ export async function submitRecipeAgentMessageAction(
         message,
         requestedByUserId: profile.id,
         isAllowlisted: true,
+        ...(attachments.length > 0
+          ? { attachmentMediaAssetIds: attachments.map((asset) => asset.id) }
+          : {}),
       },
     });
 

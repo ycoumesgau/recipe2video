@@ -16,7 +16,7 @@ export function buildRecipeAgentUserChatContent(
     return message;
   }
 
-  return `${message}\n\n(${attachedImageCount} recipe source image(s) attached to the Cursor SDK call; signed URLs are not stored in chat.)`;
+  return `${message}\n\n(${attachedImageCount} image(s) attached to the Cursor SDK call as vision input; signed URLs are not stored in chat.)`;
 }
 
 export async function seedRecipeAgentChatTurn(

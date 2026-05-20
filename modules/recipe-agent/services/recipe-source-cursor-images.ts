@@ -9,29 +9,11 @@ import {
 import { isRecipeSourceImageFile } from "@/modules/media-assets/recipe-source-image-assets";
 import { listRecipeSourceMediaAssetsByVideoIdAsc } from "@/modules/media-assets/repositories/media-asset.repository";
 import { createStorageSignedUrl } from "@/modules/media-assets/services/storage-signed-url";
-import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import type { VideoProject } from "@/modules/videos/video.types";
 import { getRecipeSourceSummaryFromRecipeData } from "@/modules/videos/recipe-source-from-recipe-data";
 
 import type { RecipeAgentStage } from "../recipe-agent.types";
-
-function toCursorImage(signedUrl: string, asset: MediaAsset): SDKImage {
-  const w = asset.width;
-  const h = asset.height;
-
-  if (
-    typeof w === "number" &&
-    typeof h === "number" &&
-    Number.isFinite(w) &&
-    Number.isFinite(h) &&
-    w > 0 &&
-    h > 0
-  ) {
-    return { url: signedUrl, dimension: { width: w, height: h } };
-  }
-
-  return { url: signedUrl };
-}
+import { mediaAssetToCursorImage } from "./agent-attachment-cursor-images";
 
 /**
  * When `recipe_ingest` + recipe source type `photos`, returns signed read URLs for stored recipe images
@@ -74,7 +56,7 @@ export async function buildRecipeSourceCursorImagesForAgent(
       expiresInSeconds: RECIPE_SOURCE_CURSOR_AGENT_SIGNED_URL_TTL_SECONDS,
     });
 
-    results.push(toCursorImage(signedUrl, asset));
+    results.push(mediaAssetToCursorImage(signedUrl, asset));
   }
 
   return results;
