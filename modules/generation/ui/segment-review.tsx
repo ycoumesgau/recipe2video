@@ -55,6 +55,14 @@ function formatSegmentHeading(segment: SeedanceSegment) {
   return `S${segment.position}. ${segment.title}`;
 }
 
+function formatLogicalScenePositions(positions: number[]): string {
+  if (positions.length === 0) {
+    return "—";
+  }
+
+  return positions.join(", ");
+}
+
 const generationStatusVariant: Record<
   GenerationStatus,
   "default" | "secondary" | "destructive" | "outline"
@@ -167,6 +175,7 @@ export function SegmentReview({
           <PromptPanel
             hasActiveGeneration={data.hasActiveGeneration}
             isLastSegmentOfVideo={data.isLastSegmentOfVideo}
+            logicalScenePositions={data.segmentLogicalScenePositions}
             project={data.project}
             segment={data.segment}
             variantCount={data.variants.length}
@@ -215,6 +224,7 @@ export function SegmentReview({
           <PromptPanel
             hasActiveGeneration={data.hasActiveGeneration}
             isLastSegmentOfVideo={data.isLastSegmentOfVideo}
+            logicalScenePositions={data.segmentLogicalScenePositions}
             project={data.project}
             segment={data.segment}
             variantCount={data.variants.length}
@@ -469,6 +479,7 @@ function VariantActionButton({
 function PromptPanel({
   hasActiveGeneration,
   isLastSegmentOfVideo,
+  logicalScenePositions,
   project,
   segment,
   variantCount,
@@ -476,6 +487,7 @@ function PromptPanel({
 }: {
   hasActiveGeneration: boolean;
   isLastSegmentOfVideo: boolean;
+  logicalScenePositions: number[];
   project: VideoProject | null;
   segment: NonNullable<SegmentReviewData["segment"]>;
   variantCount: number;
@@ -506,7 +518,10 @@ function PromptPanel({
         </div>
         <div className="grid gap-2 text-xs md:grid-cols-3">
           <Metric label="Segment duration" value={formatSeconds(segment.durationTarget)} />
-          <Metric label="Logical scenes" value={segment.logicalSceneIds.join(", ")} />
+          <Metric
+            label="Logical scenes"
+            value={formatLogicalScenePositions(logicalScenePositions)}
+          />
           <Metric label="Reference count" value={String(segment.references.length)} />
         </div>
         <RegenerationForm
