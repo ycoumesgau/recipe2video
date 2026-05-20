@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   Select,
@@ -41,6 +42,7 @@ import {
   applyStandardOutroAction,
   rejectSegmentVariantAction,
   requestSegmentRegenerationAction,
+  updateSegmentPromptAction,
 } from "../actions";
 import { FrameExtractionCard } from "./frame-extraction-card";
 import type { GenerationStatus } from "../generation-status";
@@ -502,20 +504,31 @@ function PromptPanel({
         </div>
         <CardTitle>Current Seedance prompt</CardTitle>
         <CardDescription>
-          Prompt edits are handled by the prompt diff workflow, not directly on
-          this screen.
+          Edit the prompt directly here, or use agent feedback on the right for
+          AI-assisted diffs before regeneration.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-lg border bg-muted/30 p-3">
-          <p className="mb-2 flex items-center gap-2 text-sm font-medium">
+        <details className="rounded-lg border bg-muted/30 p-3" open>
+          <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium">
             <Copy className="h-4 w-4" />
-            Prompt text
-          </p>
-          <p className="max-h-96 overflow-auto whitespace-pre-wrap text-sm text-muted-foreground">
-            {segment.prompt}
-          </p>
-        </div>
+            Prompt text (edit)
+          </summary>
+          <form action={updateSegmentPromptAction} className="mt-3 space-y-2">
+            <input name="videoId" type="hidden" value={videoId} />
+            <input name="segmentId" type="hidden" value={segment.id} />
+            <Textarea
+              className="max-h-96 min-h-48 font-mono text-sm"
+              defaultValue={segment.prompt}
+              name="prompt"
+              required
+              rows={14}
+            />
+            <Button size="sm" type="submit" variant="outline">
+              Save prompt
+            </Button>
+          </form>
+        </details>
         <div className="grid gap-2 text-xs md:grid-cols-3">
           <Metric label="Segment duration" value={formatSeconds(segment.durationTarget)} />
           <Metric
