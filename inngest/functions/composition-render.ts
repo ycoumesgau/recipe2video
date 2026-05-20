@@ -10,6 +10,8 @@ import {
   persistSandboxSnapshot,
   touchSandboxSnapshot,
 } from "@/modules/assembly/render/sandbox-snapshot-cache";
+import { toLoggableError } from "@/modules/assembly/loggable-error";
+import { getPresetById } from "@/modules/assembly/repositories/assembly-presets.repository";
 import {
   getCompositionById,
   updateCompositionExport,
@@ -72,10 +74,20 @@ export const renderCompositionExport = inngest.createFunction(
     }
 
     try {
+      const preset = await getPresetById(supabase, presetId);
+      if (!preset) {
+        throw new Error(`Assembly preset ${presetId} was not found for render.`);
+      }
+
       const remotionProps = await buildRemotionPropsForCompositionRow(
         supabase,
         data.videoId,
         composition,
+        { presetId },
+      );
+
+      console.log(
+        `[composition-render] preset="${presetName}" segments=${remotionProps.segments.length} composition=${data.compositionId}`,
       );
 
       const sandboxCacheKey = await computeSandboxRenderCacheKey();
@@ -92,7 +104,7 @@ export const renderCompositionExport = inngest.createFunction(
           ).catch((error) => {
             console.error(
               "[composition-render] updateCompositionRenderProgress failed:",
-              error instanceof Error ? error.message : error,
+              toLoggableError(error),
             );
           });
         },
@@ -124,17 +136,14 @@ export const renderCompositionExport = inngest.createFunction(
         ]),
       );
       const placements = readPlacementsState(
-        composition.segmentOrder,
-        composition.audioSync,
+        preset.segmentOrder,
+        preset.audioSync,
         durations,
       );
-      const timelineState = readTimelineState(
-        composition.audioSync ?? null,
-        {
-          audioMediaAssetId: composition.audioMediaAssetId,
-          audioDurationSeconds: remotionProps.audio?.durationSeconds ?? null,
-        },
-      );
+      const timelineState = readTimelineState(preset.audioSync ?? null, {
+        audioMediaAssetId: preset.audioMediaAssetId,
+        audioDurationSeconds: remotionProps.audio?.durationSeconds ?? null,
+      });
 
       await persistFinalExportFromBuffer({
         supabase,
@@ -154,12 +163,15 @@ export const renderCompositionExport = inngest.createFunction(
 
       return { ok: true as const };
     } catch (error) {
+      console.error("[composition-render] failed:", toLoggableError(error));
       await updateCompositionExport(supabase, {
         compositionId: data.compositionId,
         exportStatus: "failed",
       }).catch(() => undefined);
       revalidateAssemblyPaths(data.videoId);
-      throw error;
+      throw error instanceof Error
+        ? new Error(toLoggableError(error))
+        : new Error("Composition cloud render failed.");
     }
   },
 );

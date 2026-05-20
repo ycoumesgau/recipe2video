@@ -29,7 +29,10 @@ import {
   type RenderProgress,
 } from "../render-progress";
 import { resolveActivePreset } from "../resolve-active-preset";
-import { listPresetsByVideoId } from "../repositories/assembly-presets.repository";
+import {
+  getPresetById,
+  listPresetsByVideoId,
+} from "../repositories/assembly-presets.repository";
 import { getLatestCompositionByPresetId } from "../repositories/assembly.repository";
 import {
   buildClipsFromPlacements,
@@ -459,10 +462,26 @@ export async function buildRemotionPropsForCompositionRow(
   supabase: SupabaseDataClient,
   videoId: string,
   composition: Composition,
+  options: { presetId?: string | null } = {},
 ): Promise<AssemblyRemotionProps> {
   if (composition.videoId !== videoId) {
     throw new Error("Composition does not belong to this video project.");
   }
+
+  const presetId = composition.presetId ?? options.presetId ?? null;
+  const preset =
+    presetId != null ? await getPresetById(supabase, presetId) : null;
+
+  if (presetId && !preset) {
+    throw new Error(
+      `Assembly preset ${presetId} was not found for this render job.`,
+    );
+  }
+
+  const segmentOrderJson = preset?.segmentOrder ?? composition.segmentOrder;
+  const audioSyncJson = preset?.audioSync ?? composition.audioSync;
+  const audioMediaAssetId =
+    preset?.audioMediaAssetId ?? composition.audioMediaAssetId ?? null;
 
   const [segments, mediaAssets] = await Promise.all([
     listSegmentsByVideoId(supabase, videoId),
@@ -475,7 +494,7 @@ export async function buildRemotionPropsForCompositionRow(
   const audioTrack = await buildAudioTrack(
     supabase,
     mediaAssets,
-    composition.audioMediaAssetId ?? null,
+    audioMediaAssetId,
     ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
   );
 
@@ -493,18 +512,21 @@ export async function buildRemotionPropsForCompositionRow(
   );
 
   const persistedPlacements = readPlacementsState(
-    composition.segmentOrder,
-    composition.audioSync,
+    segmentOrderJson,
+    audioSyncJson,
     availableDurations,
   );
   if (persistedPlacements.length === 0) {
-    throw new Error("Composition has no segment placements to render.");
+    const label = preset?.name ?? composition.presetId ?? composition.id;
+    throw new Error(
+      `Assembly preset "${label}" has no segment placements to render.`,
+    );
   }
 
   const persistedTimelineState = readTimelineState(
-    composition.audioSync ?? null,
+    audioSyncJson ?? null,
     {
-      audioMediaAssetId: composition.audioMediaAssetId,
+      audioMediaAssetId,
       audioDurationSeconds: audioTrack?.durationSeconds,
     },
   );
@@ -521,6 +543,12 @@ export async function buildRemotionPropsForCompositionRow(
     persistedPlacements,
     availableBySegmentId,
   );
+  if (orderedSegments.length === 0) {
+    const label = preset?.name ?? composition.presetId ?? composition.id;
+    throw new Error(
+      `Assembly preset "${label}" has placements but no playable segment clips (check accepted clips in storage).`,
+    );
+  }
 
   return buildRemotionProps({
     segments: orderedSegments,

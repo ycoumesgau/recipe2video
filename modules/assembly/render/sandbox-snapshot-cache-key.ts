@@ -22,6 +22,7 @@ const CACHE_KEY_FILES = [
   "remotion-export/render.mjs",
   "remotion/index.tsx",
   "remotion/compositions/recipe-assembly.tsx",
+  "modules/assembly/placement-timing.ts",
 ] as const;
 
 const CACHE_KEY_RUNTIME = "node24";

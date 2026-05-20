@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import { Composition, registerRoot } from "remotion";
 
-import type { AssemblyRemotionProps } from "@/modules/assembly/assembly.types";
+import type { AssemblyRemotionProps } from "../modules/assembly/assembly.types";
 import {
   getAssemblyDurationInFrames,
   RecipeAssemblyComposition,
