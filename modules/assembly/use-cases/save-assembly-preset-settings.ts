@@ -16,11 +16,10 @@ import { upsertDraftCompositionForPreset } from "../repositories/assembly.reposi
 import {
   buildClipsFromPlacements,
   projectLegacyAudioSync,
+  resolveLinkedAudioMediaAssetId,
 } from "../timeline-state";
-import {
-  buildRemotionProps,
-  type AssemblyPageData,
-} from "./get-assembly-data";
+import { buildRemotionProps } from "../build-remotion-props";
+import type { AssemblyPageData } from "./get-assembly-data";
 
 export interface SaveAssemblyPresetSettingsInput {
   supabase: SupabaseDataClient;
@@ -65,15 +64,26 @@ export async function saveAssemblyPresetSettings(
     throw new Error("No accepted Supabase-stored segment clips are available yet.");
   }
 
+  const audioMediaAssetId = resolveLinkedAudioMediaAssetId(
+    input.timelineState.audioClips,
+    input.audioMediaAssetId,
+  );
+
+  const audioTrack =
+    audioMediaAssetId &&
+    input.assemblyData.audioTrack?.mediaAssetId === audioMediaAssetId
+      ? input.assemblyData.audioTrack
+      : null;
+
   const remotionProps = buildRemotionProps({
     segments: orderedClips,
-    audioTrack: input.assemblyData.audioTrack,
+    audioTrack,
     audioClips: input.timelineState.audioClips,
   });
 
   const savePayload = {
     placements: input.placements,
-    audioMediaAssetId: input.audioMediaAssetId,
+    audioMediaAssetId,
     audioSync: projectLegacyAudioSync(input.timelineState.audioClips),
     timelineState: input.timelineState,
     remotionProps,

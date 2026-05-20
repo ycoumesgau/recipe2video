@@ -9,8 +9,6 @@ import { getVideoProjectById } from "@/modules/videos/repositories/video.reposit
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 
 import type {
-  AssemblyAudioClip,
-  AssemblyAudioSync,
   AssemblyAudioTrack,
   AssemblyPreset,
   AssemblyRemotionProps,
@@ -19,11 +17,8 @@ import type {
   Composition,
   SegmentPlacement,
 } from "../assembly.types";
-import {
-  ASSEMBLY_CANVAS_HEIGHT,
-  ASSEMBLY_CANVAS_WIDTH,
-  ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
-} from "../assembly.constants";
+import { buildRemotionProps } from "../build-remotion-props";
+import { ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS } from "../assembly.constants";
 import {
   readRenderProgress,
   type RenderProgress,
@@ -36,17 +31,14 @@ import {
 import { getLatestCompositionByPresetId } from "../repositories/assembly.repository";
 import {
   buildClipsFromPlacements,
-  createDefaultAudioClip,
   defaultPlacementsForSegments,
-  getDefaultAudioSync,
-  projectLegacyAudioSync,
   readPlacementsState,
   readTimelineState,
+  resolveLinkedAudioMediaAssetId,
 } from "../timeline-state";
 
 export { getDefaultAudioSync, getEmptyTimelineState } from "../timeline-state";
 
-const DEFAULT_FPS = 30;
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 /**
@@ -123,14 +115,8 @@ export async function getAssemblyPageData(
   const acceptedSegments = segments.filter(
     (segment) => segment.status === "accepted",
   );
-  const audioTrack = await buildAudioTrack(
-    supabase,
-    mediaAssets,
-    activePreset?.audioMediaAssetId ??
-      composition?.audioMediaAssetId ??
-      null,
-    SIGNED_URL_TTL_SECONDS,
-  );
+  const persistedAudioMediaAssetId =
+    activePreset?.audioMediaAssetId ?? composition?.audioMediaAssetId ?? null;
 
   // Build the catalogue of available segments (one entry per segmentId).
   const availableEntries = await buildSegmentCatalogue(
@@ -167,23 +153,33 @@ export async function getAssemblyPageData(
           })),
         );
 
+  const linkedAudioAsset = persistedAudioMediaAssetId
+    ? mediaAssets.find((asset) => asset.id === persistedAudioMediaAssetId)
+    : undefined;
+
   // Build the timeline-side audio state (just audioClips post-PR A).
   const persistedTimelineState = readTimelineState(
     activePreset?.audioSync ?? composition?.audioSync ?? null,
     {
-      audioMediaAssetId:
-        activePreset?.audioMediaAssetId ?? composition?.audioMediaAssetId,
-      audioDurationSeconds: audioTrack?.durationSeconds,
+      audioMediaAssetId: persistedAudioMediaAssetId,
+      audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
     },
-  );
-  const seededAudioClips = ensureAudioClipForLinkedTrack(
-    persistedTimelineState.audioClips,
-    audioTrack,
   );
   const timelineState: AssemblyTimelineState = {
     schema: "timeline_v2",
-    audioClips: seededAudioClips,
+    audioClips: persistedTimelineState.audioClips,
   };
+
+  const linkedAudioMediaAssetId = resolveLinkedAudioMediaAssetId(
+    timelineState.audioClips,
+    persistedAudioMediaAssetId,
+  );
+  const audioTrack = await buildAudioTrack(
+    supabase,
+    mediaAssets,
+    linkedAudioMediaAssetId,
+    SIGNED_URL_TTL_SECONDS,
+  );
 
   // Hydrate placements into runtime AssemblySegmentClip[] for the editor.
   const orderedSegments = buildClipsFromPlacements(
@@ -291,52 +287,7 @@ async function buildFinalExports(
   return out;
 }
 
-export function buildRemotionProps(input: {
-  segments: AssemblySegmentClip[];
-  audioTrack: AssemblyAudioTrack | null;
-  audioClips: AssemblyAudioClip[];
-  /** Defaults to true (editor preview). Cloud export passes false. */
-  showSegmentTitles?: boolean;
-}): AssemblyRemotionProps {
-  return {
-    fps: DEFAULT_FPS,
-    width: ASSEMBLY_CANVAS_WIDTH,
-    height: ASSEMBLY_CANVAS_HEIGHT,
-    segments: input.segments,
-    audio: input.audioTrack,
-    audioSync: legacyFromAudioClips(input.audioClips),
-    audioClips: input.audioClips,
-    showSegmentTitles: input.showSegmentTitles ?? true,
-  };
-}
-
-function legacyFromAudioClips(
-  audioClips: AssemblyAudioClip[],
-): AssemblyAudioSync {
-  if (audioClips.length === 0) {
-    return getDefaultAudioSync();
-  }
-  return projectLegacyAudioSync(audioClips);
-}
-
-function ensureAudioClipForLinkedTrack(
-  audioClips: AssemblyAudioClip[],
-  audioTrack: AssemblyAudioTrack | null,
-): AssemblyAudioClip[] {
-  if (!audioTrack) {
-    return audioClips;
-  }
-  if (
-    audioClips.some((clip) => clip.mediaAssetId === audioTrack.mediaAssetId)
-  ) {
-    return audioClips;
-  }
-  const seeded = createDefaultAudioClip({
-    mediaAssetId: audioTrack.mediaAssetId,
-    durationSeconds: audioTrack.durationSeconds,
-  });
-  return [...audioClips, seeded];
-}
+export { buildRemotionProps } from "../build-remotion-props";
 
 async function buildSegmentCatalogue(
   supabase: SupabaseDataClient,
@@ -381,22 +332,17 @@ async function buildAudioTrack(
   preferredAudioMediaAssetId: string | null,
   signedUrlTtlSeconds: number,
 ): Promise<AssemblyAudioTrack | null> {
-  const preferred = preferredAudioMediaAssetId
-    ? mediaAssets.find(
-        (asset) =>
-          asset.id === preferredAudioMediaAssetId &&
-          asset.type === "suno_audio" &&
-          asset.storageBucket &&
-          asset.storagePath,
-      )
-    : undefined;
+  if (!preferredAudioMediaAssetId) {
+    return null;
+  }
 
-  const audioAsset =
-    preferred ??
-    mediaAssets.find(
-      (asset) =>
-        asset.type === "suno_audio" && asset.storageBucket && asset.storagePath,
-    );
+  const audioAsset = mediaAssets.find(
+    (asset) =>
+      asset.id === preferredAudioMediaAssetId &&
+      asset.type === "suno_audio" &&
+      asset.storageBucket &&
+      asset.storagePath,
+  );
 
   if (!audioAsset?.storageBucket || !audioAsset.storagePath) {
     return null;
@@ -480,7 +426,7 @@ export async function buildRemotionPropsForCompositionRow(
 
   const segmentOrderJson = preset?.segmentOrder ?? composition.segmentOrder;
   const audioSyncJson = preset?.audioSync ?? composition.audioSync;
-  const audioMediaAssetId =
+  const persistedAudioMediaAssetId =
     preset?.audioMediaAssetId ?? composition.audioMediaAssetId ?? null;
 
   const [segments, mediaAssets] = await Promise.all([
@@ -490,12 +436,6 @@ export async function buildRemotionPropsForCompositionRow(
 
   const acceptedSegments = segments.filter(
     (segment) => segment.status === "accepted",
-  );
-  const audioTrack = await buildAudioTrack(
-    supabase,
-    mediaAssets,
-    audioMediaAssetId,
-    ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
   );
 
   const availableEntries = await buildSegmentCatalogue(
@@ -523,21 +463,32 @@ export async function buildRemotionPropsForCompositionRow(
     );
   }
 
+  const linkedAudioAsset = persistedAudioMediaAssetId
+    ? mediaAssets.find((asset) => asset.id === persistedAudioMediaAssetId)
+    : undefined;
+
   const persistedTimelineState = readTimelineState(
     audioSyncJson ?? null,
     {
-      audioMediaAssetId,
-      audioDurationSeconds: audioTrack?.durationSeconds,
+      audioMediaAssetId: persistedAudioMediaAssetId,
+      audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
     },
-  );
-  const seededAudioClips = ensureAudioClipForLinkedTrack(
-    persistedTimelineState.audioClips,
-    audioTrack,
   );
   const timelineState: AssemblyTimelineState = {
     schema: "timeline_v2",
-    audioClips: seededAudioClips,
+    audioClips: persistedTimelineState.audioClips,
   };
+
+  const linkedAudioMediaAssetId = resolveLinkedAudioMediaAssetId(
+    timelineState.audioClips,
+    persistedAudioMediaAssetId,
+  );
+  const audioTrack = await buildAudioTrack(
+    supabase,
+    mediaAssets,
+    linkedAudioMediaAssetId,
+    ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
+  );
 
   const orderedSegments = buildClipsFromPlacements(
     persistedPlacements,

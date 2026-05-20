@@ -480,6 +480,27 @@ export function projectLegacyAudioSync(
  * Build an audio clip pre-populated with sensible defaults the first time a
  * Suno track is attached to a composition that has no prior `audio_sync`.
  */
+/**
+ * Resolves which Suno asset is linked for mixing. When the timeline has no
+ * audio clips, music is off — we do not keep a stale `audio_media_asset_id`.
+ * When clips exist, prefer the persisted id if it still matches a clip.
+ */
+export function resolveLinkedAudioMediaAssetId(
+  audioClips: AssemblyAudioClip[],
+  persistedAudioMediaAssetId?: string | null,
+): string | null {
+  if (audioClips.length === 0) {
+    return null;
+  }
+  if (
+    persistedAudioMediaAssetId &&
+    audioClips.some((clip) => clip.mediaAssetId === persistedAudioMediaAssetId)
+  ) {
+    return persistedAudioMediaAssetId;
+  }
+  return audioClips[0]?.mediaAssetId ?? null;
+}
+
 export function createDefaultAudioClip(input: {
   mediaAssetId: string;
   durationSeconds?: number | null;
