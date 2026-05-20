@@ -50,6 +50,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  VIDEO_STATUS_BADGE_VARIANT,
   VIDEO_STATUS_LABELS,
   VIDEO_STATUSES,
   type VideoStatus,
@@ -72,23 +73,6 @@ import {
 import { ProjectCardArchiveMenu } from "@/modules/videos/ui/project-card-archive-menu";
 
 type StatusFilter = "all" | VideoStatus;
-
-const statusBadgeVariant: Record<
-  VideoStatus,
-  "default" | "secondary" | "destructive" | "outline"
-> = {
-  draft: "outline",
-  recipe_ingested: "secondary",
-  clarification_needed: "destructive",
-  storyboard_ready: "default",
-  storyboard_approved: "secondary",
-  references_ready: "default",
-  generating: "default",
-  review: "default",
-  assembling: "secondary",
-  exported: "secondary",
-  failed: "destructive",
-};
 
 const sortLabels: Record<DashboardSortKey, string> = {
   updated: "Last updated",
@@ -413,7 +397,7 @@ function ProjectCard({
           <div className="flex min-w-0 max-w-full items-center justify-end gap-1">
             <Badge
               className="max-w-full min-w-0 shrink justify-start"
-              variant={statusBadgeVariant[project.status]}
+              variant={VIDEO_STATUS_BADGE_VARIANT[project.status]}
             >
               <span className="min-w-0 truncate">
                 {VIDEO_STATUS_LABELS[project.status]}
@@ -590,7 +574,7 @@ function RecentlyUpdatedCard({
                   </p>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={statusBadgeVariant[project.status]}>
+                  <Badge variant={VIDEO_STATUS_BADGE_VARIANT[project.status]}>
                     {VIDEO_STATUS_LABELS[project.status]}
                   </Badge>
                 </TableCell>

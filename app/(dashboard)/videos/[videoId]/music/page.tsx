@@ -6,7 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SunoAssemblyPanel } from "@/modules/assembly/ui/suno-assembly-panel";
 import { getMusicPageData } from "@/modules/assembly/use-cases/get-music-page-data";
-import { VIDEO_STATUS_LABELS } from "@/modules/videos/video-status";
+import {
+  VIDEO_STATUS_BADGE_VARIANT,
+  VIDEO_STATUS_LABELS,
+} from "@/modules/videos/video-status";
 
 export default async function MusicPage({
   params,
@@ -51,7 +54,11 @@ export default async function MusicPage({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Badge variant="outline">Music</Badge>
           {data.musicData.project ? (
-            <Badge variant="outline">
+            <Badge
+              variant={
+                VIDEO_STATUS_BADGE_VARIANT[data.musicData.project.status]
+              }
+            >
               {VIDEO_STATUS_LABELS[data.musicData.project.status]}
             </Badge>
           ) : null}

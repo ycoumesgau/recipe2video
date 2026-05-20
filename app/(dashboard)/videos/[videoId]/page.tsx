@@ -35,6 +35,10 @@ import { getRecipeSourceSummaryFromRecipeData } from "@/modules/videos/recipe-so
 import type { RecipeSourceSummary, VideoProject } from "@/modules/videos/video.types";
 import { EditableProjectTitle } from "@/modules/videos/ui/editable-project-title";
 import { ProjectPipelineProgress } from "@/modules/videos/ui/project-pipeline-progress";
+import {
+  VIDEO_STATUS_BADGE_VARIANT,
+  VIDEO_STATUS_LABELS,
+} from "@/modules/videos/video-status";
 import { ProjectDetailArchiveControls } from "@/modules/videos/ui/project-detail-archive-controls";
 import { RecipeSourcePhotoThumbnails } from "@/modules/videos/ui/recipe-source-photo-thumbnails";
 import { VideoProjectRscSync } from "@/modules/videos/ui/video-project-rsc-sync";
@@ -80,7 +84,9 @@ export default async function VideoDetailPage({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Badge variant="outline">Overview</Badge>
           {project ? (
-            <Badge variant="outline">Project {project.status}</Badge>
+            <Badge variant={VIDEO_STATUS_BADGE_VARIANT[project.status]}>
+              {VIDEO_STATUS_LABELS[project.status]}
+            </Badge>
           ) : (
             <Badge variant="outline">{videoId}</Badge>
           )}

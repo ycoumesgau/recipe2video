@@ -8,7 +8,10 @@ import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { AssemblyWorkspace } from "@/modules/assembly/ui/assembly-workspace";
 import { getAssemblyPageData } from "@/modules/assembly/use-cases/get-assembly-data";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
-import { VIDEO_STATUS_LABELS } from "@/modules/videos/video-status";
+import {
+  VIDEO_STATUS_BADGE_VARIANT,
+  VIDEO_STATUS_LABELS,
+} from "@/modules/videos/video-status";
 
 export default async function AssemblyPage({
   params,
@@ -56,7 +59,7 @@ export default async function AssemblyPage({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Badge variant="outline">Assembly</Badge>
           {data.project ? (
-            <Badge variant="outline">
+            <Badge variant={VIDEO_STATUS_BADGE_VARIANT[data.project.status]}>
               {VIDEO_STATUS_LABELS[data.project.status]}
             </Badge>
           ) : null}
