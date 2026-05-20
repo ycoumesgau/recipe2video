@@ -20,6 +20,7 @@ import {
   listReferenceAssetsForVideo,
   updateReferenceAssetConditioning,
   updateReferenceAssetPrompt,
+  updateReferenceAssetStatus,
 } from "./repositories/reference.repository";
 import { appendSegmentReferenceLink } from "./repositories/segment-references.repository";
 import { getReferenceReviewData } from "./use-cases/get-reference-review";
@@ -196,6 +197,14 @@ export async function generateReferenceImageAction(formData: FormData) {
       );
     }
 
+    // Flip to `generating` before queueing Inngest so the references page
+    // re-render disables Generate / bulk buttons immediately (the worker
+    // would set this later anyway, leaving a double-click window).
+    await updateReferenceAssetStatus(supabase, {
+      referenceId,
+      status: "generating",
+    });
+
     await inngest.send({
       name: INNGEST_EVENTS.videoReferenceGenerateRequested,
       data: {
@@ -250,6 +259,15 @@ export async function generateAllMissingReferencesAction(formData: FormData) {
         "No recipe-specific references are waiting for generation right now.",
       );
     }
+
+    await Promise.all(
+      candidates.map((reference) =>
+        updateReferenceAssetStatus(supabase, {
+          referenceId: reference.id,
+          status: "generating",
+        }),
+      ),
+    );
 
     await inngest.send({
       name: INNGEST_EVENTS.videoReferencesGenerateRequested,

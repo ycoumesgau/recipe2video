@@ -39,6 +39,7 @@ import type {
 } from "../reference.types";
 import type { ReferenceStatus } from "../reference-status";
 import { ReferenceCardPreview } from "./reference-card-preview";
+import { ReferenceFormSubmitButton } from "./reference-form-submit-button";
 
 const statusBadgeVariant: Record<
   ReferenceStatus,
@@ -192,20 +193,21 @@ export function ReferenceCard({
 
         {isReadOnly ? null : (
           <div className="flex flex-wrap gap-2">
-            <ReferenceActionButton
-              action={generateReferenceImageAction}
-              disabled={isGenerating || !reference.prompt}
-              icon={<Sparkles className="h-4 w-4" />}
-              label={
-                isGenerating
+            <form action={generateReferenceImageAction}>
+              <input name="videoId" type="hidden" value={videoId} />
+              <input name="referenceId" type="hidden" value={reference.id} />
+              <ReferenceFormSubmitButton
+                disabled={isGenerating || !reference.prompt}
+                icon={<Sparkles className="h-4 w-4" />}
+                pendingLabel="Generating…"
+              >
+                {isGenerating
                   ? "Generating…"
                   : hasImage
                     ? "Regenerate (keeps previous variants)"
-                    : "Generate image"
-              }
-              referenceId={reference.id}
-              videoId={videoId}
-            />
+                    : "Generate image"}
+              </ReferenceFormSubmitButton>
+            </form>
             <ReferenceActionButton
               action={approveReferenceAction}
               disabled={!hasImage || reference.status === "approved"}
