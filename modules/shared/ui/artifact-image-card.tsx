@@ -44,16 +44,25 @@ export type ArtifactStatusValue =
   | "uploaded_to_runway"
   | "failed";
 
+export type ArtifactStatusBadgeVariant =
+  | "default"
+  | "secondary"
+  | "destructive"
+  | "outline"
+  | "success"
+  | "warning";
+
+/** Ready / approved states use success (light green); in-flight uses warning. */
 export const ARTIFACT_STATUS_BADGE_VARIANT: Record<
   ArtifactStatusValue,
-  "default" | "secondary" | "destructive" | "outline"
+  ArtifactStatusBadgeVariant
 > = {
   planned: "outline",
-  generating: "default",
+  generating: "warning",
   generated: "secondary",
-  approved: "default",
+  approved: "success",
   rejected: "destructive",
-  uploaded_to_runway: "secondary",
+  uploaded_to_runway: "success",
   failed: "destructive",
 };
 
