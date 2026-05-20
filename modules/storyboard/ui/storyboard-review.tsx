@@ -27,7 +27,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { VIDEO_STATUS_LABELS } from "@/modules/videos/video-status";
+import {
+  VIDEO_STATUS_BADGE_VARIANT,
+  VIDEO_STATUS_LABELS,
+} from "@/modules/videos/video-status";
 import type { VideoProject } from "@/modules/videos/video.types";
 import { RUNWAY_SEEDANCE2_CREDITS_PER_SECOND } from "@/modules/generation/runway.constants";
 
@@ -80,7 +83,7 @@ export function StoryboardReview({
     <div className="space-y-6">
       {compactPageHeading ? (
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Badge variant={isApproved ? "default" : "outline"}>
+          <Badge variant={VIDEO_STATUS_BADGE_VARIANT[project.status]}>
             {VIDEO_STATUS_LABELS[project.status]}
           </Badge>
           <Badge variant="secondary">{project.selectedVideoModel}</Badge>
@@ -89,7 +92,7 @@ export function StoryboardReview({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <Badge variant={isApproved ? "default" : "outline"}>
+              <Badge variant={VIDEO_STATUS_BADGE_VARIANT[project.status]}>
                 {VIDEO_STATUS_LABELS[project.status]}
               </Badge>
               <Badge variant="secondary">{project.selectedVideoModel}</Badge>

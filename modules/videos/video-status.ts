@@ -36,3 +36,28 @@ export const ACTIONABLE_VIDEO_STATUSES: readonly VideoStatus[] = [
   "assembling",
   "failed",
 ];
+
+/** Badge variant for each project status (library cards, sub-pages, etc.). */
+export type VideoStatusBadgeVariant =
+  | "default"
+  | "secondary"
+  | "destructive"
+  | "outline"
+  | "success";
+
+export const VIDEO_STATUS_BADGE_VARIANT: Record<
+  VideoStatus,
+  VideoStatusBadgeVariant
+> = {
+  draft: "outline",
+  recipe_ingested: "secondary",
+  clarification_needed: "destructive",
+  storyboard_ready: "default",
+  storyboard_approved: "secondary",
+  references_ready: "default",
+  generating: "default",
+  review: "default",
+  assembling: "secondary",
+  exported: "success",
+  failed: "destructive",
+};

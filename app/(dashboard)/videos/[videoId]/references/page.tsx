@@ -7,7 +7,10 @@ import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import { getReferenceReviewData } from "@/modules/references/use-cases/get-reference-review";
 import { ReferenceReviewWorkflow } from "@/modules/references/ui/reference-review-workflow";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
-import { VIDEO_STATUS_LABELS } from "@/modules/videos/video-status";
+import {
+  VIDEO_STATUS_BADGE_VARIANT,
+  VIDEO_STATUS_LABELS,
+} from "@/modules/videos/video-status";
 
 export default async function ProjectReferencesPage({
   params,
@@ -35,7 +38,7 @@ export default async function ProjectReferencesPage({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Badge variant="outline">References</Badge>
           {project ? (
-            <Badge variant="outline">
+            <Badge variant={VIDEO_STATUS_BADGE_VARIANT[project.status]}>
               {VIDEO_STATUS_LABELS[project.status]}
             </Badge>
           ) : null}
