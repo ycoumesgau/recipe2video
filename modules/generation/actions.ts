@@ -13,6 +13,7 @@ import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import {
   getSegmentById,
   setSelectedGenerationForSegment,
+  updateSegmentPrompt,
   updateSegmentStatus,
 } from "@/modules/storyboard/repositories/segment.repository";
 import { applyStandardOutroToSegment } from "@/modules/storyboard/use-cases/apply-standard-outro-to-segment";
@@ -80,6 +81,50 @@ export async function rejectSegmentVariantAction(formData: FormData) {
 
     revalidateSegmentReviewPaths(ids.videoId, ids.segmentId);
     redirectWithNotice(ids, "success", "Variant rejected for this segment.");
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(ids, "error", getActionErrorMessage(error));
+  }
+}
+
+export async function updateSegmentPromptAction(formData: FormData) {
+  const ids = {
+    videoId: requireString(formData, "videoId"),
+    segmentId: requireString(formData, "segmentId"),
+  };
+
+  try {
+    await assertCostlyActionAllowed();
+    const promptRaw = getString(formData, "prompt");
+
+    if (promptRaw.length === 0) {
+      throw new Error("Prompt cannot be empty.");
+    }
+
+    const supabase = createSupabaseAdminClient();
+    const segment = await requireSegment(supabase, ids.segmentId);
+
+    if (segment.videoId !== ids.videoId) {
+      throw new Error("Segment not found for this video.");
+    }
+
+    if (segment.prompt === promptRaw) {
+      revalidateSegmentReviewPaths(ids.videoId, ids.segmentId);
+      redirectWithNotice(ids, "success", "Prompt unchanged.");
+      return;
+    }
+
+    await updateSegmentPrompt(supabase, ids.segmentId, promptRaw);
+
+    revalidateSegmentReviewPaths(ids.videoId, ids.segmentId);
+    redirectWithNotice(
+      ids,
+      "success",
+      "Segment prompt saved. Request regeneration to apply.",
+    );
   } catch (error) {
     if (isNextRedirectError(error)) {
       throw error;
@@ -351,13 +396,18 @@ function getActionErrorMessage(error: unknown) {
 }
 
 function requireString(formData: FormData, key: string) {
-  const value = formData.get(key);
+  const value = getString(formData, key);
 
-  if (typeof value !== "string" || value.trim().length === 0) {
+  if (!value) {
     throw new Error(`${key} is required.`);
   }
 
-  return value.trim();
+  return value;
+}
+
+function getString(formData: FormData, key: string) {
+  const value = formData.get(key);
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function isNextRedirectError(error: unknown) {
