@@ -3,7 +3,7 @@ import "server-only";
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.constants";
 import { tryCreateMediaAssetPreviewSignedUrl } from "@/modules/media-assets/services/media-asset-preview-url";
-import { tryCreateStorageSignedUrl } from "@/modules/media-assets/services/storage.service";
+import { tryCreateLibraryStorageSignedUrl } from "@/modules/media-assets/services/create-library-storage-signed-url";
 import { listSegmentsByVideoId } from "@/modules/storyboard/repositories/segment.repository";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
@@ -275,10 +275,20 @@ async function buildLibraryReviewItem(input: {
       ? await getMediaAssetByIdInline(input.supabase, input.entry.mediaAssetId)
       : null);
 
+  const previewUrl =
+    mediaAsset?.storageBucket && mediaAsset.storagePath
+      ? await tryCreateLibraryStorageSignedUrl(input.supabase, {
+          bucket: mediaAsset.storageBucket as MediaStorageBucket,
+          path: mediaAsset.storagePath,
+          libraryCanonicalName: input.entry.canonicalName,
+          expiresInSeconds: 60 * 15,
+        })
+      : null;
+
   return {
     reference: librarytoReference(input.entry),
     mediaAsset,
-    previewUrl: await createPreviewUrl(input.supabase, mediaAsset),
+    previewUrl,
     usedInSegments: input.usedInSegments,
     isLibraryGlobal: true,
   };
@@ -462,9 +472,10 @@ async function resolveReferenceConditioning(
       : null;
     const previewUrl =
       storage?.storageBucket && storage.storagePath
-        ? await tryCreateStorageSignedUrl(supabase, {
+        ? await tryCreateLibraryStorageSignedUrl(supabase, {
             bucket: storage.storageBucket as MediaStorageBucket,
             path: storage.storagePath,
+            libraryCanonicalName: entry.canonicalName,
             expiresInSeconds: 60 * 15,
           })
         : null;

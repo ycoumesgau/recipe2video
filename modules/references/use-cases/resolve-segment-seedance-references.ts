@@ -3,7 +3,7 @@ import "server-only";
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import type { Database } from "@/shared/supabase/database.types";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
-import { createStorageSignedUrl } from "@/modules/media-assets/services/storage.service";
+import { createLibraryStorageSignedUrl } from "@/modules/media-assets/services/create-library-storage-signed-url";
 import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.constants";
 
 /**
@@ -174,9 +174,10 @@ export async function resolveSegmentSeedanceReferences(
       );
     }
 
-    const uri = await createStorageSignedUrl(supabase, {
+    const uri = await createLibraryStorageSignedUrl(supabase, {
       bucket: storage.storage_bucket as MediaStorageBucket,
       path: storage.storage_path,
+      libraryCanonicalName: isLibrary ? joined.canonical_name : undefined,
       expiresInSeconds: RUNWAY_SIGNED_URL_TTL_SECONDS,
     });
 

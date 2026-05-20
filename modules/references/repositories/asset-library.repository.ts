@@ -1,6 +1,7 @@
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import type { Database } from "@/shared/supabase/database.types";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
+import { normalizeReferenceName } from "@/modules/references/reference-matching";
 
 type AssetLibraryRow = Database["public"]["Tables"]["asset_library"]["Row"];
 
@@ -107,16 +108,32 @@ export async function findAssetLibraryByCanonicalNames(
   const result = new Map<string, AssetLibraryEntry>();
   for (const row of data ?? []) {
     const entry = mapAssetLibrary(row);
-    // Index by canonical_name AND every alias so callers can lookup either
-    // form. We DO NOT restrict to names the caller asked for: this lets us
-    // index secondary aliases too, which keeps the API contract honest
-    // ("call .get(name) for any known name and you get a hit").
-    result.set(entry.canonicalName, entry);
-    for (const alias of entry.aliases) {
-      result.set(alias, entry);
-    }
+    indexAssetLibraryEntry(result, entry);
   }
   return result;
+}
+
+/**
+ * Index a library entry under its canonical name, every alias, and normalized
+ * forms so callers survive casing drift (`spatula` vs `Spatula`) and small
+ * formatting differences (`Silicone Spatula` vs `SiliconeSpatula`).
+ */
+export function indexAssetLibraryEntry(
+  result: Map<string, AssetLibraryEntry>,
+  entry: AssetLibraryEntry,
+): void {
+  const keys = new Set<string>([
+    entry.canonicalName,
+    normalizeReferenceName(entry.canonicalName),
+    ...entry.aliases,
+    ...entry.aliases.map((alias) => normalizeReferenceName(alias)),
+  ]);
+
+  for (const key of keys) {
+    if (key.length > 0) {
+      result.set(key, entry);
+    }
+  }
 }
 
 export async function getAssetLibraryById(

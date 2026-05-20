@@ -14,7 +14,7 @@ import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.cons
 // `storage.service` barrel: the barrel is marked `server-only` (it also
 // exposes upload/download helpers that must never ship to the client),
 // whereas the signed-URL helper is intentionally test-friendly.
-import { createStorageSignedUrl } from "@/modules/media-assets/services/storage-signed-url";
+import { createLibraryStorageSignedUrl } from "@/modules/media-assets/services/create-library-storage-signed-url";
 
 import { findAssetLibraryByCanonicalNames } from "../repositories/asset-library.repository";
 import {
@@ -208,9 +208,10 @@ export async function resolveConditioningAnchors(
       continue;
     }
 
-    const uri = await createStorageSignedUrl(supabase, {
+    const uri = await createLibraryStorageSignedUrl(supabase, {
       bucket: storage.storage_bucket as MediaStorageBucket,
       path: storage.storage_path,
+      libraryCanonicalName: entry.canonicalName,
       expiresInSeconds: CONDITIONING_SIGNED_URL_TTL_SECONDS,
     });
 
