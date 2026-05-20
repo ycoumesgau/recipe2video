@@ -34,7 +34,8 @@ import {
 import { inngest } from "../client";
 import { INNGEST_EVENTS, type SongCoverGenerateRequestedData } from "../events";
 
-const ALBUM_COVER_RATIO_CANDIDATES = ["2880:2880", "2048:2048"];
+/** 2K tier (20 credits at default `high` quality); export upscales to 3000×3000. */
+const ALBUM_COVER_RATIO_CANDIDATES = ["2048:2048"];
 const ALBUM_COVER_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 
 export const generateAlbumCoverWorkflow = inngest.createFunction(

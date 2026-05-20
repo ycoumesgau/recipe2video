@@ -131,7 +131,7 @@ export type CostLogRequestedData = WorkflowAuthEventData & CreateCostLogInput;
  * `song_cover_artifacts` row (kind=album_cover) for `videoId`, resolves
  * the conditioning anchors against `asset_library` + per-video
  * `reference_assets`, kicks off a GPT-Image 2 task on Runway (with
- * 2880:2880 -> 2048:2048 ratio fallback), polls until terminal, and
+ * `2048:2048` ratio), polls until terminal, and
  * persists the resulting image to the `album-covers` bucket as a new
  * variant. Existing variants stay intact; the new variant becomes the
  * active one.
