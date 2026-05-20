@@ -18,7 +18,7 @@ import {
   Film,
   Loader2,
   MoreHorizontal,
-  Music2,
+  SlidersHorizontal,
   Pencil,
   Plus,
   Save,
@@ -441,13 +441,13 @@ export function AssemblyWorkspace({
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Music2 className="h-4 w-4" />
-                Audio mix
+                <SlidersHorizontal className="h-4 w-4" />
+                Volume & speed
               </CardTitle>
               <CardDescription>
-                Balance diegetic audio (left) and playback speed (right) per
-                clip. To change volume or speed on a sub-zone, split the clip
-                on the timeline and adjust each piece independently.
+                Per clip on the timeline: set diegetic audio level (left) and
+                playback speed (right). To use different values on part of a
+                clip, split it first, then adjust each piece.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">

@@ -31,7 +31,7 @@ export function VideoClipMixSection({
       <ClipListHeader onChange={onChange} segments={segments} />
       <div className="grid grid-cols-2 gap-x-3 px-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         <span>Audio</span>
-        <span>Vitesse</span>
+        <span>Speed</span>
       </div>
       {segments.map((segment) => (
         <ClipMixRow

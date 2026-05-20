@@ -217,10 +217,10 @@ export function TimelineEditorDemo() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Audio mix</CardTitle>
+              <CardTitle>Volume &amp; speed</CardTitle>
               <CardDescription>
-                Per-clip volume. To dim a sub-zone, split the clip on the
-                timeline and lower the sub-placement&apos;s volume.
+                Per clip: audio level (left) and playback speed (right). Split
+                a clip on the timeline to adjust each piece independently.
               </CardDescription>
             </CardHeader>
             <CardContent>
