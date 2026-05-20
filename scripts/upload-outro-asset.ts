@@ -18,6 +18,9 @@
  *   OUTRO_VIDEO_PATH=/path/to/LicornOutroVideo.mp4 tsx scripts/upload-outro-asset.ts
  *
  * Optional env (override defaults probed from the file):
+ *   OUTRO_VIDEO_PATH              path to the MP4 (defaults to agent workspace mirror)
+ *   OUTRO_POSTER_PATH             path to the dashboard poster JPEG (defaults to agent workspace mirror)
+ *   OUTRO_POSTER_ONLY             when "true", only uploads/refreshes the poster and metadata
  *   OUTRO_VIDEO_DURATION_SECONDS  defaults to 3
  *   OUTRO_VIDEO_WIDTH             defaults to 1080
  *   OUTRO_VIDEO_HEIGHT            defaults to 1920
@@ -33,12 +36,17 @@ import { fileURLToPath } from "node:url";
 
 import { createClient } from "@supabase/supabase-js";
 
-import type { Database } from "../shared/supabase/database.types";
+import { deriveVideoPosterStoragePath } from "@/modules/media-assets/services/media-asset-preview-url";
+import type { Database } from "@/shared/supabase/database.types";
 
 const REFERENCE_IMAGES_BUCKET = "reference-images";
 const STORAGE_PATH = "library/character/outro/LicornOutroVideo.mp4";
 const CANONICAL_NAME = "LicornOutroVideo";
+const POSTER_STORAGE_PATH =
+  deriveVideoPosterStoragePath(STORAGE_PATH) ??
+  "library/character/outro/LicornOutroVideo-poster.jpg";
 const MIME_TYPE = "video/mp4";
+const POSTER_MIME_TYPE = "image/jpeg";
 const RUNWAY_MAX_REFERENCE_BYTES = 16 * 1024 * 1024;
 
 function getSupabaseConfig() {
@@ -73,6 +81,24 @@ function resolveOutroVideoPath() {
   );
 }
 
+function resolveOutroPosterPath() {
+  if (process.env.OUTRO_POSTER_PATH) {
+    return path.resolve(process.env.OUTRO_POSTER_PATH);
+  }
+
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(here, "..");
+  return path.resolve(
+    repoRoot,
+    "..",
+    "recipe2video-agent-workspace",
+    "assets",
+    "character",
+    "outro",
+    "LicornOutroVideo-poster.jpg",
+  );
+}
+
 function parseNumberEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -83,29 +109,51 @@ function parseNumberEnv(name: string, fallback: number): number {
   return parsed;
 }
 
-async function readVideoBuffer(filePath: string) {
+async function readFileBuffer(filePath: string, label: string) {
   let stats;
   try {
     stats = await stat(filePath);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      throw new Error(
-        `Outro video not found at ${filePath}. Pass OUTRO_VIDEO_PATH or mirror the MP4 in the agent workspace.`,
-      );
+      throw new Error(`${label} not found at ${filePath}.`);
     }
     throw error;
   }
 
-  if (stats.size > RUNWAY_MAX_REFERENCE_BYTES) {
-    const sizeMb = (stats.size / (1024 * 1024)).toFixed(2);
+  const buffer = await readFile(filePath);
+  return { buffer, fileSizeBytes: stats.size };
+}
+
+async function readVideoBuffer(filePath: string) {
+  const { buffer, fileSizeBytes } = await readFileBuffer(filePath, "Outro video");
+
+  if (fileSizeBytes > RUNWAY_MAX_REFERENCE_BYTES) {
+    const sizeMb = (fileSizeBytes / (1024 * 1024)).toFixed(2);
     throw new Error(
       `Outro video at ${filePath} is ${sizeMb}MB but Runway caps each reference at 16MB. Re-encode (H.264 baseline/main, CRF 23+) before uploading.`,
     );
   }
 
-  const buffer = await readFile(filePath);
-  return { buffer, fileSizeBytes: stats.size };
+  return { buffer, fileSizeBytes };
+}
+
+async function uploadPosterStorageObject(
+  supabase: ReturnType<typeof createClient<Database>>,
+  buffer: Buffer,
+) {
+  const { error } = await supabase.storage
+    .from(REFERENCE_IMAGES_BUCKET)
+    .upload(POSTER_STORAGE_PATH, buffer, {
+      contentType: POSTER_MIME_TYPE,
+      upsert: true,
+    });
+
+  if (error) {
+    throw new Error(
+      `storage upload failed for ${CANONICAL_NAME} poster: ${error.message}`,
+    );
+  }
 }
 
 async function findExistingMediaAssetId(
@@ -158,6 +206,13 @@ async function upsertMediaAsset(
 ) {
   const existingId = await findExistingMediaAssetId(supabase);
 
+  const metadata = {
+    source: "outro_asset_upload",
+    canonicalName: CANONICAL_NAME,
+    category: "character",
+    previewStoragePath: POSTER_STORAGE_PATH,
+  };
+
   if (existingId) {
     const { error } = await supabase
       .from("media_assets")
@@ -169,6 +224,7 @@ async function upsertMediaAsset(
         height: input.height,
         original_filename: "LicornOutroVideo.mp4",
         status: "stored",
+        metadata,
       })
       .eq("id", existingId);
 
@@ -196,11 +252,7 @@ async function upsertMediaAsset(
       width: input.width,
       height: input.height,
       status: "stored",
-      metadata: {
-        source: "outro_asset_upload",
-        canonicalName: CANONICAL_NAME,
-        category: "character",
-      },
+      metadata,
     })
     .select("id")
     .single();
@@ -212,6 +264,44 @@ async function upsertMediaAsset(
   }
 
   return data.id;
+}
+
+async function refreshPosterMetadata(
+  supabase: ReturnType<typeof createClient<Database>>,
+  mediaAssetId: string,
+) {
+  const { data, error } = await supabase
+    .from("media_assets")
+    .select("metadata")
+    .eq("id", mediaAssetId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `media_assets metadata lookup failed for ${CANONICAL_NAME}: ${error.message}`,
+    );
+  }
+
+  const existingMetadata =
+    data?.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)
+      ? (data.metadata as Record<string, unknown>)
+      : {};
+
+  const { error: updateError } = await supabase
+    .from("media_assets")
+    .update({
+      metadata: {
+        ...existingMetadata,
+        previewStoragePath: POSTER_STORAGE_PATH,
+      },
+    })
+    .eq("id", mediaAssetId);
+
+  if (updateError) {
+    throw new Error(
+      `media_assets poster metadata update failed for ${CANONICAL_NAME}: ${updateError.message}`,
+    );
+  }
 }
 
 async function linkAssetLibrary(
@@ -246,22 +336,50 @@ async function linkAssetLibrary(
 
 async function main() {
   const { url, secretKey } = getSupabaseConfig();
+  const posterOnly = process.env.OUTRO_POSTER_ONLY === "true";
   const filePath = resolveOutroVideoPath();
+  const posterPath = resolveOutroPosterPath();
   const durationSeconds = parseNumberEnv("OUTRO_VIDEO_DURATION_SECONDS", 3);
   const width = parseNumberEnv("OUTRO_VIDEO_WIDTH", 1080);
   const height = parseNumberEnv("OUTRO_VIDEO_HEIGHT", 1920);
 
-  console.log(`Outro video source:    ${filePath}`);
+  console.log(`Outro poster source:   ${posterPath}`);
   console.log(`Supabase URL:          ${url}`);
-  console.log(`Storage destination:   ${REFERENCE_IMAGES_BUCKET}/${STORAGE_PATH}`);
+  console.log(`Poster destination:    ${REFERENCE_IMAGES_BUCKET}/${POSTER_STORAGE_PATH}`);
+  if (!posterOnly) {
+    console.log(`Outro video source:    ${filePath}`);
+    console.log(`Storage destination:   ${REFERENCE_IMAGES_BUCKET}/${STORAGE_PATH}`);
+  } else {
+    console.log("Mode:                  poster-only refresh");
+  }
   console.log();
 
   const supabase = createClient<Database>(url, secretKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  const { buffer: posterBuffer, fileSizeBytes: posterSizeBytes } =
+    await readFileBuffer(posterPath, "Outro poster");
+  console.log(`Poster size: ${(posterSizeBytes / (1024 * 1024)).toFixed(2)} MB`);
+
+  await uploadPosterStorageObject(supabase, posterBuffer);
+
+  if (posterOnly) {
+    const mediaAssetId = await findExistingMediaAssetId(supabase);
+    if (!mediaAssetId) {
+      throw new Error(
+        `No existing media_assets row for ${STORAGE_PATH}. Run the full upload script first.`,
+      );
+    }
+
+    await refreshPosterMetadata(supabase, mediaAssetId);
+    console.log();
+    console.log(`Done. ${CANONICAL_NAME} poster is ready for dashboard previews.`);
+    return;
+  }
+
   const { buffer, fileSizeBytes } = await readVideoBuffer(filePath);
-  console.log(`File size: ${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`);
+  console.log(`Video size: ${(fileSizeBytes / (1024 * 1024)).toFixed(2)} MB`);
 
   await uploadStorageObject(supabase, buffer);
   const mediaAssetId = await upsertMediaAsset(supabase, {

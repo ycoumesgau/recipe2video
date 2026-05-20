@@ -1,9 +1,8 @@
 import "server-only";
 
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
-import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.constants";
 import { getMediaAssetById } from "@/modules/media-assets/repositories/media-asset.repository";
-import { createStorageSignedUrl } from "@/modules/media-assets/services/storage.service";
+import { tryCreateMediaAssetPreviewSignedUrl } from "@/modules/media-assets/services/media-asset-preview-url";
 import {
   listAssetLibrary,
   type AssetLibraryEntry,
@@ -40,14 +39,11 @@ export async function getLibraryAdminData(
         ? await getMediaAssetById(supabase, entry.mediaAssetId)
         : null;
 
-      const previewUrl =
-        mediaAsset?.storageBucket && mediaAsset.storagePath
-          ? await createStorageSignedUrl(supabase, {
-              bucket: mediaAsset.storageBucket as MediaStorageBucket,
-              path: mediaAsset.storagePath,
-              expiresInSeconds: PREVIEW_TTL_SECONDS,
-            }).catch(() => null)
-          : null;
+      const previewUrl = mediaAsset
+        ? await tryCreateMediaAssetPreviewSignedUrl(supabase, mediaAsset, {
+            expiresInSeconds: PREVIEW_TTL_SECONDS,
+          })
+        : null;
 
       const usageCount = await countSegmentReferencesForLibraryAsset(
         supabase,
