@@ -87,30 +87,80 @@ export async function insertReferenceAsset(
   return mapReferenceAsset(data);
 }
 
-export async function replaceAgentReferenceAssetsForVideo(
+/**
+ * Non-destructive sync of agent-authored references for a video, keyed by
+ * `(video_id, canonical_name)`.
+ *
+ * Why upsert (not replace): the previous `replace` implementation deleted
+ * every existing `agent_reference_plan` row before inserting the new
+ * batch. That destroyed `media_asset_id`, `runway_uri`, `status`, and
+ * `runway_task_*` — every operator-touched runtime field — whenever the
+ * agent re-pushed `reference-plan.json` for any reason (e.g. running the
+ * new `publication_planning` stage which also re-syncs the recipe
+ * artifacts). Generated images survived in `media_assets` but became
+ * orphaned because their parent row was gone and re-created with a
+ * fresh UUID. Same protection segments already enjoy via
+ * `upsertSegmentsForVideoByPosition`.
+ *
+ * Semantics:
+ *   - Existing canonical names are updated in place: agent-authored
+ *     fields (`type`, `prompt`, `conditioning_canonical_names`) are
+ *     overwritten; runtime / operator-touched fields (`media_asset_id`,
+ *     `runway_uri`, `status`, `runway_task_id`, `runway_task_status`,
+ *     `runway_progress`) are preserved.
+ *   - New canonical names are inserted as `planned`.
+ *   - Canonical names present in the DB but absent from the incoming
+ *     batch are PRESERVED. Agents may temporarily drop a reference from
+ *     their plan (e.g. while iterating on the storyboard) and we do not
+ *     want to lose its generated image. The operator can manually clean
+ *     up stale rows from the References page.
+ *
+ * Returns every active `agent_reference_plan` row (the upserted batch
+ * plus any preserved row absent from the incoming batch) so downstream
+ * `segment_references` wiring can resolve names against the full set.
+ */
+export async function upsertAgentReferenceAssetsForVideo(
   supabase: SupabaseDataClient,
   videoId: string,
   references: CreateReferenceAssetInput[],
 ): Promise<ReferenceAsset[]> {
-  const { error: deleteError } = await supabase
-    .from("reference_assets")
-    .delete()
-    .eq("video_id", videoId)
-    .eq("source", "agent_reference_plan");
-
-  throwIfSupabaseError(
-    deleteError,
-    "replaceAgentReferenceAssetsForVideo delete failed",
+  const existingRows = await listAgentReferenceAssetsForVideo(
+    supabase,
+    videoId,
+  );
+  const existingByCanonicalName = new Map(
+    existingRows.map((reference) => [reference.canonicalName, reference]),
   );
 
-  if (references.length === 0) {
-    return [];
-  }
+  const persistedByCanonicalName = new Map<string, ReferenceAsset>();
 
-  const { data, error } = await supabase
-    .from("reference_assets")
-    .insert(
-      references.map((reference) => ({
+  for (const reference of references) {
+    const current = existingByCanonicalName.get(reference.canonicalName);
+
+    if (current) {
+      const { data, error } = await supabase
+        .from("reference_assets")
+        .update({
+          type: reference.type,
+          prompt: reference.prompt ?? null,
+          conditioning_canonical_names:
+            reference.conditioningCanonicalNames ?? [],
+        })
+        .eq("id", current.id)
+        .select("*")
+        .single();
+
+      throwIfSupabaseError(
+        error,
+        "upsertAgentReferenceAssetsForVideo update failed",
+      );
+      persistedByCanonicalName.set(reference.canonicalName, mapReferenceAsset(data));
+      continue;
+    }
+
+    const { data, error } = await supabase
+      .from("reference_assets")
+      .insert({
         ...(reference.id ? { id: reference.id } : {}),
         video_id: videoId,
         media_asset_id: reference.mediaAssetId ?? null,
@@ -122,15 +172,58 @@ export async function replaceAgentReferenceAssetsForVideo(
         status: reference.status ?? "planned",
         conditioning_canonical_names:
           reference.conditioningCanonicalNames ?? [],
-      })),
-    )
+      })
+      .select("*")
+      .single();
+
+    throwIfSupabaseError(
+      error,
+      "upsertAgentReferenceAssetsForVideo insert failed",
+    );
+    persistedByCanonicalName.set(reference.canonicalName, mapReferenceAsset(data));
+  }
+
+  // Preserve existing rows absent from the incoming batch so their
+  // images stay reachable. Order: persisted batch first (in incoming
+  // order), then the preserved rows by their original creation date.
+  const out: ReferenceAsset[] = references
+    .map((reference) => persistedByCanonicalName.get(reference.canonicalName))
+    .filter((value): value is ReferenceAsset => value !== undefined);
+
+  for (const existing of existingRows) {
+    if (!persistedByCanonicalName.has(existing.canonicalName)) {
+      out.push(existing);
+    }
+  }
+
+  return out;
+}
+
+/**
+ * @deprecated Use `upsertAgentReferenceAssetsForVideo`. Kept as a thin
+ * wrapper that forwards to the upsert so any caller still importing the
+ * old name keeps working until the next cleanup.
+ */
+export async function replaceAgentReferenceAssetsForVideo(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  references: CreateReferenceAssetInput[],
+): Promise<ReferenceAsset[]> {
+  return upsertAgentReferenceAssetsForVideo(supabase, videoId, references);
+}
+
+async function listAgentReferenceAssetsForVideo(
+  supabase: SupabaseDataClient,
+  videoId: string,
+): Promise<ReferenceAsset[]> {
+  const { data, error } = await supabase
+    .from("reference_assets")
     .select("*")
+    .eq("video_id", videoId)
+    .eq("source", "agent_reference_plan")
     .order("created_at", { ascending: true });
 
-  throwIfSupabaseError(
-    error,
-    "replaceAgentReferenceAssetsForVideo insert failed",
-  );
+  throwIfSupabaseError(error, "listAgentReferenceAssetsForVideo failed");
   return data.map(mapReferenceAsset);
 }
 
