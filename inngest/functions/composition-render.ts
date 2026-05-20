@@ -49,6 +49,12 @@ export const renderCompositionExport = inngest.createFunction(
     if (!composition || composition.videoId !== data.videoId) {
       throw new Error("Composition not found for render job.");
     }
+
+    const presetId = data.presetId ?? composition.presetId;
+    if (!presetId) {
+      throw new Error("Composition render job is missing preset_id.");
+    }
+    const presetName = data.presetName ?? "Assembly preset";
     if (composition.exportStatus !== "rendering") {
       throw new Error(
         `Composition export status is "${composition.exportStatus}", expected "rendering".`,
@@ -134,6 +140,8 @@ export const renderCompositionExport = inngest.createFunction(
         supabase,
         videoId: data.videoId,
         compositionId: data.compositionId,
+        presetId,
+        presetName,
         createdBy: data.requestedByUserId,
         mp4Buffer,
         placements,

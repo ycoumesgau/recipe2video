@@ -12,6 +12,7 @@ import type {
   AssemblyAudioClip,
   AssemblyAudioSync,
   AssemblyAudioTrack,
+  AssemblyPreset,
   AssemblyRemotionProps,
   AssemblySegmentClip,
   AssemblyTimelineState,
@@ -27,7 +28,9 @@ import {
   readRenderProgress,
   type RenderProgress,
 } from "../render-progress";
-import { getLatestCompositionByVideoId } from "../repositories/assembly.repository";
+import { resolveActivePreset } from "../resolve-active-preset";
+import { listPresetsByVideoId } from "../repositories/assembly-presets.repository";
+import { getLatestCompositionByPresetId } from "../repositories/assembly.repository";
 import {
   buildClipsFromPlacements,
   createDefaultAudioClip,
@@ -65,11 +68,16 @@ export interface AssemblyFinalExport {
   asset: MediaAsset;
   /** Freshly signed Supabase URL that triggers a browser download. */
   downloadUrl: string;
+  presetId?: string | null;
+  presetName?: string | null;
 }
 
 export interface AssemblyPageData {
   projectTitle: string;
   projectStatus: string;
+  presets: AssemblyPreset[];
+  activePreset: AssemblyPreset | null;
+  activePresetId: string | null;
   composition: Composition | null;
   /** Latest typed snapshot of the cloud-render progress, when one is running. */
   renderProgress: RenderProgress | null;
@@ -94,14 +102,20 @@ export interface AssemblyPageData {
 
 export async function getAssemblyPageData(
   videoId: string,
+  options: { presetId?: string | null } = {},
 ): Promise<AssemblyPageData> {
   const supabase = createSupabaseAdminClient();
-  const [project, segments, mediaAssets, composition] = await Promise.all([
+  const [project, segments, mediaAssets, presets] = await Promise.all([
     getVideoProjectById(supabase, videoId),
     listSegmentsByVideoId(supabase, videoId),
     listMediaAssetsByVideoId(supabase, videoId),
-    getLatestCompositionByVideoId(supabase, videoId),
+    listPresetsByVideoId(supabase, videoId),
   ]);
+
+  const activePreset = resolveActivePreset(presets, options.presetId);
+  const composition = activePreset
+    ? await getLatestCompositionByPresetId(supabase, activePreset.id)
+    : null;
 
   const acceptedSegments = segments.filter(
     (segment) => segment.status === "accepted",
@@ -109,7 +123,9 @@ export async function getAssemblyPageData(
   const audioTrack = await buildAudioTrack(
     supabase,
     mediaAssets,
-    composition?.audioMediaAssetId ?? null,
+    activePreset?.audioMediaAssetId ??
+      composition?.audioMediaAssetId ??
+      null,
     SIGNED_URL_TTL_SECONDS,
   );
 
@@ -134,8 +150,8 @@ export async function getAssemblyPageData(
   // Decode placements from compositions.segment_order (tolerant of three
   // legacy shapes — see readPlacementsState).
   const persistedPlacements = readPlacementsState(
-    composition?.segmentOrder ?? null,
-    composition?.audioSync ?? null,
+    activePreset?.segmentOrder ?? composition?.segmentOrder ?? null,
+    activePreset?.audioSync ?? composition?.audioSync ?? null,
     availableDurations,
   );
   const placements =
@@ -150,9 +166,10 @@ export async function getAssemblyPageData(
 
   // Build the timeline-side audio state (just audioClips post-PR A).
   const persistedTimelineState = readTimelineState(
-    composition?.audioSync ?? null,
+    activePreset?.audioSync ?? composition?.audioSync ?? null,
     {
-      audioMediaAssetId: composition?.audioMediaAssetId,
+      audioMediaAssetId:
+        activePreset?.audioMediaAssetId ?? composition?.audioMediaAssetId,
       audioDurationSeconds: audioTrack?.durationSeconds,
     },
   );
@@ -195,15 +212,20 @@ export async function getAssemblyPageData(
     audioClips: timelineState.audioClips,
   });
 
+  const presetNameById = new Map(presets.map((preset) => [preset.id, preset.name]));
   const finalExports = await buildFinalExports(
     supabase,
     mediaAssets,
     SIGNED_URL_TTL_SECONDS,
+    presetNameById,
   );
 
   return {
     projectTitle: project?.title ?? "Assembly",
     projectStatus: project?.status ?? "assembling",
+    presets,
+    activePreset,
+    activePresetId: activePreset?.id ?? null,
     composition,
     renderProgress: readRenderProgress(composition?.renderProgress ?? null),
     remotionProps,
@@ -227,6 +249,7 @@ async function buildFinalExports(
   supabase: SupabaseDataClient,
   mediaAssets: MediaAsset[],
   signedUrlTtlSeconds: number,
+  presetNameById: Map<string, string>,
 ) {
   const exports = mediaAssets
     .filter(
@@ -236,7 +259,7 @@ async function buildFinalExports(
         asset.storagePath,
     )
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-  const out: { asset: MediaAsset; downloadUrl: string }[] = [];
+  const out: AssemblyFinalExport[] = [];
   for (const asset of exports) {
     try {
       const downloadUrl = await createStorageSignedUrl(supabase, {
@@ -245,7 +268,15 @@ async function buildFinalExports(
         expiresInSeconds: signedUrlTtlSeconds,
         download: asset.originalFilename ?? true,
       });
-      out.push({ asset, downloadUrl });
+      const metadata = asset.metadata as Record<string, unknown> | null;
+      const presetId =
+        typeof metadata?.presetId === "string" ? metadata.presetId : null;
+      out.push({
+        asset,
+        downloadUrl,
+        presetId,
+        presetName: presetId ? (presetNameById.get(presetId) ?? null) : null,
+      });
     } catch (error) {
       console.error(
         "[getAssemblyPageData] signing download URL failed for media_asset:",

@@ -120,6 +120,8 @@ export interface RecipeAgentSyncRequestedData extends WorkflowAuthEventData {
 export interface CompositionRenderRequestedData extends WorkflowAuthEventData {
   videoId: string;
   compositionId: string;
+  presetId: string;
+  presetName: string;
 }
 
 export type CostLogRequestedData = WorkflowAuthEventData & CreateCostLogInput;
