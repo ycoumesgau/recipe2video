@@ -2,6 +2,7 @@ import type { MediaAssetStatus } from "./media-asset-status";
 
 export type MediaAssetType =
   | "recipe_source"
+  | "agent_message_attachment"
   | "reference_image"
   | "runway_output"
   | "accepted_clip"

@@ -6,7 +6,7 @@ import { buildRecipeAgentUserChatContent } from "./seed-recipe-agent-chat-turn";
 test("buildRecipeAgentUserChatContent appends note when images attached", () => {
   const text = buildRecipeAgentUserChatContent("Hello", 2);
   assert.match(text, /^Hello\n\n\(/);
-  assert.match(text, /2 recipe source image/);
+  assert.match(text, /2 image\(s\) attached to the Cursor SDK call/);
 });
 
 test("buildRecipeAgentUserChatContent leaves message unchanged when no images", () => {

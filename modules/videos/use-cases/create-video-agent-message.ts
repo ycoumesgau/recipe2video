@@ -16,6 +16,8 @@ export interface BuildRecipeAgentMessagePayloadInput {
   pastedRecipeText?: string;
   /** Optional creator notes included verbatim in the first agent turn. */
   complementaryAgentInstructions?: string;
+  attachmentMediaAssetIds?: string[];
+  complementaryAttachmentFileNames?: string[];
 }
 
 export function buildRecipeAgentMessagePayload(
@@ -31,6 +33,9 @@ export function buildRecipeAgentMessagePayload(
     message: buildInitialRecipeAgentMessage(input),
     requestedByUserId: input.profileId,
     isAllowlisted: true,
+    ...(input.attachmentMediaAssetIds?.length
+      ? { attachmentMediaAssetIds: input.attachmentMediaAssetIds }
+      : {}),
   };
 }
 
@@ -63,6 +68,13 @@ function buildInitialRecipeAgentMessage(
           input.complementaryAgentInstructions,
         ]
       : []),
+    input.complementaryAttachmentFileNames?.length
+      ? [
+          "",
+          "Complementary reference images are attached to this Cursor agent turn as signed image URLs (vision), in addition to any recipe source photos:",
+          ...input.complementaryAttachmentFileNames.map((name) => `- ${name}`),
+        ]
+      : null,
     "",
     "Production defaults:",
     input.productionDefaults.targetDurationSeconds

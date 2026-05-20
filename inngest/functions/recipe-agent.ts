@@ -64,6 +64,7 @@ export const sendRecipeAgentMessageWorkflow = inngest.createFunction(
       requestedByUserId: data.requestedByUserId,
       stage: data.stage,
       message: data.message,
+      attachmentMediaAssetIds: data.attachmentMediaAssetIds,
     });
   },
 );

@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
+import { AgentMessageAttachmentField } from "@/modules/recipe-agent/ui/agent-message-attachment-field";
 import {
   createVideoDraftAction,
   type NewVideoWizardActionState,
@@ -85,7 +85,7 @@ export function NewVideoWizardForm() {
     )?.value ?? cursorAgentReasoningOptions[0]?.value;
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form action={formAction} className="space-y-6" encType="multipart/form-data">
       {state.message ? (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -240,20 +240,15 @@ export function NewVideoWizardForm() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
-            <Label htmlFor="complementaryAgentInstructions">Agent notes</Label>
-            <Textarea
-              id="complementaryAgentInstructions"
-              name="complementaryAgentInstructions"
-              maxLength={MAX_COMPLEMENTARY_AGENT_INSTRUCTIONS_LENGTH}
-              placeholder='e.g. For arancini, show a ball about 5–6 cm in diameter so scale stays consistent across shots.'
-              rows={4}
-            />
-            <p className="text-xs text-muted-foreground">
-              Leave blank if you have nothing specific to add. Saved on the draft
-              and sent with the first analysis request only.
-            </p>
-          </div>
+          <AgentMessageAttachmentField
+            fileInputName="complementaryAgentAttachments"
+            helperText="Leave blank if you have nothing specific to add. Notes and attachments are saved on the draft and sent with the first analysis request only."
+            label="Agent notes"
+            maxLength={MAX_COMPLEMENTARY_AGENT_INSTRUCTIONS_LENGTH}
+            placeholder="e.g. For arancini, show a ball about 5–6 cm in diameter so scale stays consistent across shots."
+            textareaId="complementaryAgentInstructions"
+            textareaName="complementaryAgentInstructions"
+          />
         </CardContent>
       </Card>
 

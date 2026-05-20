@@ -23,11 +23,18 @@ export const RECIPE_SOURCE_DASHBOARD_IMAGE_SIGNED_URL_TTL_SECONDS = 60 * 60;
 /** Cap images per Cursor send to avoid model / request size issues. */
 export const RECIPE_SOURCE_CURSOR_AGENT_MAX_IMAGES = 16;
 
+/** Max images attached to a single recipe agent message (complementary notes or chat). */
+export const MAX_AGENT_MESSAGE_ATTACHMENTS = 8;
+
+export const AGENT_MESSAGE_ATTACHMENT_ACCEPT =
+  "image/jpeg,image/png,image/webp";
+
 export const MEDIA_ASSET_STORAGE_BUCKET_BY_TYPE: Record<
   MediaAssetType,
   MediaStorageBucket
 > = {
   recipe_source: MEDIA_STORAGE_BUCKETS.recipeSources,
+  agent_message_attachment: MEDIA_STORAGE_BUCKETS.recipeSources,
   reference_image: MEDIA_STORAGE_BUCKETS.referenceImages,
   runway_output: MEDIA_STORAGE_BUCKETS.runwayOutputs,
   accepted_clip: MEDIA_STORAGE_BUCKETS.acceptedClips,

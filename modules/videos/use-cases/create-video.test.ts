@@ -82,6 +82,22 @@ test("buildRecipeAgentMessagePayload omits complementary block when absent", () 
   );
 });
 
+test("buildRecipeAgentMessagePayload includes complementary attachment ids and copy", () => {
+  const payload = buildRecipeAgentMessagePayload({
+    videoId: "video-1",
+    profileId: "user-1",
+    sourceSummary: textSource(),
+    productionDefaults: productionDefaultsWithDuration,
+    intent: "analyze",
+    attachmentMediaAssetIds: ["asset-1"],
+    complementaryAttachmentFileNames: ["scale-ref.jpg"],
+  });
+
+  assert.deepEqual(payload?.attachmentMediaAssetIds, ["asset-1"]);
+  assert.match(payload?.message ?? "", /Complementary reference images/i);
+  assert.match(payload?.message ?? "", /scale-ref\.jpg/);
+});
+
 test("buildRecipeAgentMessagePayload mentions vision attachment for photo sources", () => {
   const payload = buildRecipeAgentMessagePayload({
     videoId: "video-1",

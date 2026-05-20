@@ -1,6 +1,7 @@
 import { getCurrentProfile } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { persistMediaAssetFile } from "@/modules/media-assets/use-cases/persist-media-asset";
+import { persistAgentMessageAttachments } from "@/modules/media-assets/use-cases/persist-agent-message-attachments";
 import {
   CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL,
   CURSOR_AGENT_FAST_BY_MODEL,
@@ -45,6 +46,8 @@ export interface CreateVideoDraftInput {
   intent?: CreateVideoDraftIntent;
   /** Optional notes appended to the first recipe agent message when analyzing on create. */
   complementaryAgentInstructions?: string;
+  /** Optional vision images for the first agent turn (Cursor SDK). */
+  complementaryAgentAttachmentFiles?: File[];
 }
 
 export interface CreateVideoDraftResult {
@@ -139,6 +142,13 @@ export async function createVideoDraft(
     });
   }
 
+  const complementaryAttachments = await persistAgentMessageAttachments({
+    supabase,
+    videoId: project.id,
+    files: input.complementaryAgentAttachmentFiles ?? [],
+    createdBy: profile.id,
+  });
+
   // Trigger the persistent recipe-agent workflow for url, photos, and text
   // sources. Demo fixtures keep their dedicated load action and do not need
   // Cursor/OpenAI.
@@ -150,6 +160,10 @@ export async function createVideoDraft(
     pastedRecipeText,
     intent,
     complementaryAgentInstructions,
+    attachmentMediaAssetIds: complementaryAttachments.map((asset) => asset.id),
+    complementaryAttachmentFileNames: complementaryAttachments.map(
+      (asset) => asset.originalFilename ?? "image",
+    ),
   });
   if (agentPayload) {
     await inngest.send({

@@ -38,7 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { AgentMessageAttachmentField } from "./agent-message-attachment-field";
 import type { VideoProject } from "@/modules/videos/video.types";
 
 import {
@@ -317,7 +317,7 @@ export function RecipeAgentPanel({
           </form>
         ) : null}
 
-        <form action={messageAction} className="space-y-3">
+        <form action={messageAction} className="space-y-3" encType="multipart/form-data">
           <input name="videoId" type="hidden" value={project.id} />
           <div className="grid gap-3 md:grid-cols-[220px_1fr]">
             <Select defaultValue="general" name="stage">
@@ -332,10 +332,12 @@ export function RecipeAgentPanel({
                 ))}
               </SelectContent>
             </Select>
-            <Textarea
-              name="message"
+            <AgentMessageAttachmentField
+              fileInputName="agentAttachments"
+              label="Message"
               placeholder="Example: Change the opening so the caramel crack is the first payoff, then update logical scenes and Seedance segments without launching generation."
-              rows={4}
+              textareaId="recipe-agent-message"
+              textareaName="message"
             />
           </div>
           <PendingButton icon={<MessageSquareText className="h-4 w-4" />}>

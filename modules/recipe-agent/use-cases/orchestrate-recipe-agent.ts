@@ -28,7 +28,9 @@ import {
   buildRecipeAgentUserChatContent,
   seedRecipeAgentChatTurn,
 } from "./seed-recipe-agent-chat-turn";
+import { buildAgentAttachmentCursorImages } from "../services/agent-attachment-cursor-images";
 import { buildRecipeSourceCursorImagesForAgent } from "../services/recipe-source-cursor-images";
+import { RECIPE_SOURCE_CURSOR_AGENT_MAX_IMAGES } from "@/modules/media-assets/media-asset.constants";
 import type {
   AgentRun,
   CreateAgentRunInput,
@@ -62,6 +64,7 @@ interface EnsureRecipeAgentInput {
 interface SendRecipeAgentMessageInput extends EnsureRecipeAgentInput {
   stage: RecipeAgentStage;
   message: string;
+  attachmentMediaAssetIds?: string[];
 }
 
 export interface RecipeAgentOrchestrationDependencies {
@@ -143,11 +146,22 @@ export async function sendRecipeAgentMessage(
     deps.getRecipeAgentService?.(project) ?? deps.recipeAgentService;
 
   const currentProject = project;
-  const cursorImages = await buildRecipeSourceCursorImagesForAgent(
+  const recipeSourceImages = await buildRecipeSourceCursorImagesForAgent(
     input.supabase,
     currentProject,
     input.stage,
   );
+  const attachmentImages = await buildAgentAttachmentCursorImages(
+    input.supabase,
+    {
+      videoId: input.videoId,
+      mediaAssetIds: input.attachmentMediaAssetIds ?? [],
+    },
+  );
+  const cursorImages = [
+    ...recipeSourceImages,
+    ...attachmentImages,
+  ].slice(0, RECIPE_SOURCE_CURSOR_AGENT_MAX_IMAGES);
   const seedUserMessage = buildRecipeAgentUserChatContent(
     input.message,
     cursorImages.length,
