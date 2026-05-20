@@ -50,11 +50,11 @@ export async function loadVideoLibraryCardMetrics(
     );
     const totalCostCredits =
       runwayCreditsByVideoId.get(project.id) ?? project.totalCostCredits;
-    const nextAction = computeNextAction({
+    const nextActionResult = computeNextAction({
       project,
       acceptedCount: acceptedSegments,
       totalCount: totalSegments,
-    }).cta;
+    });
 
     metrics.set(project.id, {
       acceptedSegments,
@@ -65,7 +65,8 @@ export async function loadVideoLibraryCardMetrics(
         (project.createdBy
           ? ownerNameByUserId.get(project.createdBy)
           : undefined) ?? DEFAULT_OWNER_NAME,
-      nextAction,
+      nextAction: nextActionResult.cta,
+      nextActionHref: nextActionResult.href,
     });
   }
 

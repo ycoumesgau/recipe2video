@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { AlertTriangle, ImageIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -28,22 +27,10 @@ import type {
   ReferenceAssetReviewItem,
   ReferenceImageVariantItem,
 } from "../reference.types";
-import type { ReferenceStatus } from "../reference-status";
+import { ARTIFACT_STATUS_BADGE_VARIANT } from "@/modules/shared/ui/artifact-image-card";
+
 import { ReferenceCardActions } from "./reference-card-actions";
 import { ReferenceCardPreview } from "./reference-card-preview";
-
-const statusBadgeVariant: Record<
-  ReferenceStatus,
-  "default" | "secondary" | "destructive" | "outline"
-> = {
-  planned: "outline",
-  generating: "default",
-  generated: "secondary",
-  approved: "default",
-  rejected: "destructive",
-  uploaded_to_runway: "secondary",
-  failed: "destructive",
-};
 
 export function ReferenceCard({
   item,
@@ -70,7 +57,7 @@ export function ReferenceCard({
           {isReadOnly ? (
             <Badge variant="outline">Library · read-only</Badge>
           ) : null}
-          <Badge variant={statusBadgeVariant[reference.status]}>
+          <Badge variant={ARTIFACT_STATUS_BADGE_VARIANT[reference.status]}>
             {reference.status}
           </Badge>
         </CardAction>

@@ -5,6 +5,7 @@ export type VideoLibraryCardMetrics = {
   totalCostCredits: number;
   ownerName: string;
   nextAction: string;
+  nextActionHref: string | null;
 };
 
 export type VideoLibraryCardMetricsByVideoId = Map<string, VideoLibraryCardMetrics>;

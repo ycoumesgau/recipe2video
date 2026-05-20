@@ -3,11 +3,13 @@ import type { SegmentFeedback } from "@/modules/feedback/feedback.types";
 import { listSegmentFeedbacksBySegmentId } from "@/modules/feedback/repositories/feedback.repository";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import { listMediaAssetsByGenerationIds } from "@/modules/media-assets/repositories/media-asset.repository";
-import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
+import { listLogicalScenesByVideoId } from "@/modules/storyboard/repositories/logical-scene.repository";
 import {
   getSegmentById,
   listSegmentsByVideoId,
 } from "@/modules/storyboard/repositories/segment.repository";
+import { listLogicalScenesForSegment } from "@/modules/storyboard/services/resolve-logical-scene-ids";
+import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import { matchesReference } from "@/modules/references/reference-matching";
 import type { ReferenceStatus } from "@/modules/references/reference-status";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
@@ -102,6 +104,8 @@ export interface SegmentReviewData {
    * mistake.
    */
   isLastSegmentOfVideo: boolean;
+  /** Editorial scene numbers (1-based `position`) included in this segment. */
+  segmentLogicalScenePositions: number[];
 }
 
 export async function getSegmentReviewData(
@@ -124,16 +128,26 @@ export async function getSegmentReviewData(
       referenceResolutions: [],
       isLastSegmentOfVideo: false,
       navigation: null,
+      segmentLogicalScenePositions: [],
     };
   }
 
-  const [project, generations, feedbacks, referenceResolutions, allSegments] = await Promise.all([
+  const [project, generations, feedbacks, referenceResolutions, allSegments, logicalScenes] =
+    await Promise.all([
     getVideoProjectById(supabase, input.videoId),
     listGenerationsBySegmentId(supabase, input.segmentId),
     listSegmentFeedbacksBySegmentId(supabase, input.segmentId),
     resolveSegmentReferenceStatuses(supabase, segment),
     listSegmentsByVideoId(supabase, input.videoId),
+    listLogicalScenesByVideoId(supabase, input.videoId),
   ]);
+  const segmentLogicalScenePositions = listLogicalScenesForSegment(
+    segment,
+    logicalScenes,
+    allSegments,
+  )
+    .map((scene) => scene.position)
+    .sort((left, right) => left - right);
   const maxPosition = allSegments.reduce(
     (acc, current) => Math.max(acc, current.position),
     -Infinity,
@@ -176,6 +190,7 @@ export async function getSegmentReviewData(
     feedbacks,
     referenceResolutions,
     isLastSegmentOfVideo,
+    segmentLogicalScenePositions,
     variants: allGenerations.map((generation) => ({
       generation,
       mediaAsset:

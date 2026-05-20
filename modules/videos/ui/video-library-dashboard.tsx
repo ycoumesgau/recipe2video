@@ -12,7 +12,7 @@ import {
   Clapperboard,
   Clock3,
   Filter,
-  PlayCircle,
+  LayoutDashboard,
   PlusCircle,
   Search,
   Sparkles,
@@ -55,6 +55,7 @@ import {
   VIDEO_STATUSES,
   type VideoStatus,
 } from "@/modules/videos/video-status";
+import { resolveNextActionNavIcon } from "@/modules/videos/next-action-nav";
 import type {
   ActiveGenerationQueueItem,
   DashboardSortKey,
@@ -87,6 +88,10 @@ const thumbnailToneClasses: Record<VideoDashboardProject["thumbnailTone"], strin
   pink: "from-pink-500/35 via-rose-400/20 to-background",
   sky: "from-sky-500/35 via-cyan-400/20 to-background",
 };
+
+/** Kitchen default-view photos place the dish ~⅓ up from the bottom; anchor crop there. */
+const projectCardThumbnailClassName =
+  "h-full w-full object-cover object-[center_66.67%]";
 
 export function VideoLibraryDashboard({
   data,
@@ -358,10 +363,11 @@ function ProjectCard({
 }) {
   const completion = getSegmentProgress(project);
   const agentStatus = project.agentStatus ?? "idle";
-  const projectHref =
+  const overviewHref =
     project.recipeSourceKind === "demo_fixture" && project.id === "paris-brest-demo"
       ? "/demo"
       : `/videos/${project.id}`;
+  const NextActionIcon = resolveNextActionNavIcon(project.nextActionHref);
 
   return (
     <Card className="min-w-0" size="sm">
@@ -370,7 +376,7 @@ function ProjectCard({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             alt={project.thumbnailLabel}
-            className="h-full w-full object-cover"
+            className={projectCardThumbnailClassName}
             src={project.thumbnailUrl}
           />
           <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/70 to-transparent p-3">
@@ -449,17 +455,24 @@ function ProjectCard({
 
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button asChild className="flex-1" variant="outline">
-            <Link href={projectHref}>
-              Open project
-              <ChevronRight className="h-4 w-4" />
+            <Link href={overviewHref}>
+              Overview
+              <LayoutDashboard className="h-4 w-4" />
             </Link>
           </Button>
-          <Button asChild className="flex-1">
-            <Link href={projectHref}>
-              Resume
-              <PlayCircle className="h-4 w-4" />
-            </Link>
-          </Button>
+          {project.nextActionHref ? (
+            <Button asChild className="flex-1">
+              <Link href={project.nextActionHref}>
+                {project.nextAction}
+                <NextActionIcon className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <Button className="flex-1" disabled type="button">
+              {project.nextAction}
+              <NextActionIcon className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
