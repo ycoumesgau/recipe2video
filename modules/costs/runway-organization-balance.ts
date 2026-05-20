@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { createRunwayClient } from "@/modules/generation/services/runway.service";
 
 export interface RunwayOrganizationBalance {
@@ -7,7 +9,8 @@ export interface RunwayOrganizationBalance {
   maxMonthlyCreditSpend: number | null;
 }
 
-export async function fetchRunwayOrganizationBalance(): Promise<RunwayOrganizationBalance | null> {
+export const fetchRunwayOrganizationBalance = cache(
+  async (): Promise<RunwayOrganizationBalance | null> => {
   if (!process.env.RUNWAYML_API_SECRET) {
     return null;
   }
@@ -33,4 +36,5 @@ export async function fetchRunwayOrganizationBalance(): Promise<RunwayOrganizati
   } catch {
     return null;
   }
-}
+  },
+);

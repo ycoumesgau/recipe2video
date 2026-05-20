@@ -6,9 +6,7 @@ import {
   isAuthAccessError,
 } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
-import { getRunwayBudgetState } from "@/modules/costs/get-cost-dashboard-data";
-import { sumRunwayCreditsUsed } from "@/modules/costs/repositories/cost.repository";
-import { fetchRunwayOrganizationBalance } from "@/modules/costs/runway-organization-balance";
+import { loadRunwayBudgetSnapshot } from "@/modules/costs/load-runway-budget-snapshot";
 import { readDashboardDataMode } from "@/modules/dashboard/dashboard-data-mode";
 import { countActiveGenerations } from "@/modules/generation/repositories/generation.repository";
 import { countGeneratingReferenceAssets } from "@/modules/references/repositories/reference.repository";
@@ -49,25 +47,21 @@ export default async function DashboardLayout({
 }
 
 async function loadHeaderState() {
-  // Best-effort: if Supabase is not configured during local rehearsals, fall
-  // back to neutral defaults instead of crashing the layout.
   try {
     const supabase = createSupabaseAdminClient();
-    const [creditsUsed, seedanceActiveCount, referenceImageActiveCount, runwayBalance] =
+    const [snapshot, seedanceActiveCount, referenceImageActiveCount] =
       await Promise.all([
-        sumRunwayCreditsUsed(supabase),
+        loadRunwayBudgetSnapshot(),
         countActiveGenerations(supabase),
         countGeneratingReferenceAssets(supabase),
-        fetchRunwayOrganizationBalance(),
       ]);
     const activeTaskCount = seedanceActiveCount + referenceImageActiveCount;
-    const budget = getRunwayBudgetState(creditsUsed, {
-      runwayCreditBalance: runwayBalance?.creditBalance ?? null,
-      maxMonthlyCreditSpend: runwayBalance?.maxMonthlyCreditSpend ?? null,
-    });
+
     return {
-      creditsUsed,
-      creditsRemaining: budget.runwayBalanceKnown ? budget.creditsRemaining : null,
+      creditsUsed: snapshot.creditsUsed,
+      creditsRemaining: snapshot.budget.runwayBalanceKnown
+        ? snapshot.budget.creditsRemaining
+        : null,
       activeTaskCount,
     };
   } catch {
