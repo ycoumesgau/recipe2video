@@ -14,7 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { planGptImageCostCreditsBackfill } from "@/modules/costs/backfill-gpt-image-cost-credits";
 import { mapCostLog } from "@/modules/costs/repositories/cost.repository";
-import type { Database } from "@/shared/supabase/database.types";
+import type { Database, Json } from "@/shared/supabase/database.types";
 
 type BackfillSupabaseClient = SupabaseClient<Database>;
 
@@ -81,7 +81,7 @@ async function main() {
       .from("cost_logs")
       .update({
         credits_used: candidate.creditsUsed,
-        metadata: mergedMetadata,
+        metadata: mergedMetadata as Json,
       })
       .eq("id", candidate.logId);
 
