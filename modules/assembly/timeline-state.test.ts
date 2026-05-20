@@ -15,6 +15,7 @@ import {
   projectLegacyAudioSync,
   readPlacementsState,
   readTimelineState,
+  resolveLinkedAudioMediaAssetId,
   serializePlacements,
   splitPlacementAtSourceSeconds,
 } from "./timeline-state";
@@ -688,6 +689,55 @@ test("createDefaultAudioClip uses provided duration", () => {
 test("createDefaultAudioClip falls back to 30s when duration is missing", () => {
   const clip = createDefaultAudioClip({ mediaAssetId: "asset_y" });
   assert.equal(clip.outSeconds, 30);
+});
+
+test("resolveLinkedAudioMediaAssetId returns null when there are no audio clips", () => {
+  assert.equal(
+    resolveLinkedAudioMediaAssetId([], "asset_persisted"),
+    null,
+  );
+});
+
+test("resolveLinkedAudioMediaAssetId keeps a persisted id that matches a clip", () => {
+  assert.equal(
+    resolveLinkedAudioMediaAssetId(
+      [
+        {
+          id: "c1",
+          mediaAssetId: "asset_a",
+          startOnTimelineSeconds: 0,
+          inSeconds: 0,
+          outSeconds: 10,
+          volume: 1,
+          fadeInSeconds: 0,
+          fadeOutSeconds: 0,
+        },
+      ],
+      "asset_a",
+    ),
+    "asset_a",
+  );
+});
+
+test("resolveLinkedAudioMediaAssetId uses the first clip when persisted id is stale", () => {
+  assert.equal(
+    resolveLinkedAudioMediaAssetId(
+      [
+        {
+          id: "c1",
+          mediaAssetId: "asset_clip",
+          startOnTimelineSeconds: 0,
+          inSeconds: 0,
+          outSeconds: 10,
+          volume: 1,
+          fadeInSeconds: 0,
+          fadeOutSeconds: 0,
+        },
+      ],
+      "asset_stale",
+    ),
+    "asset_clip",
+  );
 });
 
 // ---------------------------------------------------------------------------

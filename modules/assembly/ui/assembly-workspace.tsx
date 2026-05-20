@@ -78,6 +78,7 @@ import type { ExportStatus } from "@/modules/assembly/export-status";
 import type { RenderProgress } from "@/modules/assembly/render-progress";
 import {
   generatePlacementId,
+  resolveLinkedAudioMediaAssetId,
   serializePlacements,
 } from "@/modules/assembly/timeline-state";
 import type { AssemblyFinalExport } from "@/modules/assembly/use-cases/get-assembly-data";
@@ -211,11 +212,24 @@ export function AssemblyWorkspace({
     [setActivePresetId],
   );
 
+  const linkedAudioMediaAssetId = useMemo(
+    () =>
+      resolveLinkedAudioMediaAssetId(
+        audioClips,
+        initialRemotionProps.audio?.mediaAssetId,
+      ),
+    [audioClips, initialRemotionProps.audio?.mediaAssetId],
+  );
+
   const remotionProps = useMemo(
     () => ({
       ...initialRemotionProps,
       segments,
       audioClips,
+      audio:
+        audioClips.length > 0 && initialRemotionProps.audio
+          ? initialRemotionProps.audio
+          : null,
       showSegmentTitles: initialRemotionProps.showSegmentTitles ?? true,
     }),
     [audioClips, initialRemotionProps, segments],
@@ -520,7 +534,7 @@ export function AssemblyWorkspace({
 
             <form action={saveAction} className="space-y-3">
               <HiddenAssemblyFields
-                audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
+                audioMediaAssetId={linkedAudioMediaAssetId}
                 placements={placementsJson}
                 presetId={activePresetId}
                 timelineState={timelineStateJson}
@@ -531,7 +545,7 @@ export function AssemblyWorkspace({
 
             <form action={renderAction} className="space-y-3">
               <HiddenAssemblyFields
-                audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
+                audioMediaAssetId={linkedAudioMediaAssetId}
                 placements={placementsJson}
                 presetId={activePresetId}
                 timelineState={timelineStateJson}
@@ -599,7 +613,7 @@ export function AssemblyWorkspace({
       ) : null}
 
       <SaveAsNewPresetDialog
-        audioMediaAssetId={initialRemotionProps.audio?.mediaAssetId}
+        audioMediaAssetId={linkedAudioMediaAssetId}
         newPresetName={newPresetName}
         onNameChange={setNewPresetName}
         onOpenChange={setSaveAsNewOpen}
