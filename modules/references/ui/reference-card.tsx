@@ -1,12 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import {
-  AlertTriangle,
-  ImageIcon,
-  Sparkles,
-  Upload,
-} from "lucide-react";
+import { AlertTriangle, ImageIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -24,13 +19,9 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 
 import {
-  approveReferenceAction,
-  generateReferenceImageAction,
-  rejectReferenceAction,
   selectReferenceImageVariantAction,
   updateReferenceConditioningAction,
   updateReferencePromptAction,
-  uploadReferenceToRunwayAction,
 } from "../actions";
 import type {
   ConditioningAnchorPreview,
@@ -38,8 +29,8 @@ import type {
   ReferenceImageVariantItem,
 } from "../reference.types";
 import type { ReferenceStatus } from "../reference-status";
+import { ReferenceCardActions } from "./reference-card-actions";
 import { ReferenceCardPreview } from "./reference-card-preview";
-import { ReferenceFormSubmitButton } from "./reference-form-submit-button";
 
 const statusBadgeVariant: Record<
   ReferenceStatus,
@@ -54,8 +45,6 @@ const statusBadgeVariant: Record<
   failed: "destructive",
 };
 
-const PENDING_GENERATION_STATUSES: ReferenceStatus[] = ["planned", "failed"];
-
 export function ReferenceCard({
   item,
   onExpandPreview,
@@ -67,10 +56,6 @@ export function ReferenceCard({
 }) {
   const { mediaAsset, reference } = item;
   const isReadOnly = item.isLibraryGlobal === true;
-  const hasImage = Boolean(item.previewUrl);
-  const isPendingGeneration = PENDING_GENERATION_STATUSES.includes(
-    reference.status,
-  );
   const isGenerating = reference.status === "generating";
 
   return (
@@ -192,48 +177,7 @@ export function ReferenceCard({
         )}
 
         {isReadOnly ? null : (
-          <div className="flex flex-wrap gap-2">
-            <form action={generateReferenceImageAction}>
-              <input name="videoId" type="hidden" value={videoId} />
-              <input name="referenceId" type="hidden" value={reference.id} />
-              <ReferenceFormSubmitButton
-                disabled={isGenerating || !reference.prompt}
-                icon={<Sparkles className="h-4 w-4" />}
-                pendingLabel="Generating…"
-              >
-                {isGenerating
-                  ? "Generating…"
-                  : hasImage
-                    ? "Regenerate (keeps previous variants)"
-                    : "Generate image"}
-              </ReferenceFormSubmitButton>
-            </form>
-            <ReferenceActionButton
-              action={approveReferenceAction}
-              disabled={!hasImage || reference.status === "approved"}
-              label="Approve"
-              referenceId={reference.id}
-              variant="outline"
-              videoId={videoId}
-            />
-            <ReferenceActionButton
-              action={rejectReferenceAction}
-              disabled={reference.status === "rejected"}
-              label="Reject"
-              referenceId={reference.id}
-              variant="outline"
-              videoId={videoId}
-            />
-            <ReferenceActionButton
-              action={uploadReferenceToRunwayAction}
-              disabled={!mediaAsset?.storagePath || isPendingGeneration}
-              icon={<Upload className="h-4 w-4" />}
-              label="Upload to Runway"
-              referenceId={reference.id}
-              variant="outline"
-              videoId={videoId}
-            />
-          </div>
+          <ReferenceCardActions item={item} videoId={videoId} />
         )}
       </CardContent>
     </Card>
@@ -451,35 +395,6 @@ function ReferenceImageVariantRow({
         </form>
       </div>
     </div>
-  );
-}
-
-function ReferenceActionButton({
-  action,
-  disabled,
-  icon,
-  label,
-  referenceId,
-  variant,
-  videoId,
-}: {
-  action: (formData: FormData) => Promise<void>;
-  disabled?: boolean;
-  icon?: ReactNode;
-  label: string;
-  referenceId: string;
-  variant?: "default" | "outline";
-  videoId: string;
-}) {
-  return (
-    <form action={action}>
-      <input name="videoId" type="hidden" value={videoId} />
-      <input name="referenceId" type="hidden" value={referenceId} />
-      <Button disabled={disabled} size="sm" type="submit" variant={variant}>
-        {icon}
-        {label}
-      </Button>
-    </form>
   );
 }
 

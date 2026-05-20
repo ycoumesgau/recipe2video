@@ -72,10 +72,12 @@ export function ReferenceSectionGrid({
       </div>
       <ReferenceImageLightbox
         index={index}
+        items={items}
         onIndexChange={setIndex}
         onOpenChange={setOpen}
         open={open}
         slides={slides}
+        videoId={videoId}
       />
     </>
   );

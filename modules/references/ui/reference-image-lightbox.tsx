@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import type { ReferenceAssetReviewItem } from "../reference.types";
 import type { ReferenceStatus } from "../reference-status";
+import { ReferenceCardActions } from "./reference-card-actions";
 
 export type ReferenceLightboxSlide = {
   id: string;
@@ -43,19 +46,28 @@ const statusBadgeVariant: Record<
 
 export function ReferenceImageLightbox({
   index,
+  items,
   onIndexChange,
   onOpenChange,
   open,
   slides,
+  videoId,
 }: {
   index: number;
+  items: ReferenceAssetReviewItem[];
   onIndexChange: (index: number) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   slides: ReferenceLightboxSlide[];
+  videoId: string;
 }) {
   const slide = slides[index] ?? null;
+  const currentItem =
+    slide === null
+      ? null
+      : (items.find((item) => item.reference.id === slide.id) ?? null);
   const hasMultiple = slides.length > 1;
+  const isGenerating = currentItem?.reference.status === "generating";
 
   const goPrev = useCallback(() => {
     if (slides.length === 0) {
@@ -189,6 +201,34 @@ export function ReferenceImageLightbox({
               </p>
             </div>
           ) : null}
+
+          {isGenerating && currentItem ? (
+            <div className="space-y-1 rounded-lg border bg-muted/30 p-3">
+              <p className="text-xs font-medium">Runway progress</p>
+              <Progress
+                value={progressForRecipeReferenceCard(
+                  currentItem.reference.runwayProgress ?? null,
+                  currentItem.reference.runwayTaskStatus ?? null,
+                )}
+              />
+              <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  {currentItem.reference.runwayTaskStatus ?? "starting"}
+                </span>
+                {typeof currentItem.reference.runwayProgress === "number" ? (
+                  <span>
+                    {currentItem.reference.runwayProgress.toFixed(0)}%
+                  </span>
+                ) : (
+                  <span>queued / running</span>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {currentItem ? (
+            <ReferenceCardActions item={currentItem} videoId={videoId} />
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>
@@ -224,4 +264,23 @@ function LightboxMetric({ label, value }: { label: string; value: string }) {
       <p className="mt-1 font-medium">{value}</p>
     </div>
   );
+}
+
+function progressForRecipeReferenceCard(
+  runwayProgress: number | null,
+  runwayTaskStatus: string | null,
+): number {
+  if (typeof runwayProgress === "number") {
+    return Math.max(0, Math.min(100, runwayProgress));
+  }
+  if (runwayTaskStatus === "RUNNING") {
+    return 55;
+  }
+  if (runwayTaskStatus === "THROTTLED") {
+    return 18;
+  }
+  if (runwayTaskStatus === "PENDING") {
+    return 25;
+  }
+  return 15;
 }
