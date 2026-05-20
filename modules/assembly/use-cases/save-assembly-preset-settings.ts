@@ -5,16 +5,14 @@ import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import type {
   AssemblyPreset,
   AssemblyTimelineState,
+  Composition,
   SegmentPlacement,
 } from "../assembly.types";
 import {
   insertPreset,
   updatePreset,
 } from "../repositories/assembly-presets.repository";
-import {
-  upsertDraftCompositionForPreset,
-  type Composition,
-} from "../repositories/assembly.repository";
+import { upsertDraftCompositionForPreset } from "../repositories/assembly.repository";
 import {
   buildClipsFromPlacements,
   projectLegacyAudioSync,

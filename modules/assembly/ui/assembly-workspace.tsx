@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
 } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
@@ -93,6 +94,8 @@ import {
 } from "@/remotion/compositions/recipe-assembly";
 
 const initialActionState: AssemblyActionState = {};
+
+type AssemblyFormAction = NonNullable<ComponentProps<"form">["action"]>;
 
 const ALL_PRESETS_FILTER = "__all__";
 
@@ -657,10 +660,7 @@ function AssemblyPresetToolbar({
 }: {
   activePreset?: AssemblyPreset;
   activePresetId: string | null;
-  deleteAction: (
-    state: AssemblyActionState,
-    formData: FormData,
-  ) => Promise<AssemblyActionState>;
+  deleteAction: AssemblyFormAction;
   deleteState: AssemblyActionState;
   onRenameOpen: () => void;
   onSaveAsNewOpen: () => void;
@@ -802,10 +802,7 @@ function SaveAsNewPresetDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
   placementsJson: string;
-  saveAsNewAction: (
-    state: AssemblyActionState,
-    formData: FormData,
-  ) => Promise<AssemblyActionState>;
+  saveAsNewAction: AssemblyFormAction;
   segmentsCount: number;
   timelineStateJson: string;
   videoId: string;
@@ -861,10 +858,7 @@ function RenamePresetDialog({
   onOpenChange: (open: boolean) => void;
   open: boolean;
   presetName: string;
-  renameAction: (
-    state: AssemblyActionState,
-    formData: FormData,
-  ) => Promise<AssemblyActionState>;
+  renameAction: AssemblyFormAction;
   videoId: string;
 }) {
   return (
