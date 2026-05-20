@@ -18,7 +18,7 @@ import {
   Film,
   Loader2,
   MoreHorizontal,
-  Music2,
+  SlidersHorizontal,
   Pencil,
   Plus,
   Save,
@@ -76,7 +76,10 @@ import {
 } from "@/modules/assembly/actions";
 import type { ExportStatus } from "@/modules/assembly/export-status";
 import type { RenderProgress } from "@/modules/assembly/render-progress";
-import { generatePlacementId } from "@/modules/assembly/timeline-state";
+import {
+  generatePlacementId,
+  serializePlacements,
+} from "@/modules/assembly/timeline-state";
 import type { AssemblyFinalExport } from "@/modules/assembly/use-cases/get-assembly-data";
 import { VideoClipMixSection } from "@/modules/assembly/ui/audio-mix-panel";
 import { CloudRenderProgressCard } from "@/modules/assembly/ui/cloud-render-progress-card";
@@ -220,16 +223,18 @@ export function AssemblyWorkspace({
 
   const placementsJson = useMemo(
     () =>
-      JSON.stringify({
-        schema: "placements_v1",
-        placements: segments.map((segment) => ({
-          placementId: segment.placementId,
-          segmentId: segment.segmentId,
-          inSeconds: segment.inSeconds,
-          outSeconds: segment.outSeconds,
-          volume: segment.volume,
-        })),
-      }),
+      JSON.stringify(
+        serializePlacements(
+          segments.map((segment) => ({
+            placementId: segment.placementId,
+            segmentId: segment.segmentId,
+            inSeconds: segment.inSeconds,
+            outSeconds: segment.outSeconds,
+            volume: segment.volume ?? 1,
+            playbackRate: segment.playbackRate ?? 1,
+          })),
+        ),
+      ),
     [segments],
   );
 
@@ -271,6 +276,7 @@ export function AssemblyWorkspace({
           inSeconds: 0,
           outSeconds: catalogueEntry.durationSeconds,
           volume: 1,
+          playbackRate: 1,
         };
         return [
           ...current.slice(0, safeIndex),
@@ -435,13 +441,13 @@ export function AssemblyWorkspace({
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Music2 className="h-4 w-4" />
-                Audio mix
+                <SlidersHorizontal className="h-4 w-4" />
+                Volume & speed
               </CardTitle>
               <CardDescription>
-                Balance the diegetic video audio against the music. To change
-                volume on a sub-zone of a clip, split it on the timeline and
-                set a different volume on each piece.
+                Per clip on the timeline: set diegetic audio level (left) and
+                playback speed (right). To use different values on part of a
+                clip, split it first, then adjust each piece.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">

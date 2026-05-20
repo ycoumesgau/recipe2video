@@ -10,6 +10,7 @@ import {
   defaultPlacementsForSegments,
   generatePlacementId,
   getEmptyTimelineState,
+  getPlacementTimelineDurationSeconds,
   insertPlacementAt,
   projectLegacyAudioSync,
   readPlacementsState,
@@ -22,7 +23,12 @@ const buildSegmentMeta = (
   overrides: Partial<AssemblySegmentClip> = {},
 ): Omit<
   AssemblySegmentClip,
-  "placementId" | "position" | "inSeconds" | "outSeconds" | "volume"
+  | "placementId"
+  | "position"
+  | "inSeconds"
+  | "outSeconds"
+  | "volume"
+  | "playbackRate"
 > => ({
   segmentId: overrides.segmentId ?? "seg_1",
   mediaAssetId: overrides.mediaAssetId ?? "asset_1",
@@ -384,9 +390,84 @@ test("serializePlacements round-trips the volume field", () => {
       inSeconds: 0,
       outSeconds: 4,
       volume: 0.5,
+      playbackRate: 1,
     },
   ]);
   assert.equal(json.placements[0]?.volume, 0.5);
+});
+
+test("serializePlacements round-trips the playbackRate field", () => {
+  const json = serializePlacements([
+    {
+      placementId: "p_1",
+      segmentId: "seg_a",
+      inSeconds: 0,
+      outSeconds: 8,
+      volume: 1,
+      playbackRate: 2,
+    },
+  ]);
+  assert.equal(json.placements[0]?.playbackRate, 2);
+});
+
+test("readPlacementsState reads stored playbackRate", () => {
+  const durations = new Map([["seg_a", 8]]);
+  const placements = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_fast",
+          segmentId: "seg_a",
+          inSeconds: 0,
+          outSeconds: 8,
+          playbackRate: 2,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.equal(placements[0]?.playbackRate, 2);
+});
+
+test("readPlacementsState defaults missing playbackRate to 1", () => {
+  const durations = new Map([["seg_a", 8]]);
+  const placements = readPlacementsState(
+    {
+      schema: "placements_v1",
+      placements: [
+        {
+          placementId: "p_unset",
+          segmentId: "seg_a",
+          inSeconds: 0,
+          outSeconds: 8,
+        },
+      ],
+    },
+    null,
+    durations,
+  );
+  assert.equal(placements[0]?.playbackRate, 1);
+});
+
+test("getPlacementTimelineDurationSeconds divides source trim by playbackRate", () => {
+  assert.equal(
+    getPlacementTimelineDurationSeconds({
+      inSeconds: 0,
+      outSeconds: 8,
+      playbackRate: 2,
+    }),
+    4,
+  );
+  assert.equal(
+    getPlacementTimelineDurationSeconds({
+      inSeconds: 2,
+      outSeconds: 6,
+      playbackRate: 0.5,
+    }),
+    8,
+  );
 });
 
 test("splitPlacementAtSourceSeconds preserves volume on both halves", () => {
@@ -402,6 +483,21 @@ test("splitPlacementAtSourceSeconds preserves volume on both halves", () => {
   assert.ok(result);
   assert.equal(result.next[0]?.volume, 0.6);
   assert.equal(result.next[1]?.volume, 0.6);
+});
+
+test("splitPlacementAtSourceSeconds preserves playbackRate on both halves", () => {
+  const placements = [
+    buildPlacement({ placementId: "p_a", playbackRate: 1.5 }),
+  ];
+  const result = splitPlacementAtSourceSeconds(
+    placements,
+    "p_a",
+    4,
+    "p_a_right",
+  );
+  assert.ok(result);
+  assert.equal(result.next[0]?.playbackRate, 1.5);
+  assert.equal(result.next[1]?.playbackRate, 1.5);
 });
 
 test("readPlacementsState fills missing placementIds when the persisted JSON omits them", () => {
@@ -443,6 +539,7 @@ test("buildClipsFromPlacements joins placements with segment metadata", () => {
         inSeconds: 0,
         outSeconds: 4,
         volume: 1,
+        playbackRate: 1,
       },
       {
         placementId: "p_2",
@@ -450,6 +547,7 @@ test("buildClipsFromPlacements joins placements with segment metadata", () => {
         inSeconds: 4,
         outSeconds: 8,
         volume: 1,
+        playbackRate: 1,
       },
     ],
     meta,
@@ -473,6 +571,7 @@ test("buildClipsFromPlacements drops placements whose segment metadata is missin
         inSeconds: 0,
         outSeconds: 5,
         volume: 1,
+        playbackRate: 1,
       },
       {
         placementId: "p_orphan",
@@ -480,6 +579,7 @@ test("buildClipsFromPlacements drops placements whose segment metadata is missin
         inSeconds: 0,
         outSeconds: 5,
         volume: 1,
+        playbackRate: 1,
       },
     ],
     meta,
@@ -500,6 +600,7 @@ test("buildClipsFromPlacements clamps trims that overflow the source", () => {
         inSeconds: -1,
         outSeconds: 99,
         volume: 1,
+        playbackRate: 1,
       },
     ],
     meta,
@@ -507,6 +608,7 @@ test("buildClipsFromPlacements clamps trims that overflow the source", () => {
   assert.ok(clip);
   assert.equal(clip.inSeconds, 0);
   assert.equal(clip.outSeconds, 4);
+  assert.equal(clip.playbackRate, 1);
 });
 
 // ---------------------------------------------------------------------------
@@ -523,6 +625,7 @@ test("defaultPlacementsForSegments creates 1:1 placements covering full duration
   assert.equal(placements[0]?.outSeconds, 6);
   assert.equal(placements[1]?.outSeconds, 4);
   assert.notEqual(placements[0]?.placementId, placements[1]?.placementId);
+  assert.equal(placements[0]?.playbackRate, 1);
 });
 
 test("serializePlacements emits the placements_v1 wrapper", () => {
@@ -533,6 +636,7 @@ test("serializePlacements emits the placements_v1 wrapper", () => {
       inSeconds: 0,
       outSeconds: 4,
       volume: 1,
+      playbackRate: 1,
     },
   ]);
   assert.equal(json.schema, "placements_v1");
@@ -597,6 +701,7 @@ const buildPlacement = (
     inSeconds: number;
     outSeconds: number;
     volume: number;
+    playbackRate: number;
   }> = {},
 ) => ({
   placementId: overrides.placementId ?? "p_1",
@@ -604,6 +709,7 @@ const buildPlacement = (
   inSeconds: overrides.inSeconds ?? 0,
   outSeconds: overrides.outSeconds ?? 8,
   volume: overrides.volume ?? 1,
+  playbackRate: overrides.playbackRate ?? 1,
 });
 
 test("splitPlacementAtSourceSeconds splits a placement into two halves sharing the segmentId", () => {

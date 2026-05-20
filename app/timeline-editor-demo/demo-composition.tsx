@@ -7,6 +7,7 @@ import type {
   AssemblyAudioTrack,
   AssemblySegmentClip,
 } from "@/modules/assembly/assembly.types";
+import { getPlacementTimelineDurationSeconds } from "@/modules/assembly/timeline-state";
 
 const SEGMENT_PALETTE = [
   ["#1e3a8a", "#3b82f6"],
@@ -40,8 +41,8 @@ export function TimelineDemoComposition({
   const layouts: Array<{ durationFrames: number; fromFrames: number }> = [];
   let cursor = 0;
   for (const segment of segments) {
-    const trimmed = Math.max(segment.outSeconds - segment.inSeconds, 0);
-    const durationFrames = Math.max(Math.round(trimmed * fps), 1);
+    const timelineSeconds = getPlacementTimelineDurationSeconds(segment);
+    const durationFrames = Math.max(Math.round(timelineSeconds * fps), 1);
     layouts.push({ durationFrames, fromFrames: cursor });
     cursor += durationFrames;
   }
@@ -180,8 +181,8 @@ export function getDemoDurationInFrames({
 }) {
   let cursor = 0;
   for (const segment of segments) {
-    const trimmed = Math.max(segment.outSeconds - segment.inSeconds, 0);
-    cursor += Math.max(Math.round(trimmed * fps), 1);
+    const timelineSeconds = getPlacementTimelineDurationSeconds(segment);
+    cursor += Math.max(Math.round(timelineSeconds * fps), 1);
   }
   const audioEnd = audioClips.reduce((max, clip) => {
     const start = Math.round(clip.startOnTimelineSeconds * fps);

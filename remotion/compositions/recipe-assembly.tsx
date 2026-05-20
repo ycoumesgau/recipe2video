@@ -12,6 +12,10 @@ import type {
   AssemblyRemotionProps,
   AssemblySegmentClip,
 } from "@/modules/assembly/assembly.types";
+import {
+  clampPlacementPlaybackRate,
+  getPlacementTimelineDurationSeconds,
+} from "@/modules/assembly/timeline-state";
 
 export function RecipeAssemblyComposition({
   audio,
@@ -42,6 +46,7 @@ export function RecipeAssemblyComposition({
           >
             <Video
               endAt={secondsToFrames(segment.outSeconds, fps)}
+              playbackRate={clampPlacementPlaybackRate(segment.playbackRate)}
               src={segment.sourceUrl}
               startFrom={secondsToFrames(segment.inSeconds, fps)}
               style={{
@@ -148,8 +153,8 @@ function computeSegmentTimeline(
 ): SegmentLayout[] {
   let cursor = 0;
   return segments.map((segment) => {
-    const trimmed = Math.max(segment.outSeconds - segment.inSeconds, 0);
-    const durationFrames = Math.max(secondsToFrames(trimmed, fps), 1);
+    const timelineSeconds = getPlacementTimelineDurationSeconds(segment);
+    const durationFrames = Math.max(secondsToFrames(timelineSeconds, fps), 1);
     const fromFrames = cursor;
     cursor += durationFrames;
     return { fromFrames, durationFrames };

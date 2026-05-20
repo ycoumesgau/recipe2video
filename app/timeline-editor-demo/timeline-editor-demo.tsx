@@ -42,6 +42,7 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     inSeconds: 0,
     outSeconds: 8,
     volume: 1,
+    playbackRate: 1,
     sourceUrl: "demo://hook",
     storageBucket: "demo",
     storagePath: "demo/1.mp4",
@@ -56,6 +57,7 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     inSeconds: 0,
     outSeconds: 8,
     volume: 1,
+    playbackRate: 1,
     sourceUrl: "demo://beat",
     storageBucket: "demo",
     storagePath: "demo/2.mp4",
@@ -70,6 +72,7 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     inSeconds: 0,
     outSeconds: 8,
     volume: 1,
+    playbackRate: 1,
     sourceUrl: "demo://payoff",
     storageBucket: "demo",
     storagePath: "demo/3.mp4",
@@ -140,6 +143,7 @@ export function TimelineEditorDemo() {
           inSeconds: 0,
           outSeconds: catalogueEntry.durationSeconds,
           volume: 1,
+          playbackRate: 1,
         };
         return [
           ...current.slice(0, safeIndex),
@@ -213,10 +217,10 @@ export function TimelineEditorDemo() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Audio mix</CardTitle>
+              <CardTitle>Volume &amp; speed</CardTitle>
               <CardDescription>
-                Per-clip volume. To dim a sub-zone, split the clip on the
-                timeline and lower the sub-placement&apos;s volume.
+                Per clip: audio level (left) and playback speed (right). Split
+                a clip on the timeline to adjust each piece independently.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -243,6 +247,7 @@ export function TimelineEditorDemo() {
                       inSeconds: s.inSeconds,
                       outSeconds: s.outSeconds,
                       volume: s.volume,
+                      playbackRate: s.playbackRate,
                     })),
                     audioClips,
                   },
