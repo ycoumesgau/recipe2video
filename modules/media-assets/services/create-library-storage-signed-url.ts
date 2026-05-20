@@ -3,10 +3,7 @@ import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import { getLegacyStoragePathsForCanonical } from "@/modules/library/library-legacy-storage-paths";
 
 import type { MediaStorageBucket } from "../media-asset.constants";
-import {
-  createStorageSignedUrl,
-  tryCreateStorageSignedUrl,
-} from "./storage-signed-url";
+import { tryCreateStorageSignedUrl } from "./storage-signed-url";
 
 export interface LibraryStorageSignedUrlInput {
   bucket: MediaStorageBucket;
