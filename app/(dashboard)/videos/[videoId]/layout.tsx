@@ -1,10 +1,6 @@
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
-import {
-  VideoProjectBreadcrumbProvider,
-  VideoProjectBreadcrumbs,
-} from "@/modules/videos/ui/video-project-breadcrumbs";
-import { VideoProjectSubnav } from "@/modules/videos/ui/video-project-subnav";
+import { VideoProjectLayoutShell } from "@/modules/videos/ui/video-project-layout-shell";
 
 export default async function VideoProjectLayout({
   children,
@@ -17,14 +13,9 @@ export default async function VideoProjectLayout({
   const projectTitle = await loadProjectTitleForBreadcrumb(videoId);
 
   return (
-    <VideoProjectBreadcrumbProvider>
-      <VideoProjectBreadcrumbs
-        projectTitle={projectTitle}
-        videoId={videoId}
-      />
-      <VideoProjectSubnav videoId={videoId} />
+    <VideoProjectLayoutShell projectTitle={projectTitle} videoId={videoId}>
       {children}
-    </VideoProjectBreadcrumbProvider>
+    </VideoProjectLayoutShell>
   );
 }
 
