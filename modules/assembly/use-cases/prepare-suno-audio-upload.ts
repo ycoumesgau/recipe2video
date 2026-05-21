@@ -1,9 +1,6 @@
 import "server-only";
 
-import {
-  MEDIA_ASSET_STORAGE_BUCKET_BY_TYPE,
-  MEDIA_STORAGE_BUCKETS,
-} from "@/modules/media-assets/media-asset.constants";
+import { MEDIA_STORAGE_BUCKETS } from "@/modules/media-assets/media-asset.constants";
 import { buildMediaStoragePath } from "@/modules/media-assets/storage-paths";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
@@ -42,7 +39,7 @@ export async function prepareSunoAudioUpload(
     videoId: input.videoId,
     filename: storageFilename,
   });
-  const bucket = MEDIA_ASSET_STORAGE_BUCKET_BY_TYPE.suno_audio;
+  const bucket = MEDIA_STORAGE_BUCKETS.sunoAudio;
 
   const { data, error } = await input.supabase.storage
     .from(bucket)
