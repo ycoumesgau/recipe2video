@@ -331,9 +331,25 @@ async function requireGenerationForSegment(
   generationId: string,
   segmentId: string,
 ) {
-  const generation = await getGenerationById(supabase, generationId);
+  const [generation, reviewSegment] = await Promise.all([
+    getGenerationById(supabase, generationId),
+    getSegmentById(supabase, segmentId),
+  ]);
 
-  if (!generation || generation.segmentId !== segmentId) {
+  if (!generation || !reviewSegment) {
+    throw new Error("Generation was not found for this segment.");
+  }
+
+  if (generation.segmentId === segmentId) {
+    return generation;
+  }
+
+  const sourceSegment = await getSegmentById(supabase, generation.segmentId);
+  if (
+    !sourceSegment ||
+    sourceSegment.videoId !== reviewSegment.videoId ||
+    sourceSegment.position !== reviewSegment.position
+  ) {
     throw new Error("Generation was not found for this segment.");
   }
 

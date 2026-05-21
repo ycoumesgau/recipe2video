@@ -120,14 +120,11 @@ export function SegmentReview({
     );
   }
 
+  const latestVariant = data.variants[0];
   const selectedVariant =
     data.variants.find(
-      (variant) =>
-        variant.canManageVariant &&
-        variant.generation.id === data.segment?.selectedGenerationId,
-    ) ??
-    data.variants.find((variant) => variant.canManageVariant) ??
-    data.variants[0];
+      (variant) => variant.generation.id === data.segment?.selectedGenerationId,
+    ) ?? latestVariant;
   const selectedGenerationId = selectedVariant?.generation.id ?? null;
 
   return (
@@ -157,8 +154,11 @@ export function SegmentReview({
       <div className="hidden gap-4 lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)_minmax(280px,0.65fr)]">
         <div className="space-y-4">
           <PlaybackCard
+            latestVariant={latestVariant}
             segmentDisplayName={formatSegmentHeading(data.segment)}
-            selectedVariant={selectedVariant}
+            segmentId={segmentId}
+            selectedGenerationId={data.segment.selectedGenerationId}
+            videoId={videoId}
           />
           <FrameExtractionCard
             durationSeconds={
@@ -222,8 +222,11 @@ export function SegmentReview({
         </TabsList>
         <TabsContent value="video">
           <PlaybackCard
+            latestVariant={latestVariant}
             segmentDisplayName={formatSegmentHeading(data.segment)}
-            selectedVariant={selectedVariant}
+            segmentId={segmentId}
+            selectedGenerationId={data.segment.selectedGenerationId}
+            videoId={videoId}
           />
         </TabsContent>
         <TabsContent value="prompt">
@@ -263,24 +266,61 @@ export function SegmentReview({
 }
 
 function PlaybackCard({
-  selectedVariant,
+  latestVariant,
   segmentDisplayName,
+  segmentId,
+  selectedGenerationId,
+  videoId,
 }: {
-  selectedVariant?: SegmentVariantReviewItem;
+  latestVariant?: SegmentVariantReviewItem;
   segmentDisplayName: string;
+  segmentId: string;
+  selectedGenerationId?: string | null;
+  videoId: string;
 }) {
+  const generation = latestVariant?.generation;
+  const isSelected =
+    Boolean(generation) && selectedGenerationId === generation?.id;
+
   return (
     <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">Mux playback</Badge>
-          {selectedVariant?.conversationName ? (
-            <Badge variant="outline">{selectedVariant.conversationName}</Badge>
-          ) : null}
-          {selectedVariant ? (
-            <Badge variant={generationStatusVariant[selectedVariant.generation.status]}>
-              {selectedVariant.generation.status}
-            </Badge>
+      <CardHeader className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">Mux playback</Badge>
+            {latestVariant?.conversationName ? (
+              <Badge variant="outline">{latestVariant.conversationName}</Badge>
+            ) : null}
+            {generation ? (
+              <Badge variant={generationStatusVariant[generation.status]}>
+                {generation.status}
+              </Badge>
+            ) : null}
+            {isSelected ? <Badge>Accepted</Badge> : null}
+          </div>
+          {generation ? (
+            <div className="flex flex-wrap gap-2">
+              <VariantActionButton
+                action={acceptSegmentVariantAction}
+                disabled={generation.status !== "succeeded"}
+                generationId={generation.id}
+                label="Accept"
+                segmentId={segmentId}
+                videoId={videoId}
+              >
+                <ThumbsUp className="h-4 w-4" />
+              </VariantActionButton>
+              <VariantActionButton
+                action={rejectSegmentVariantAction}
+                generationId={generation.id}
+                label="Reject"
+                segmentId={segmentId}
+                variant="outline"
+                videoId={videoId}
+              >
+                <ThumbsDown className="h-4 w-4" />
+              </VariantActionButton>
+            </div>
           ) : null}
         </div>
         <CardTitle>Latest generation</CardTitle>
@@ -290,9 +330,9 @@ function PlaybackCard({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {selectedVariant ? (
+        {latestVariant ? (
           <RecipeMuxPlayer
-            playbackId={selectedVariant.mediaAsset?.muxPlaybackId}
+            playbackId={latestVariant.mediaAsset?.muxPlaybackId}
             title={segmentDisplayName}
           />
         ) : (
@@ -336,10 +376,7 @@ function VariantList({
             <VariantCard
               key={variant.generation.id}
               index={index}
-              isSelected={
-                variant.canManageVariant &&
-                selectedGenerationId === variant.generation.id
-              }
+              isSelected={selectedGenerationId === variant.generation.id}
               segmentId={segmentId}
               variant={variant}
               videoId={videoId}
@@ -364,7 +401,7 @@ function VariantCard({
   variant: SegmentVariantReviewItem;
   videoId: string;
 }) {
-  const { generation, mediaAsset, conversationName, canManageVariant } = variant;
+  const { generation, mediaAsset, conversationName } = variant;
 
   return (
     <div className="space-y-3 rounded-lg border p-3">
@@ -386,17 +423,11 @@ function VariantCard({
           <p className="mt-1 text-xs text-muted-foreground">
             {generation.id}
           </p>
-          {!canManageVariant ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              View-only from another conversation. Switch conversation to accept
-              or regenerate on the active segment.
-            </p>
-          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <VariantActionButton
             action={acceptSegmentVariantAction}
-            disabled={!canManageVariant || generation.status !== "succeeded"}
+            disabled={generation.status !== "succeeded"}
             generationId={generation.id}
             label="Accept"
             segmentId={segmentId}
@@ -406,7 +437,6 @@ function VariantCard({
           </VariantActionButton>
           <VariantActionButton
             action={rejectSegmentVariantAction}
-            disabled={!canManageVariant}
             generationId={generation.id}
             label="Reject"
             segmentId={segmentId}
@@ -445,7 +475,8 @@ function VariantCard({
           <p className="text-xs text-muted-foreground">
             Runway status: <span className="font-medium">{generation.runwayTaskStatus}</span>
           </p>
-          {typeof generation.runwayProgress === "number" ? (
+          {shouldShowRunwayProgress(generation) &&
+          typeof generation.runwayProgress === "number" ? (
             <div className="space-y-1">
               <Progress value={generation.runwayProgress} />
               <p className="text-[11px] text-muted-foreground">
@@ -951,6 +982,10 @@ function formatDate(value?: string | null) {
       {new Date(value).toLocaleString()}
     </span>
   );
+}
+
+function shouldShowRunwayProgress(generation: SegmentVariantReviewItem["generation"]) {
+  return ["pending", "queued", "processing"].includes(generation.status);
 }
 
 function progressForRecipeReferenceImage(
