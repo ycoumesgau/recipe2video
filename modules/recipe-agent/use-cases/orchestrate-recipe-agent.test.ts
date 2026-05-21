@@ -955,11 +955,13 @@ function installRecipeAgentEnv() {
     CURSOR_API_KEY: process.env.CURSOR_API_KEY,
     CURSOR_AGENT_REPO_URL: process.env.CURSOR_AGENT_REPO_URL,
     RECIPE_AGENT_GITHUB_TOKEN: process.env.RECIPE_AGENT_GITHUB_TOKEN,
+    RECIPE_AGENT_POLLING_MODE: process.env.RECIPE_AGENT_POLLING_MODE,
   };
 
   process.env.CURSOR_API_KEY = "cursor-key";
   process.env.CURSOR_AGENT_REPO_URL = "https://github.com/acme/recipe2video-agent-workspace.git";
   process.env.RECIPE_AGENT_GITHUB_TOKEN = "github-token";
+  process.env.RECIPE_AGENT_POLLING_MODE = "blocking";
 
   return () => {
     for (const [key, value] of Object.entries(previous)) {

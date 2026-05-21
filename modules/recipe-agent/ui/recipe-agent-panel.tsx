@@ -43,6 +43,7 @@ import type { VideoProject } from "@/modules/videos/video.types";
 
 import {
   createRecipeAgentAction,
+  cancelRecipeAgentRunAction,
   submitRecipeAgentMessageAction,
   syncRecipeAgentArtifactsFromGithubAction,
   type RecipeAgentActionState,
@@ -65,7 +66,7 @@ import { RecipeAgentConversationToolbar } from "./recipe-agent-conversation-tool
 
 /** Client refresh + short polling: Inngest updates DB after `revalidatePath`, and RSC needs `router.refresh()`. */
 const AGENT_CREATE_SYNC_MS = 60_000;
-const AGENT_MESSAGE_SYNC_MS = 45_000;
+const AGENT_MESSAGE_SYNC_MS = 30 * 60 * 1000;
 const AGENT_SYNC_POLL_MS = 2_500;
 
 const initialState: RecipeAgentActionState = {};
@@ -110,13 +111,16 @@ const artifactValidationVariant: Record<
 
 const runStatusBadgeVariant: Record<
   RecipeAgentRunStatus,
-  "destructive" | "info" | "outline" | "secondary" | "success"
+  "destructive" | "info" | "outline" | "secondary" | "success" | "warning"
 > = {
   queued: "outline",
+  starting: "outline",
   running: "info",
+  finalizing: "warning",
   finished: "success",
   error: "destructive",
   cancelled: "secondary",
+  timed_out: "destructive",
 };
 
 export function RecipeAgentPanel({
@@ -153,6 +157,10 @@ export function RecipeAgentPanel({
   );
   const [createState, createAction] = useActionState(
     createRecipeAgentAction,
+    initialState,
+  );
+  const [cancelState, cancelAction] = useActionState(
+    cancelRecipeAgentRunAction,
     initialState,
   );
 
@@ -244,6 +252,33 @@ export function RecipeAgentPanel({
     (artifact) => artifact.validationStatus === "invalid",
   );
   const latestRun = runs[0];
+  const activeRun =
+    latestRun &&
+    (latestRun.status === "starting" ||
+      latestRun.status === "running" ||
+      latestRun.status === "finalizing")
+      ? latestRun
+      : null;
+
+  useEffect(() => {
+    if (agentStatus !== "running" || !activeRun) {
+      return;
+    }
+
+    const startedAt = Date.now();
+    const id = setInterval(() => {
+      startTransition(() => {
+        router.refresh();
+      });
+      if (Date.now() - startedAt >= AGENT_MESSAGE_SYNC_MS) {
+        clearInterval(id);
+      }
+    }, AGENT_SYNC_POLL_MS);
+
+    return () => {
+      clearInterval(id);
+    };
+  }, [activeRun?.id, activeRun?.status, agentStatus, router]);
 
   return (
     <Card id="recipe-agent">
@@ -315,6 +350,29 @@ export function RecipeAgentPanel({
           videoId={project.id}
         />
 
+        {activeRun ? (
+          <Alert>
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <AlertTitle>Agent au travail</AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+              <span>
+                {formatLastActivity(activeRun.lastPolledAt)} · poll #
+                {activeRun.pollCount}
+              </span>
+              <form action={cancelAction} className="inline-flex">
+                <input name="videoId" type="hidden" value={project.id} />
+                <input
+                  name="conversationId"
+                  type="hidden"
+                  value={activeConversationId}
+                />
+                <input name="agentRunId" type="hidden" value={activeRun.id} />
+                <CancelRunButton />
+              </form>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         {agentStatus === "needs_input" ? (
           <Alert>
             <MessageSquareText className="h-4 w-4" />
@@ -380,6 +438,7 @@ export function RecipeAgentPanel({
 
         <ActionMessage state={createState} title="Agent setup" />
         <ActionMessage state={messageState} title="Recipe agent" />
+        <ActionMessage state={cancelState} title="Cancel run" />
 
         <div className="grid gap-4 lg:grid-cols-[1fr_0.85fr]">
           <RunHistoryCard latestRun={latestRun} runs={runs} />
@@ -442,6 +501,11 @@ function RunHistoryCard({
                 <p className="mt-1 text-xs text-muted-foreground">
                   Checkpoint {run.agentGitCommitSha.slice(0, 7)}
                   {run.agentGitBranch ? ` · ${run.agentGitBranch}` : ""}
+                </p>
+              ) : null}
+              {run.lastPolledAt ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {formatLastActivity(run.lastPolledAt)} · poll #{run.pollCount}
                 </p>
               ) : null}
               {run.error ? (
@@ -597,6 +661,39 @@ function ActionMessage({
 
 function formatAgentStatus(status: RecipeAgentStatus) {
   return status.replace(/_/g, " ");
+}
+
+function CancelRunButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button disabled={pending} size="sm" type="submit" variant="outline">
+      {pending ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        "Annuler le run"
+      )}
+    </Button>
+  );
+}
+
+function formatLastActivity(lastPolledAt: string | null | undefined) {
+  if (!lastPolledAt) {
+    return "Dernière activité inconnue";
+  }
+
+  const elapsedMs = Date.now() - Date.parse(lastPolledAt);
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
+    return "Dernière activité inconnue";
+  }
+
+  const elapsedMinutes = Math.max(1, Math.round(elapsedMs / 60_000));
+  if (elapsedMinutes < 60) {
+    return `Dernière activité il y a ${elapsedMinutes} min`;
+  }
+
+  const elapsedHours = Math.round(elapsedMinutes / 60);
+  return `Dernière activité il y a ${elapsedHours} h`;
 }
 
 function formatDate(value: string) {

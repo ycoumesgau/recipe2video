@@ -8,7 +8,7 @@ import type { VideoStatus } from "@/modules/videos/video-status";
 
 const POLL_MS = 2_500;
 const NEW_PROJECT_MAX_MS = 120_000;
-const AGENT_RUNNING_MAX_MS = 300_000;
+const AGENT_RUNNING_MAX_MS = 30 * 60 * 1000;
 
 export interface VideoProjectRscSyncProps {
   agentPlanningRequested: boolean;

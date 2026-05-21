@@ -14,6 +14,7 @@ import { createSupabaseServerClient } from "@/modules/auth/supabase/server";
 import { persistAgentMessageAttachments } from "@/modules/media-assets/use-cases/persist-agent-message-attachments";
 
 import type { RecipeAgentStage } from "./recipe-agent.types";
+import { getAgentRunById } from "./repositories/recipe-agent.repository";
 import { syncRecipeAgentArtifactsFromGithubOnly } from "./use-cases/sync-recipe-agent-from-github";
 import { switchActiveConversation } from "./use-cases/switch-active-conversation";
 import {
@@ -103,6 +104,51 @@ export async function submitRecipeAgentMessageAction(
     };
   } catch (error) {
     return toActionError(error, "Unable to queue recipe agent message.");
+  }
+}
+
+export async function cancelRecipeAgentRunAction(
+  _previousState: RecipeAgentActionState,
+  formData: FormData,
+): Promise<RecipeAgentActionState> {
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    const videoId = requireFormString(formData, "videoId");
+    const agentRunId = requireFormString(formData, "agentRunId");
+    const conversationId = optionalFormString(formData, "conversationId");
+    const supabase = createSupabaseAdminClient();
+    const run = await getAgentRunById(supabase, agentRunId);
+
+    if (!run || run.videoId !== videoId) {
+      throw new Error("Agent run not found for this project.");
+    }
+
+    if (
+      conversationId &&
+      run.agentConversationId &&
+      run.agentConversationId !== conversationId
+    ) {
+      throw new Error("Agent run does not belong to this conversation.");
+    }
+
+    await inngest.send({
+      name: INNGEST_EVENTS.recipeAgentRunCancelRequested,
+      data: {
+        agentRunId,
+        videoId,
+        requestedByUserId: profile.id,
+        isAllowlisted: true,
+      },
+    });
+
+    revalidateProjectPaths(videoId);
+
+    return {
+      kind: "success",
+      message: "Agent run cancellation requested.",
+    };
+  } catch (error) {
+    return toActionError(error, "Unable to cancel the recipe agent run.");
   }
 }
 

@@ -16,6 +16,10 @@ export function resolveRecipeAgentConfig(
   );
   const modelContext = emptyToUndefined(env.CURSOR_AGENT_MODEL_CONTEXT);
   const modelFast = emptyToUndefined(env.CURSOR_AGENT_MODEL_FAST);
+  const pollingMode = resolvePollingMode(env.RECIPE_AGENT_POLLING_MODE, runtime);
+  const streamSliceEnabled =
+    env.RECIPE_AGENT_STREAM_SLICE === "true" ||
+    env.RECIPE_AGENT_STREAM_SLICE === "1";
 
   if (!apiKey) {
     throw new Error("CURSOR_API_KEY is required before creating recipe agents.");
@@ -43,6 +47,8 @@ export function resolveRecipeAgentConfig(
       githubToken: emptyToUndefined(
         env.RECIPE_AGENT_GITHUB_TOKEN ?? env.GITHUB_TOKEN,
       ),
+      pollingMode,
+      streamSliceEnabled,
     };
   }
 
@@ -54,7 +60,24 @@ export function resolveRecipeAgentConfig(
     modelContext,
     modelFast,
     localCwd: env.CURSOR_AGENT_LOCAL_CWD ?? process.cwd(),
+    pollingMode,
+    streamSliceEnabled,
   };
+}
+
+function resolvePollingMode(
+  value: string | undefined,
+  runtime: RecipeAgentRuntime,
+): "blocking" | "polling" {
+  if (value === "blocking") {
+    return "blocking";
+  }
+
+  if (value === "polling") {
+    return "polling";
+  }
+
+  return runtime === "cloud" ? "polling" : "blocking";
 }
 
 function resolveRuntime(value: string | undefined): RecipeAgentRuntime {

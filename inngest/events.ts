@@ -43,6 +43,10 @@ export const INNGEST_EVENTS = {
   recipeAgentCreateRequested: "recipe.agent.create.requested",
   recipeAgentMessageRequested: "recipe.agent.message.requested",
   recipeAgentSyncRequested: "recipe.agent.sync.requested",
+  recipeAgentRunPollRequested: "recipe.agent.run.poll.requested",
+  recipeAgentRunFinalizeRequested: "recipe.agent.run.finalize.requested",
+  recipeAgentRunCancelRequested: "recipe.agent.run.cancel.requested",
+  recipeAgentReconcileRequested: "recipe.agent.reconcile.requested",
   songCoverGenerateRequested: "song.cover.generate.requested",
   songCanvasGenerateRequested: "song.canvas.generate.requested",
 } as const;
@@ -123,6 +127,37 @@ export interface RecipeAgentSyncRequestedData extends WorkflowAuthEventData {
   artifacts: RecipeAgentArtifact[];
 }
 
+export interface RecipeAgentRunPollRequestedData extends WorkflowAuthEventData {
+  agentRunId: string;
+  videoId: string;
+  conversationId: string;
+  cursorAgentId: string;
+  cursorRunId: string;
+  stage: RecipeAgentStage;
+  pollStartedAt: string;
+  nextPollDelaySeconds?: number;
+}
+
+export interface RecipeAgentRunFinalizeRequestedData extends WorkflowAuthEventData {
+  agentRunId: string;
+  videoId: string;
+  conversationId: string;
+  cursorAgentId: string;
+  cursorRunId: string;
+  stage: RecipeAgentStage;
+  terminalStatus: "finished" | "error" | "cancelled" | "timed_out";
+}
+
+export interface RecipeAgentRunCancelRequestedData extends WorkflowAuthEventData {
+  agentRunId: string;
+  videoId: string;
+  requestedByUserId: string;
+}
+
+export interface RecipeAgentReconcileRequestedData {
+  requestedByUserId: "system";
+}
+
 export interface CompositionRenderRequestedData extends WorkflowAuthEventData {
   videoId: string;
   compositionId: string;
@@ -176,6 +211,10 @@ export type Recipe2VideoEventPayloads = {
   [INNGEST_EVENTS.recipeAgentCreateRequested]: RecipeAgentCreateRequestedData;
   [INNGEST_EVENTS.recipeAgentMessageRequested]: RecipeAgentMessageRequestedData;
   [INNGEST_EVENTS.recipeAgentSyncRequested]: RecipeAgentSyncRequestedData;
+  [INNGEST_EVENTS.recipeAgentRunPollRequested]: RecipeAgentRunPollRequestedData;
+  [INNGEST_EVENTS.recipeAgentRunFinalizeRequested]: RecipeAgentRunFinalizeRequestedData;
+  [INNGEST_EVENTS.recipeAgentRunCancelRequested]: RecipeAgentRunCancelRequestedData;
+  [INNGEST_EVENTS.recipeAgentReconcileRequested]: RecipeAgentReconcileRequestedData;
   [INNGEST_EVENTS.songCoverGenerateRequested]: SongCoverGenerateRequestedData;
   [INNGEST_EVENTS.songCanvasGenerateRequested]: SongCanvasGenerateRequestedData;
 };

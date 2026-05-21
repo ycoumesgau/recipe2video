@@ -68,7 +68,11 @@ export async function GET(
       let finishedTicks = 0;
 
       const tick = async () => {
-        const thread = await getRecipeAgentThreadByVideoId(supabase, videoId);
+        const thread = await getRecipeAgentThreadByVideoId(
+          supabase,
+          videoId,
+          run.agentConversationId ?? undefined,
+        );
         if (!thread) {
           send({
             type: "snapshot",
@@ -89,7 +93,13 @@ export async function GET(
           runStatus,
         });
 
-        if (runStatus !== "running" && runStatus !== "queued") {
+        const activeRunStatuses = new Set([
+          "queued",
+          "starting",
+          "running",
+          "finalizing",
+        ]);
+        if (!activeRunStatuses.has(runStatus)) {
           finishedTicks += 1;
           if (finishedTicks >= 2) {
             send({ type: "done" });

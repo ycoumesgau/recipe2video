@@ -5,6 +5,7 @@ import type {
   AgentOptions,
   Run,
   RunResult,
+  RunStatus,
   SDKAgent,
   SDKMessage,
   SDKUserMessage,
@@ -19,6 +20,26 @@ import {
 import type { CursorAgentSdkAdapter } from "../recipe-agent.types";
 import { buildRecipeAgentWorkspace } from "../recipe-agent.workspace";
 import { createCursorRecipeAgentService } from "./cursor-agent.service";
+
+test("resolveRecipeAgentConfig defaults cloud runtime to polling mode", () => {
+  const config = resolveRecipeAgentConfig({
+    CURSOR_API_KEY: "cursor-test",
+    CURSOR_AGENT_REPO_URL: "https://github.com/ycoumesgau/recipe2video.git",
+    CURSOR_AGENT_RUNTIME: "cloud",
+  });
+
+  assert.equal(config.pollingMode, "polling");
+});
+
+test("resolveRecipeAgentConfig keeps local runtime on blocking mode by default", () => {
+  const config = resolveRecipeAgentConfig({
+    CURSOR_API_KEY: "cursor-test",
+    CURSOR_AGENT_RUNTIME: "local",
+    CURSOR_AGENT_LOCAL_CWD: "/tmp/recipe2video",
+  });
+
+  assert.equal(config.pollingMode, "blocking");
+});
 
 test("resolveRecipeAgentConfig requires Cursor API key", () => {
   assert.throws(
@@ -456,12 +477,144 @@ test("createRecipeAgent maps Composer 2.5 to forced fast mode", async () => {
   });
 });
 
+test("startMessage returns run id without waiting for completion", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  const started = await service.startMessage({
+    agentId: "bc-existing",
+    videoId: "video-1",
+    stage: "recipe_ingest",
+    message: "Analyze recipe.",
+  });
+
+  assert.equal(started.agentId, "bc-existing");
+  assert.equal(started.runId, "run-1");
+  assert.ok(started.cursorRunStartedAt);
+  assert.equal(sdk.resumedAgent.disposed, true);
+});
+
+test("pollRun reads run status via getRun", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  const runningRun = new FakeRun(
+    "bc-existing",
+    [],
+    [],
+    undefined,
+    undefined,
+    "running",
+  );
+  sdk.registerRun(runningRun);
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  const polled = await service.pollRun({
+    agentId: "bc-existing",
+    runId: "run-1",
+  });
+
+  assert.equal(polled.status, "running");
+  assert.equal(polled.cursorStreamLastSeq, 0);
+});
+
+test("pollRun stream slice dedups replayed assistant text", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  const runningRun = new FakeRun(
+    "bc-existing",
+    [],
+    [],
+    "Hello from the recipe agent",
+    undefined,
+    "running",
+  );
+  sdk.registerRun(runningRun);
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+      streamSliceEnabled: true,
+    },
+  });
+  const events: Array<{ seq: number }> = [];
+
+  const polled = await service.pollRun({
+    agentId: "bc-existing",
+    runId: "run-1",
+    enableStreamSlice: true,
+    assistantTextLength: 5,
+    onStreamEvent: async (event) => {
+      events.push({ seq: event.seq });
+    },
+  });
+
+  assert.equal(polled.status, "running");
+  assert.ok(polled.cursorAssistantTextLength > 5);
+  assert.ok(events.length >= 1);
+});
+
+test("finalizeRun waits and returns artifacts", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  const finishedRun = new FakeRun(
+    "bc-existing",
+    [],
+    [],
+    undefined,
+    "checkpoint done",
+    "finished",
+  );
+  sdk.registerRun(finishedRun);
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+    },
+  });
+
+  const result = await service.finalizeRun({
+    agentId: "bc-existing",
+    runId: "run-1",
+    videoId: "video-1",
+    stage: "general",
+    message: "done",
+    includeArtifactContents: true,
+  });
+
+  assert.equal(result.status, "finished");
+  assert.equal(result.artifacts[0]?.content, "{\"ok\":true}");
+});
+
 class FakeCursorSdkAdapter implements CursorAgentSdkAdapter {
   createdOptions?: AgentOptions;
   resumedOptions?: Partial<AgentOptions>;
   resumedAgentId?: string;
   createdAgent = new FakeSdkAgent("agent-created");
   resumedAgent = new FakeSdkAgent("bc-existing");
+  runsById = new Map<string, FakeRun>();
 
   async create(options: AgentOptions): Promise<SDKAgent> {
     this.createdOptions = options;
@@ -472,6 +625,18 @@ class FakeCursorSdkAdapter implements CursorAgentSdkAdapter {
     this.resumedAgentId = agentId;
     this.resumedOptions = options;
     return this.resumedAgent;
+  }
+
+  async getRun(runId: string): Promise<Run> {
+    const run = this.runsById.get(runId);
+    if (!run) {
+      throw new Error(`Run ${runId} not found.`);
+    }
+    return run;
+  }
+
+  registerRun(run: FakeRun) {
+    this.runsById.set(run.id, run);
   }
 }
 
@@ -507,13 +672,14 @@ class FakeSdkAgent implements SDKAgent {
     this.sentPayload = message;
     this.sentMessage =
       typeof message === "string" ? message : `${message.text}\n[images:${message.images?.length ?? 0}]`;
-    return new FakeRun(
+    const run = new FakeRun(
       this.agentId,
       this.conversationArtifacts,
       this.conversationSteps,
       this.assistantStreamText,
       this.waitResult,
     );
+    return run;
   }
 
   close(): void {}
@@ -536,7 +702,8 @@ class FakeSdkAgent implements SDKAgent {
 
 class FakeRun implements Run {
   readonly id = "run-1";
-  readonly status = "finished";
+  readonly status: RunStatus;
+  readonly result?: string;
 
   constructor(
     readonly agentId: string,
@@ -548,7 +715,11 @@ class FakeRun implements Run {
     private readonly conversationSteps: Array<Record<string, unknown>>,
     private readonly assistantStreamText: string | undefined,
     private readonly waitResult: string | undefined,
-  ) {}
+    status: RunStatus = "finished",
+  ) {
+    this.status = status;
+    this.result = waitResult;
+  }
 
   supports(operation?: string): boolean {
     return (

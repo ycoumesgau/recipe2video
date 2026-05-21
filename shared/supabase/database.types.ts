@@ -871,6 +871,13 @@ export type Database = {
           needs_user_input: boolean;
           user_chat_message_id: string | null;
           assistant_chat_message_id: string | null;
+          cursor_run_started_at: string | null;
+          cursor_stream_last_seq: number;
+          cursor_stream_last_event_signature: string | null;
+          cursor_assistant_text_length: number;
+          last_polled_at: string | null;
+          poll_count: number;
+          cancel_requested: boolean;
         };
         Insert: {
           id?: string;
@@ -893,6 +900,13 @@ export type Database = {
           needs_user_input?: boolean;
           user_chat_message_id?: string | null;
           assistant_chat_message_id?: string | null;
+          cursor_run_started_at?: string | null;
+          cursor_stream_last_seq?: number;
+          cursor_stream_last_event_signature?: string | null;
+          cursor_assistant_text_length?: number;
+          last_polled_at?: string | null;
+          poll_count?: number;
+          cancel_requested?: boolean;
         };
         Update: {
           id?: string;
@@ -915,6 +929,13 @@ export type Database = {
           needs_user_input?: boolean;
           user_chat_message_id?: string | null;
           assistant_chat_message_id?: string | null;
+          cursor_run_started_at?: string | null;
+          cursor_stream_last_seq?: number;
+          cursor_stream_last_event_signature?: string | null;
+          cursor_assistant_text_length?: number;
+          last_polled_at?: string | null;
+          poll_count?: number;
+          cancel_requested?: boolean;
         };
         Relationships: [];
       };
