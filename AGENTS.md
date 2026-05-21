@@ -50,6 +50,21 @@ git clone https://x-access-token:${RECIPE_AGENT_GITHUB_TOKEN}@github.com/ycoumes
 
 This ensures a clean separation: `recipe2video` contains the application code, and `recipe2video-agent-workspace` contains the per-recipe agent artifacts managed autonomously by Cursor SDK agents.
 
+### Multi-conversations agent par vidéo
+
+Each video project can have **multiple Cursor SDK recipe agent conversations** stored in `agent_conversations`. Only one conversation is active at a time; switching conversations toggles `is_active` on `logical_scenes`, `segments`, and `segment_references` (archived rows stay in Postgres).
+
+| Concept | Location / convention |
+|---------|----------------------|
+| Conversation metadata | `agent_conversations` (model, reasoning, custom instructions, Git branch, Cursor agent id) |
+| Active conversation UI | Overview → Recipe Agent toolbar; URL query `?conversation={uuid}` (mirrors Assembly preset pattern) |
+| Git branch (initial) | `recipe2video/{videoId}` |
+| Git branch (other) | `recipe2video/{videoId}/{conversationSlug}` |
+| Pre-existing assets briefing | `agent-recipes/{videoId}/available-assets.json` on the conversation branch (signed URLs, no storyboard replay) |
+| Shared paid assets | `reference_assets`, `generations`, `media_assets` remain scoped by `video_id` only |
+
+Server actions live in `modules/recipe-agent/actions.ts` (`createAgentConversationAction`, `switchActiveConversationAction`, etc.). Inngest events `recipe.agent.*` carry optional `conversationId`.
+
 ### Gotchas
 
 - The Supabase config (`modules/auth/supabase/config.ts`) throws on missing env vars rather than returning undefined. The dashboard layout catches these at the page level, but without a `.env.local` the app will error on any route that touches auth.

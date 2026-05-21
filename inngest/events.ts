@@ -104,18 +104,22 @@ export interface FeedbackApplyRequestedData extends WorkflowAuthEventData {
 
 export interface RecipeAgentCreateRequestedData extends WorkflowAuthEventData {
   videoId: string;
+  conversationId?: string;
 }
 
 export interface RecipeAgentMessageRequestedData extends WorkflowAuthEventData {
   videoId: string;
+  conversationId?: string;
   stage: RecipeAgentStage;
   message: string;
   /** `media_assets.id` rows (`agent_message_attachment`) sent as Cursor SDK vision images. */
   attachmentMediaAssetIds?: string[];
+  includeAssetsManifestBriefing?: boolean;
 }
 
 export interface RecipeAgentSyncRequestedData extends WorkflowAuthEventData {
   videoId: string;
+  conversationId?: string;
   artifacts: RecipeAgentArtifact[];
 }
 

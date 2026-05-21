@@ -9,8 +9,10 @@ import {
   type RecipeAgentOrchestrationDependencies,
 } from "./orchestrate-recipe-agent";
 import type {
+  AgentConversation,
   CreateAgentRunInput,
   UpdateAgentRunInput,
+  UpdateAgentConversationInput,
 } from "../recipe-agent.types";
 
 test("ensureRecipeAgent reuses an existing recipe agent session", async () => {
@@ -49,15 +51,18 @@ test("ensureRecipeAgent creates and stores a recipe agent when missing", async (
     cursorAgentRuntime: "cloud",
     agentWorkspacePath: "agent-recipes/video-1",
     agentStatus: "idle",
+    agentGitBranch: "recipe2video/video-1",
+    agentGitCommitSha: null,
+    lastAgentSyncAt: null,
   });
 });
 
 test("ensureRecipeAgent prefers project-scoped service when provided", async () => {
   const deps = createDeps({ project: baseProject });
   let factoryCalls = 0;
-  deps.getRecipeAgentService = (project) => {
+  deps.getRecipeAgentService = (conversation) => {
     factoryCalls += 1;
-    assert.equal(project.id, "video-1");
+    assert.equal(conversation.id, "conv-1");
     return {
       async createRecipeAgent() {
         return {
@@ -116,6 +121,7 @@ test("sendRecipeAgentMessage records run, syncs valid artifacts, and marks idle"
   assert.equal(result.syncPlan.valid, true);
   assert.deepEqual(deps.createdRuns[0], {
     videoId: "video-1",
+    agentConversationId: "conv-1",
     cursorAgentId: "bc-existing",
     stage: "suno_prompt_revision",
     userMessage: "Update Suno prompt.",
@@ -159,6 +165,7 @@ test("sendRecipeAgentMessage sends the first message on the newly created agent"
   assert.equal(deps.sentFirstMessages.length, 1);
   assert.deepEqual(deps.createdRuns[0], {
     videoId: "video-1",
+    agentConversationId: "conv-1",
     cursorAgentId: "bc-created",
     stage: "recipe_ingest",
     userMessage: "Analyze recipe.",
@@ -171,6 +178,9 @@ test("sendRecipeAgentMessage sends the first message on the newly created agent"
     cursorAgentRuntime: "cloud",
     agentWorkspacePath: "agent-recipes/video-1",
     agentStatus: "running",
+    agentGitBranch: "recipe2video/video-1",
+    agentGitCommitSha: null,
+    lastAgentSyncAt: null,
   });
   assert.equal(deps.updatedRuns[0]?.patch.status, "finished");
   assert.equal(deps.sessionUpdates.at(-1)?.agentStatus, "idle");
@@ -225,6 +235,9 @@ test("sendRecipeAgentMessage recreates stale Cursor agents reported as missing",
     cursorAgentRuntime: null,
     agentWorkspacePath: null,
     agentStatus: "running",
+    agentGitBranch: "recipe2video/video-1",
+    agentGitCommitSha: null,
+    lastAgentSyncAt: null,
   });
   assert.equal(deps.sentFirstMessages.length, 1);
   assert.equal(deps.updatedRuns.at(-1)?.patch.status, "finished");
@@ -643,6 +656,43 @@ const baseProject: VideoProject = {
   agentStatus: "idle",
 };
 
+const baseConversation: AgentConversation = {
+  id: "conv-1",
+  videoId: "video-1",
+  name: "Initial",
+  slug: "initial",
+  cursorAgentId: null,
+  cursorAgentRuntime: null,
+  agentWorkspacePath: null,
+  agentGitBranch: "recipe2video/video-1",
+  agentGitCommitSha: null,
+  agentStatus: "idle",
+  lastAgentRunId: null,
+  lastAgentSyncAt: null,
+  cursorAgentModel: "composer-2.5",
+  cursorAgentReasoning: null,
+  cursorAgentFast: true,
+  customInstructions: null,
+  includeAssetsManifest: true,
+  isActive: true,
+  archivedAt: null,
+  deletedAt: null,
+  createdAt: "2026-05-10T00:00:00.000Z",
+  updatedAt: "2026-05-10T00:00:00.000Z",
+};
+
+function conversationFromProject(project: VideoProject): AgentConversation {
+  return {
+    ...baseConversation,
+    cursorAgentId: project.cursorAgentId ?? null,
+    cursorAgentRuntime: project.cursorAgentRuntime ?? null,
+    agentWorkspacePath: project.agentWorkspacePath ?? null,
+    agentGitBranch: project.agentGitBranch ?? baseConversation.agentGitBranch,
+    agentGitCommitSha: project.agentGitCommitSha ?? null,
+    agentStatus: project.agentStatus,
+  };
+}
+
 function createDeps(input: {
   project: VideoProject;
   agentArtifacts?: Array<{
@@ -661,6 +711,7 @@ function createDeps(input: {
   const syncedArtifactBatches: unknown[] = [];
   const sentFirstMessages: unknown[] = [];
   const statusUpdates: Array<{ videoId: string; status: string }> = [];
+  let conversationState = conversationFromProject(input.project);
 
   const streamEvents: Array<{
     agentRunId: string;
@@ -692,6 +743,51 @@ function createDeps(input: {
     },
     async getVideoProject() {
       return input.project;
+    },
+    async getAgentConversation() {
+      return conversationState;
+    },
+    async updateAgentConversationRecord(_conversationId, patch) {
+      conversationState = {
+        ...conversationState,
+        ...(patch.cursorAgentId !== undefined
+          ? { cursorAgentId: patch.cursorAgentId }
+          : {}),
+        ...(patch.cursorAgentRuntime !== undefined
+          ? { cursorAgentRuntime: patch.cursorAgentRuntime }
+          : {}),
+        ...(patch.agentWorkspacePath !== undefined
+          ? { agentWorkspacePath: patch.agentWorkspacePath }
+          : {}),
+        ...(patch.agentGitBranch !== undefined
+          ? { agentGitBranch: patch.agentGitBranch }
+          : {}),
+        ...(patch.agentGitCommitSha !== undefined
+          ? { agentGitCommitSha: patch.agentGitCommitSha }
+          : {}),
+        ...(patch.agentStatus !== undefined
+          ? { agentStatus: patch.agentStatus }
+          : {}),
+        ...(patch.lastAgentRunId !== undefined
+          ? { lastAgentRunId: patch.lastAgentRunId }
+          : {}),
+        ...(patch.lastAgentSyncAt !== undefined
+          ? { lastAgentSyncAt: patch.lastAgentSyncAt }
+          : {}),
+      };
+      return conversationState;
+    },
+    async mirrorAgentConversationToVideo(videoId, conversation) {
+      sessionUpdates.push({
+        videoId,
+        cursorAgentId: conversation.cursorAgentId,
+        cursorAgentRuntime: conversation.cursorAgentRuntime,
+        agentWorkspacePath: conversation.agentWorkspacePath,
+        agentStatus: conversation.agentStatus,
+        agentGitBranch: conversation.agentGitBranch,
+        agentGitCommitSha: conversation.agentGitCommitSha,
+        lastAgentSyncAt: conversation.lastAgentSyncAt,
+      });
     },
     async updateVideoAgentSession(videoId, patch) {
       sessionUpdates.push({ videoId, ...patch });
@@ -768,6 +864,7 @@ function createDeps(input: {
       return {
         id: "agent-run-1",
         videoId: runInput.videoId,
+        agentConversationId: runInput.agentConversationId ?? "conv-1",
         cursorAgentId: runInput.cursorAgentId,
         cursorRunId: null,
         stage: runInput.stage,
@@ -792,6 +889,7 @@ function createDeps(input: {
       return {
         id,
         videoId: "video-1",
+        agentConversationId: "conv-1",
         cursorAgentId: latestRunInput?.cursorAgentId ?? "bc-existing",
         cursorRunId: patch.cursorRunId ?? null,
         stage: "general",

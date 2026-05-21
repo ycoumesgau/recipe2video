@@ -2,7 +2,10 @@
 // rationale on the missing `server-only` guard. This module only talks to the
 // GitHub Contents API and is invoked exclusively from server actions / the
 // /library admin page.
-import { parseGithubRepoFromUrl } from "@/modules/recipe-agent/services/github-recipe-artifacts.service";
+import {
+  fetchGithubBranchHeadSha,
+  parseGithubRepoFromUrl,
+} from "@/modules/recipe-agent/services/github-recipe-artifacts.service";
 
 import { ASSET_REFERENCE_SKILL_PATH } from "../library.constants";
 
@@ -115,6 +118,60 @@ export interface PushFileInput {
  * content already matches `content`, we short-circuit without creating a
  * commit (so spamming the regenerate button doesn't pollute history).
  */
+export async function ensureGithubBranchExists(input: {
+  owner: string;
+  repo: string;
+  branch: string;
+  fromBranch: string;
+  token: string;
+}): Promise<void> {
+  const existing = await fetchGithubBranchHeadSha({
+    owner: input.owner,
+    repo: input.repo,
+    branch: input.branch,
+    token: input.token,
+  });
+  if (existing) {
+    return;
+  }
+
+  const sourceSha = await fetchGithubBranchHeadSha({
+    owner: input.owner,
+    repo: input.repo,
+    branch: input.fromBranch,
+    token: input.token,
+  });
+  if (!sourceSha) {
+    throw new Error(
+      `Cannot create branch ${input.branch}: source branch ${input.fromBranch} was not found in the agent workspace repository.`,
+    );
+  }
+
+  const slug = `${input.owner}/${input.repo}`;
+  const response = await fetch(`https://api.github.com/repos/${slug}/git/refs`, {
+    method: "POST",
+    headers: {
+      ...githubHeaders(input.token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      ref: `refs/heads/${input.branch}`,
+      sha: sourceSha,
+    }),
+  });
+
+  if (response.status === 422) {
+    return;
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `GitHub branch creation failed (${response.status}): ${text.slice(0, 500)}`,
+    );
+  }
+}
+
 export async function pushFileToAgentWorkspace(
   input: PushFileInput,
 ): Promise<PushFileResult> {

@@ -12,6 +12,16 @@ import type { SegmentStatus } from "../segment-status";
 
 type SegmentRow = Database["public"]["Tables"]["segments"]["Row"];
 
+export type StoryboardListScope = {
+  /** When true (default), only rows with `is_active = true`. */
+  activeOnly?: boolean;
+  agentConversationId?: string;
+};
+
+export type StoryboardWriteScope = {
+  agentConversationId: string;
+};
+
 export async function createSeedanceSegment(
   supabase: SupabaseDataClient,
   input: CreateSeedanceSegmentInput,
@@ -49,11 +59,17 @@ export async function replaceSegmentsForVideo(
   supabase: SupabaseDataClient,
   videoId: string,
   segments: CreateSeedanceSegmentInput[],
+  scope?: StoryboardWriteScope,
 ): Promise<SeedanceSegment[]> {
-  const { error: deleteError } = await supabase
-    .from("segments")
-    .delete()
-    .eq("video_id", videoId);
+  let deleteQuery = supabase.from("segments").delete().eq("video_id", videoId);
+  if (scope?.agentConversationId) {
+    deleteQuery = deleteQuery.eq(
+      "agent_conversation_id",
+      scope.agentConversationId,
+    );
+  }
+
+  const { error: deleteError } = await deleteQuery;
 
   throwIfSupabaseError(deleteError, "replaceSegmentsForVideo delete failed");
 
@@ -77,6 +93,8 @@ export async function replaceSegmentsForVideo(
         duration_target: segment.durationTarget,
         status: segment.status ?? "pending",
         created_by: segment.createdBy ?? null,
+        agent_conversation_id: scope?.agentConversationId ?? null,
+        is_active: true,
       })),
     )
     .select("*")
@@ -98,8 +116,12 @@ export async function upsertSegmentsForVideoByPosition(
   supabase: SupabaseDataClient,
   videoId: string,
   segments: CreateSeedanceSegmentInput[],
+  scope?: StoryboardWriteScope,
 ): Promise<SeedanceSegment[]> {
-  const existing = await listSegmentsByVideoId(supabase, videoId);
+  const existing = await listSegmentsByVideoId(supabase, videoId, {
+    activeOnly: false,
+    agentConversationId: scope?.agentConversationId,
+  });
   const existingByPosition = new Map(
     existing.map((segment) => [segment.position, segment]),
   );
@@ -149,6 +171,8 @@ export async function upsertSegmentsForVideoByPosition(
         duration_target: segment.durationTarget,
         status: segment.status ?? "pending",
         created_by: segment.createdBy ?? null,
+        agent_conversation_id: scope?.agentConversationId ?? null,
+        is_active: true,
       })
       .select("*")
       .single();
@@ -166,12 +190,17 @@ export async function upsertSegmentsForVideoByPosition(
 export async function listSegmentsByVideoId(
   supabase: SupabaseDataClient,
   videoId: string,
+  scope: StoryboardListScope = { activeOnly: true },
 ): Promise<SeedanceSegment[]> {
-  const { data, error } = await supabase
-    .from("segments")
-    .select("*")
-    .eq("video_id", videoId)
-    .order("position", { ascending: true });
+  let query = supabase.from("segments").select("*").eq("video_id", videoId);
+  if (scope.activeOnly !== false) {
+    query = query.eq("is_active", true);
+  }
+  if (scope.agentConversationId) {
+    query = query.eq("agent_conversation_id", scope.agentConversationId);
+  }
+
+  const { data, error } = await query.order("position", { ascending: true });
 
   throwIfSupabaseError(error, "listSegmentsByVideoId failed");
   return data.map(mapSeedanceSegment);

@@ -22,6 +22,13 @@ import {
   updateAgentRun,
   updateVideoAgentSession,
 } from "../repositories/recipe-agent.repository";
+import {
+  getAgentConversationById,
+  mirrorActiveConversationToVideo,
+  updateAgentConversation,
+} from "../repositories/agent-conversations.repository";
+import { buildConversationBranchForSlug } from "./ensure-agent-conversation";
+import { ensureActiveAgentConversation } from "./ensure-agent-conversation";
 import { applyRecipeAgentStreamToChat } from "../services/recipe-agent-chat-ingest";
 import { finalizeRecipeAgentChatTurn } from "./finalize-recipe-agent-chat-turn";
 import {
@@ -32,6 +39,7 @@ import { buildAgentAttachmentCursorImages } from "../services/agent-attachment-c
 import { buildRecipeSourceCursorImagesForAgent } from "../services/recipe-source-cursor-images";
 import { RECIPE_SOURCE_CURSOR_AGENT_MAX_IMAGES } from "@/modules/media-assets/media-asset.constants";
 import type {
+  AgentConversation,
   AgentRun,
   CreateAgentRunInput,
   RecipeAgentConfig,
@@ -42,6 +50,7 @@ import type {
   RecipeAgentStreamEventHandler,
   UpdateAgentRunInput,
   UpdateVideoAgentSessionInput,
+  UpdateAgentConversationInput,
 } from "../recipe-agent.types";
 import type { CursorRecipeAgentService } from "../services/cursor-agent.service";
 import { createCursorRecipeAgentService } from "../services/cursor-agent.service";
@@ -58,6 +67,7 @@ import {
 interface EnsureRecipeAgentInput {
   supabase?: SupabaseDataClient;
   videoId: string;
+  conversationId?: string;
   requestedByUserId: string;
 }
 
@@ -65,17 +75,31 @@ interface SendRecipeAgentMessageInput extends EnsureRecipeAgentInput {
   stage: RecipeAgentStage;
   message: string;
   attachmentMediaAssetIds?: string[];
+  /** When true, inject the available-assets manifest briefing in the user message. */
+  includeAssetsManifestBriefing?: boolean;
 }
 
 export interface RecipeAgentOrchestrationDependencies {
   getVideoProject(videoId: string): Promise<VideoProject | null>;
+  getAgentConversation?(
+    videoId: string,
+    conversationId?: string,
+  ): Promise<AgentConversation | null>;
+  updateAgentConversationRecord?(
+    conversationId: string,
+    patch: UpdateAgentConversationInput,
+  ): Promise<AgentConversation>;
+  mirrorAgentConversationToVideo?(
+    videoId: string,
+    conversation: AgentConversation,
+  ): Promise<void>;
   updateVideoAgentSession(
     videoId: string,
     patch: UpdateVideoAgentSessionInput,
   ): Promise<VideoProject>;
   updateVideoStatus(videoId: string, status: VideoStatus): Promise<VideoProject>;
   recipeAgentService: CursorRecipeAgentService;
-  getRecipeAgentService?: (project: VideoProject) => CursorRecipeAgentService;
+  getRecipeAgentService?: (conversation: AgentConversation) => CursorRecipeAgentService;
   createAgentRun(input: CreateAgentRunInput): Promise<AgentRun>;
   updateAgentRun(id: string, patch: UpdateAgentRunInput): Promise<AgentRun>;
   syncArtifacts(
@@ -105,29 +129,69 @@ export async function ensureRecipeAgent(
   if (!project) {
     throw new Error(`Video ${input.videoId} not found.`);
   }
-  const recipeAgentService =
-    deps.getRecipeAgentService?.(project) ?? deps.recipeAgentService;
 
-  if (project.cursorAgentId && project.cursorAgentRuntime && project.agentWorkspacePath) {
+  if (!input.supabase && !deps.getAgentConversation) {
+    throw new Error("Supabase client is required for recipe agent orchestration.");
+  }
+
+  const conversation = deps.getAgentConversation
+    ? await deps.getAgentConversation(input.videoId, input.conversationId)
+    : input.conversationId
+      ? await getAgentConversationById(input.supabase!, input.conversationId)
+      : await ensureActiveAgentConversation(input.supabase!, input.videoId, project);
+
+  if (!conversation || conversation.videoId !== input.videoId) {
+    throw new Error(`Agent conversation not found for video ${input.videoId}.`);
+  }
+
+  const recipeAgentService =
+    deps.getRecipeAgentService?.(conversation) ?? deps.recipeAgentService;
+
+  if (
+    conversation.cursorAgentId &&
+    conversation.cursorAgentRuntime &&
+    conversation.agentWorkspacePath
+  ) {
     return {
-      agentId: project.cursorAgentId,
-      runtime: project.cursorAgentRuntime,
-      workspacePath: project.agentWorkspacePath,
-      model: "configured",
+      agentId: conversation.cursorAgentId,
+      runtime: conversation.cursorAgentRuntime,
+      workspacePath: conversation.agentWorkspacePath,
+      model: conversation.cursorAgentModel,
     };
   }
+
+  const gitBranch =
+    conversation.agentGitBranch ??
+    buildConversationBranchForSlug(input.videoId, conversation.slug);
 
   const session = await recipeAgentService.createRecipeAgent({
     videoId: input.videoId,
     title: project.title,
+    conversationId: conversation.id,
+    conversationName: conversation.name,
+    conversationSlug: conversation.slug,
+    gitBranch,
+    includeAssetsManifest: conversation.includeAssetsManifest,
   });
 
-  await deps.updateVideoAgentSession(input.videoId, {
-    cursorAgentId: session.agentId,
-    cursorAgentRuntime: session.runtime,
-    agentWorkspacePath: session.workspacePath,
-    agentStatus: "idle",
-  });
+  const updatedConversation = await persistAgentConversation(
+    deps,
+    input.supabase,
+    conversation.id,
+    {
+      cursorAgentId: session.agentId,
+      cursorAgentRuntime: session.runtime,
+      agentWorkspacePath: session.workspacePath,
+      agentGitBranch: gitBranch,
+      agentStatus: "idle",
+    },
+  );
+  await mirrorAgentConversation(
+    deps,
+    input.supabase,
+    input.videoId,
+    updatedConversation,
+  );
 
   return session;
 }
@@ -142,8 +206,27 @@ export async function sendRecipeAgentMessage(
   if (!project) {
     throw new Error(`Video ${input.videoId} not found.`);
   }
+
+  if (!input.supabase && !deps.getAgentConversation) {
+    throw new Error("Supabase client is required for recipe agent orchestration.");
+  }
+
+  const conversation = deps.getAgentConversation
+    ? await deps.getAgentConversation(input.videoId, input.conversationId)
+    : input.conversationId
+      ? await getAgentConversationById(input.supabase!, input.conversationId)
+      : await ensureActiveAgentConversation(input.supabase!, input.videoId, project);
+
+  if (!conversation || conversation.videoId !== input.videoId) {
+    throw new Error(`Agent conversation not found for video ${input.videoId}.`);
+  }
+
+  const activeConversation = conversation;
   const recipeAgentService =
-    deps.getRecipeAgentService?.(project) ?? deps.recipeAgentService;
+    deps.getRecipeAgentService?.(activeConversation) ?? deps.recipeAgentService;
+  const gitBranch =
+    activeConversation.agentGitBranch ??
+    buildConversationBranchForSlug(input.videoId, activeConversation.slug);
 
   const currentProject = project;
   const recipeSourceImages = await buildRecipeSourceCursorImagesForAgent(
@@ -178,6 +261,7 @@ export async function sendRecipeAgentMessage(
 
     const ids = await seedRecipeAgentChatTurn(input.supabase, {
       videoId: input.videoId,
+      agentConversationId: activeConversation.id,
       agentRunId: current.id,
       userMessage: seedUserMessage,
       stage: input.stage,
@@ -214,6 +298,8 @@ export async function sendRecipeAgentMessage(
     const artifactsToSync = selectArtifactsForStage(input.stage, enriched.artifacts);
     const syncPlan = await deps.syncArtifacts(input.supabase, {
       videoId: input.videoId,
+      agentConversationId: activeConversation.id,
+      syncStoryboardTables: activeConversation.isActive,
       artifacts: artifactsToSync,
     });
     assertRecipeAgentSyncReadiness({
@@ -250,20 +336,31 @@ export async function sendRecipeAgentMessage(
     const nextAgentWorkspacePath =
       enriched.resolvedWorkspacePath ?? result.workspacePath?.trim() ?? undefined;
 
-    await deps.updateVideoAgentSession(input.videoId, {
-      lastAgentRunId: result.runId,
-      lastAgentSyncAt: new Date().toISOString(),
-      agentGitBranch: enriched.gitBranch ?? null,
-      agentGitCommitSha: enriched.gitSha ?? null,
-      agentStatus: needsUserInput
-        ? "needs_input"
-        : syncPlan.valid
-          ? "idle"
-          : "validation_failed",
-      ...(nextAgentWorkspacePath
-        ? { agentWorkspacePath: nextAgentWorkspacePath }
-        : {}),
-    });
+    const updatedConversation = await persistAgentConversation(
+      deps,
+      input.supabase,
+      activeConversation.id,
+      {
+        lastAgentRunId: result.runId,
+        lastAgentSyncAt: new Date().toISOString(),
+        agentGitBranch: enriched.gitBranch ?? activeConversation.agentGitBranch ?? null,
+        agentGitCommitSha: enriched.gitSha ?? null,
+        agentStatus: needsUserInput
+          ? "needs_input"
+          : syncPlan.valid
+            ? "idle"
+            : "validation_failed",
+        ...(nextAgentWorkspacePath
+          ? { agentWorkspacePath: nextAgentWorkspacePath }
+          : {}),
+      },
+    );
+    await mirrorAgentConversation(
+      deps,
+      input.supabase,
+      input.videoId,
+      updatedConversation,
+    );
 
     if (input.supabase && chatAssistantMessageId) {
       await finalizeRecipeAgentChatTurn(input.supabase, {
@@ -315,9 +412,13 @@ export async function sendRecipeAgentMessage(
       });
     }
 
-    await deps.updateVideoAgentSession(input.videoId, {
-      agentStatus: "failed",
-    });
+    await updateConversationAgentStatus(
+      deps,
+      input.supabase,
+      activeConversation.id,
+      input.videoId,
+      "failed",
+    );
 
     throw Object.assign(error instanceof Error ? error : new Error(message), {
       run: updatedRun,
@@ -325,16 +426,20 @@ export async function sendRecipeAgentMessage(
   }
 
   async function sendMessageWithExistingOrNewAgent() {
-    const existingSession = getExistingRecipeAgentSession(currentProject);
+    const existingSession = getExistingRecipeAgentSession(activeConversation);
 
     if (existingSession) {
       session = existingSession;
       run = await createRunningAgentRun(existingSession);
       run = await attachChatTurnToRun(run);
 
-      await deps.updateVideoAgentSession(input.videoId, {
-        agentStatus: "running",
-      });
+      await updateConversationAgentStatus(
+        deps,
+        input.supabase,
+        activeConversation.id,
+        input.videoId,
+        "running",
+      );
 
       try {
         return await recipeAgentService.sendMessage({
@@ -367,12 +472,23 @@ export async function sendRecipeAgentMessage(
           });
         }
 
-        await deps.updateVideoAgentSession(input.videoId, {
-          cursorAgentId: null,
-          cursorAgentRuntime: null,
-          agentWorkspacePath: null,
-          agentStatus: "running",
-        });
+        const clearedConversation = await persistAgentConversation(
+          deps,
+          input.supabase,
+          activeConversation.id,
+          {
+            cursorAgentId: null,
+            cursorAgentRuntime: null,
+            agentWorkspacePath: null,
+            agentStatus: "running",
+          },
+        );
+        await mirrorAgentConversation(
+          deps,
+          input.supabase,
+          input.videoId,
+          clearedConversation,
+        );
 
         session = undefined;
         run = undefined;
@@ -382,6 +498,12 @@ export async function sendRecipeAgentMessage(
     const created = await recipeAgentService.createRecipeAgentAndSendMessage({
       videoId: input.videoId,
       title: currentProject.title,
+      conversationId: activeConversation.id,
+      conversationName: activeConversation.name,
+      conversationSlug: activeConversation.slug,
+      gitBranch,
+      includeAssetsManifest:
+        input.includeAssetsManifestBriefing ?? activeConversation.includeAssetsManifest,
       stage: input.stage,
       message: input.message,
       cursorImages: cursorImages.length > 0 ? cursorImages : undefined,
@@ -389,12 +511,19 @@ export async function sendRecipeAgentMessage(
       onSessionCreated: async (createdSession) => {
         session = createdSession;
 
-        await deps.updateVideoAgentSession(input.videoId, {
-          cursorAgentId: createdSession.agentId,
-          cursorAgentRuntime: createdSession.runtime,
-          agentWorkspacePath: createdSession.workspacePath,
-          agentStatus: "running",
-        });
+        const updated = await persistAgentConversation(
+          deps,
+          input.supabase,
+          activeConversation.id,
+          {
+            cursorAgentId: createdSession.agentId,
+            cursorAgentRuntime: createdSession.runtime,
+            agentWorkspacePath: createdSession.workspacePath,
+            agentGitBranch: gitBranch,
+            agentStatus: "running",
+          },
+        );
+        await mirrorAgentConversation(deps, input.supabase, input.videoId, updated);
 
         run = await createRunningAgentRun(createdSession);
         run = await attachChatTurnToRun(run);
@@ -410,6 +539,7 @@ export async function sendRecipeAgentMessage(
   function createRunningAgentRun(agentSession: RecipeAgentSession) {
     return deps.createAgentRun({
       videoId: input.videoId,
+      agentConversationId: activeConversation.id,
       cursorAgentId: agentSession.agentId,
       stage: input.stage,
       userMessage: seedUserMessage,
@@ -480,18 +610,70 @@ function assertRecipeAgentSyncReadiness(input: {
 }
 
 function getExistingRecipeAgentSession(
-  project: VideoProject,
+  conversation: AgentConversation,
 ): RecipeAgentSession | null {
-  if (project.cursorAgentId && project.cursorAgentRuntime && project.agentWorkspacePath) {
+  if (
+    conversation.cursorAgentId &&
+    conversation.cursorAgentRuntime &&
+    conversation.agentWorkspacePath
+  ) {
     return {
-      agentId: project.cursorAgentId,
-      runtime: project.cursorAgentRuntime,
-      workspacePath: project.agentWorkspacePath,
-      model: "configured",
+      agentId: conversation.cursorAgentId,
+      runtime: conversation.cursorAgentRuntime,
+      workspacePath: conversation.agentWorkspacePath,
+      model: conversation.cursorAgentModel,
     };
   }
 
   return null;
+}
+
+async function updateConversationAgentStatus(
+  deps: RecipeAgentOrchestrationDependencies,
+  supabase: SupabaseDataClient | undefined,
+  conversationId: string,
+  videoId: string,
+  agentStatus: AgentConversation["agentStatus"],
+) {
+  const updated = await persistAgentConversation(deps, supabase, conversationId, {
+    agentStatus,
+  });
+  await mirrorAgentConversation(deps, supabase, videoId, updated);
+}
+
+async function persistAgentConversation(
+  deps: RecipeAgentOrchestrationDependencies,
+  supabase: SupabaseDataClient | undefined,
+  conversationId: string,
+  patch: UpdateAgentConversationInput,
+) {
+  if (deps.updateAgentConversationRecord) {
+    return deps.updateAgentConversationRecord(conversationId, patch);
+  }
+
+  if (!supabase) {
+    throw new Error("Supabase client is required to update agent conversations.");
+  }
+
+  return updateAgentConversation(supabase, conversationId, patch);
+}
+
+async function mirrorAgentConversation(
+  deps: RecipeAgentOrchestrationDependencies,
+  supabase: SupabaseDataClient | undefined,
+  videoId: string,
+  conversation: AgentConversation,
+) {
+  if (deps.mirrorAgentConversationToVideo) {
+    await deps.mirrorAgentConversationToVideo(videoId, conversation);
+    return;
+  }
+
+  if (!supabase) {
+    throw new Error("Supabase client is required to mirror agent conversations.");
+  }
+
+  await mirrorActiveConversationToVideo(supabase, videoId, conversation);
 }
 
 function isCursorAgentNotFoundError(error: unknown) {
@@ -533,8 +715,8 @@ function createDefaultDependencies(
     updateVideoStatus: (videoId, status) =>
       updateVideoProjectStatus(supabase, videoId, status),
     recipeAgentService: baseRecipeAgentService,
-    getRecipeAgentService: (project) => {
-      const override = resolveProjectRecipeAgentConfigOverride(project);
+    getRecipeAgentService: (conversation) => {
+      const override = resolveConversationRecipeAgentConfigOverride(conversation);
       if (!override) {
         return baseRecipeAgentService;
       }
@@ -584,18 +766,14 @@ function createDefaultDependencies(
   };
 }
 
-function resolveProjectRecipeAgentConfigOverride(
-  project: VideoProject,
+function resolveConversationRecipeAgentConfigOverride(
+  conversation: AgentConversation,
 ): Pick<RecipeAgentConfig, "model" | "modelReasoning" | "modelFast"> | null {
-  const defaults = getProductionDefaults(project.recipeData);
-  if (!defaults?.cursorAgentModel) {
-    return null;
-  }
-
-  const model = defaults.cursorAgentModel.trim();
+  const model = conversation.cursorAgentModel.trim();
   if (model.length === 0) {
     return null;
   }
+
   const allowedModels = new Set<string>(
     CURSOR_AGENT_MODEL_OPTIONS.map((option) => option.value),
   );
@@ -606,7 +784,7 @@ function resolveProjectRecipeAgentConfigOverride(
   const modelKey = resolvedModel as keyof typeof CURSOR_AGENT_REASONING_OPTIONS;
   const allowedReasoning =
     CURSOR_AGENT_REASONING_OPTIONS[modelKey]?.map((option) => option.value) ?? [];
-  const reasoningRaw = defaults.cursorAgentReasoning?.trim();
+  const reasoningRaw = conversation.cursorAgentReasoning?.trim();
   const reasoning =
     reasoningRaw &&
     allowedReasoning.some((value) => value === reasoningRaw)
@@ -614,51 +792,15 @@ function resolveProjectRecipeAgentConfigOverride(
       : CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL[
           resolvedModel as keyof typeof CURSOR_AGENT_DEFAULT_REASONING_BY_MODEL
         ];
-  const fastMode =
-    CURSOR_AGENT_FAST_BY_MODEL[
-      resolvedModel as keyof typeof CURSOR_AGENT_FAST_BY_MODEL
-    ] ??
-    "false";
+  const fastMode = conversation.cursorAgentFast
+    ? "true"
+    : (CURSOR_AGENT_FAST_BY_MODEL[
+        resolvedModel as keyof typeof CURSOR_AGENT_FAST_BY_MODEL
+      ] ?? "false");
 
   return {
     model: resolvedModel,
     modelReasoning: reasoning ? reasoning : undefined,
     modelFast: fastMode,
   };
-}
-
-function getProductionDefaults(
-  recipeData: VideoProject["recipeData"],
-): {
-  cursorAgentModel?: string;
-  cursorAgentReasoning?: string;
-  cursorAgentFast?: string;
-} | null {
-  if (!isRecord(recipeData)) {
-    return null;
-  }
-
-  const productionDefaults = recipeData.productionDefaults;
-  if (!isRecord(productionDefaults)) {
-    return null;
-  }
-
-  return {
-    cursorAgentModel:
-      typeof productionDefaults.cursorAgentModel === "string"
-        ? productionDefaults.cursorAgentModel
-        : undefined,
-    cursorAgentReasoning:
-      typeof productionDefaults.cursorAgentReasoning === "string"
-        ? productionDefaults.cursorAgentReasoning
-        : undefined,
-    cursorAgentFast:
-      typeof productionDefaults.cursorAgentFast === "string"
-        ? productionDefaults.cursorAgentFast
-        : undefined,
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

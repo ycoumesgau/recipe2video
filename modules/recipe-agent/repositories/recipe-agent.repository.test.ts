@@ -19,6 +19,7 @@ test("mapAgentRun maps database rows to domain shape", () => {
     mapAgentRun({
       id: "run-row-1",
       video_id: "video-1",
+      agent_conversation_id: "conv-1",
       cursor_agent_id: "bc-agent",
       cursor_run_id: "run-1",
       stage: "recipe_ingest",
@@ -40,6 +41,7 @@ test("mapAgentRun maps database rows to domain shape", () => {
     {
       id: "run-row-1",
       videoId: "video-1",
+      agentConversationId: "conv-1",
       cursorAgentId: "bc-agent",
       cursorRunId: "run-1",
       stage: "recipe_ingest",
@@ -66,6 +68,7 @@ test("mapAgentArtifact maps validation errors JSON", () => {
     mapAgentArtifact({
       id: "artifact-1",
       video_id: "video-1",
+      agent_conversation_id: "conv-1",
       artifact_name: "recipe-analysis.json",
       artifact_path: "agent-recipes/video-1/recipe-analysis.json",
       content: "{\"ok\":true}",
@@ -78,6 +81,7 @@ test("mapAgentArtifact maps validation errors JSON", () => {
     {
       id: "artifact-1",
       videoId: "video-1",
+      agentConversationId: "conv-1",
       artifactName: "recipe-analysis.json",
       artifactPath: "agent-recipes/video-1/recipe-analysis.json",
       content: "{\"ok\":true}",
@@ -104,6 +108,7 @@ test("repositories write and read agent rows with snake_case payloads", async ()
 
   await createAgentRun(supabase.client, {
     videoId: "video-1",
+    agentConversationId: "conv-1",
     cursorAgentId: "bc-agent",
     stage: "recipe_ingest",
     userMessage: "Analyze recipe",
@@ -121,6 +126,7 @@ test("repositories write and read agent rows with snake_case payloads", async ()
 
   await upsertAgentArtifact(supabase.client, {
     videoId: "video-1",
+    agentConversationId: "conv-1",
     artifactName: "recipe-analysis.json",
     artifactPath: "agent-recipes/video-1/recipe-analysis.json",
     content: "{\"ok\":true}",
@@ -150,6 +156,7 @@ test("repositories write and read agent rows with snake_case payloads", async ()
       method: "insert",
       payload: {
         video_id: "video-1",
+        agent_conversation_id: "conv-1",
         cursor_agent_id: "bc-agent",
         stage: "recipe_ingest",
         user_message: "Analyze recipe",
@@ -173,6 +180,7 @@ test("repositories write and read agent rows with snake_case payloads", async ()
       method: "upsert",
       payload: {
         video_id: "video-1",
+        agent_conversation_id: "conv-1",
         artifact_name: "recipe-analysis.json",
         artifact_path: "agent-recipes/video-1/recipe-analysis.json",
         content: "{\"ok\":true}",
@@ -180,7 +188,7 @@ test("repositories write and read agent rows with snake_case payloads", async ()
         validation_status: "valid",
         validation_errors: [],
       },
-      options: { onConflict: "video_id,artifact_name" },
+      options: { onConflict: "video_id,agent_conversation_id,artifact_name" },
     },
   ]);
 });

@@ -54,6 +54,8 @@ export function createCursorRecipeAgentService(
           name: buildAgentName(input),
           workspacePath: workspace.workspacePath,
           videoId: input.videoId,
+          gitBranch: input.gitBranch,
+          includeAssetsManifest: input.includeAssetsManifest,
         }),
       );
 
@@ -77,6 +79,8 @@ export function createCursorRecipeAgentService(
           name: buildAgentName(input),
           workspacePath: workspace.workspacePath,
           videoId: input.videoId,
+          gitBranch: input.gitBranch,
+          includeAssetsManifest: input.includeAssetsManifest,
         }),
       );
       const session = {
@@ -100,6 +104,7 @@ export function createCursorRecipeAgentService(
             cursorImages: input.cursorImages,
             includeArtifactContents: input.includeArtifactContents,
             workspacePath: workspace.workspacePath,
+            includeAssetsManifestBriefing: input.includeAssetsManifest,
             onStreamEvent: input.onStreamEvent,
           }),
         };
@@ -139,6 +144,8 @@ function buildAgentOptions(input: {
   name: string;
   workspacePath: string;
   videoId: string;
+  gitBranch: string;
+  includeAssetsManifest?: boolean;
 }): AgentOptions {
   const base = {
     apiKey: input.config.apiKey,
@@ -158,6 +165,8 @@ function buildAgentOptions(input: {
   const systemPrompt = buildRecipeAgentGuardianSubagentPrompt({
     videoId: input.videoId,
     workspacePath: input.workspacePath,
+    branchName: input.gitBranch,
+    includeAssetsManifest: input.includeAssetsManifest,
   });
 
   if (input.config.runtime === "local") {
@@ -466,12 +475,14 @@ async function sendMessageWithAgent(input: {
   cursorImages?: SendRecipeAgentMessageInput["cursorImages"];
   includeArtifactContents?: boolean;
   workspacePath: string;
+  includeAssetsManifestBriefing?: boolean;
   onStreamEvent?: SendRecipeAgentMessageInput["onStreamEvent"];
 }): Promise<RecipeAgentRunResult> {
   const text = buildRecipeAgentUserMessage({
     stage: input.stage,
     message: input.message,
     workspacePath: input.workspacePath,
+    includeAssetsManifestBriefing: input.includeAssetsManifestBriefing,
   });
   const payload =
     input.cursorImages && input.cursorImages.length > 0
@@ -537,8 +548,14 @@ async function consumeAgentRunStream(
 
 function buildAgentName(input: CreateRecipeAgentInput) {
   const title = input.title?.trim();
+  const conversationSuffix =
+    input.conversationName?.trim() || input.conversationSlug?.trim() || "Initial";
 
-  return title ? `Recipe2Video: ${title}` : `Recipe2Video: ${input.videoId}`;
+  if (title) {
+    return `Recipe2Video: ${title} — ${conversationSuffix}`;
+  }
+
+  return `Recipe2Video: ${input.videoId} — ${conversationSuffix}`;
 }
 
 async function disposeAgent(agent: SDKAgent) {

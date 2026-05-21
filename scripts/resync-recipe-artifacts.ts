@@ -13,6 +13,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 import type { Database } from "@/shared/supabase/database.types";
+import { getActiveAgentConversationByVideoId } from "@/modules/recipe-agent/repositories/agent-conversations.repository";
 import { listAgentArtifactsByVideoId } from "@/modules/recipe-agent/repositories/recipe-agent.repository";
 import { syncRecipeAgentArtifacts } from "@/modules/recipe-agent/use-cases/sync-recipe-agent-artifacts";
 
@@ -44,7 +45,15 @@ async function main() {
 
   for (const videoId of videoIds) {
     console.log(`\n=== resync ${videoId} ===`);
-    const artifacts = await listAgentArtifactsByVideoId(supabase, videoId);
+    const conversation = await getActiveAgentConversationByVideoId(supabase, videoId);
+    if (!conversation) {
+      console.warn(`  no active conversation for video ${videoId}; skipping.`);
+      continue;
+    }
+
+    const artifacts = await listAgentArtifactsByVideoId(supabase, videoId, {
+      agentConversationId: conversation.id,
+    });
     if (artifacts.length === 0) {
       console.warn(`  no artifacts found for video ${videoId}; skipping.`);
       continue;
@@ -52,6 +61,7 @@ async function main() {
 
     const plan = await syncRecipeAgentArtifacts(supabase, {
       videoId,
+      agentConversationId: conversation.id,
       artifacts: artifacts.map((row) => ({
         name: row.artifactName,
         path: row.artifactPath,

@@ -343,7 +343,7 @@ Rules:
 * `auth` — Magic Link login, allowlist checks, profiles
 * `videos` — video project lifecycle and dashboard data
 * `recipe-ingest` — recipe extraction from URL, photos, or text
-* `recipe-agent` — persistent Cursor SDK recipe agents, artifact validation, Supabase synchronization
+* `recipe-agent` — persistent Cursor SDK recipe agents (multi-conversation per video), artifact validation, Supabase synchronization
 * `storyboard` — logical scenes and Seedance 2.0 segment planning
 * `references` — global and recipe-specific reference assets
 * `generation` — Runway task creation, polling, and generation state

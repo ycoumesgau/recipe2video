@@ -9,6 +9,7 @@ export type CreateVideoDraftIntent = "analyze" | "draft";
 
 export interface BuildRecipeAgentMessagePayloadInput {
   videoId: string;
+  conversationId: string;
   profileId: string;
   sourceSummary: RecipeSourceSummary;
   productionDefaults: VideoProductionDefaults;
@@ -29,6 +30,7 @@ export function buildRecipeAgentMessagePayload(
 
   return {
     videoId: input.videoId,
+    conversationId: input.conversationId,
     stage: "recipe_ingest",
     message: buildInitialRecipeAgentMessage(input),
     requestedByUserId: input.profileId,

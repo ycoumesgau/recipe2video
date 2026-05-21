@@ -16,7 +16,7 @@ Recipe2Video uses the word "agent" in two distinct contexts:
 
 1. **Build agents** (Cursor Cloud Agents): work on feature branches to implement application code during the hackathon. They follow GitHub Issues, branch boundaries, and merge rules described in this document.
 
-2. **Recipe agents** (Cursor SDK agents): persistent creative planning workers, one per recipe video project. They are created and managed programmatically through the `@cursor/sdk` TypeScript library. They do not contribute code, create branches, or open PRs. They produce structured recipe artifacts in a dedicated workspace repository (`recipe2video-agent-workspace`).
+2. **Recipe agents** (Cursor SDK agents): persistent creative planning workers scoped to a recipe video project. A project may have **multiple conversations** (distinct Cursor agents, models, instructions, and Git branches). They are created and managed programmatically through the `@cursor/sdk` TypeScript library. They do not contribute application code or open PRs on `recipe2video`. They produce structured recipe artifacts in a dedicated workspace repository (`recipe2video-agent-workspace`).
 
 The rest of this document covers **build agents**. The recipe agent architecture is documented in `docs/technical-contracts.md` under "Cursor Recipe Agent Contract".
 
@@ -423,8 +423,11 @@ agent-recipes/    — Root directory for per-recipe workspaces
 
 * The workspace repo is referenced by `CURSOR_AGENT_REPO_URL` environment variable.
 * Cloud agents clone it at `CURSOR_AGENT_STARTING_REF` (default: `main`).
-* Agents may only write inside `agent-recipes/{videoId}/`.
-* The application never pushes, merges, or commits into this repository directly.
+* Agents may only write inside `agent-recipes/{videoId}/` on their conversation branch.
+* Git branches: `recipe2video/{videoId}` (initial conversation) or `recipe2video/{videoId}/{conversationSlug}`.
+* Fresh conversations may receive `available-assets.json` (paid reference images + finalized segment videos only — no prior storyboard JSON).
+* Switching the active conversation in the app archives the previous conversation's storyboard/segment rows via `is_active` flags (non-destructive).
+* The application never pushes, merges, or commits into this repository directly (except server-side manifest refresh via `RECIPE_AGENT_GITHUB_TOKEN`).
 * Artifacts produced by agents are downloaded via the Cursor SDK, not via git.
 * The workspace repo may contain Cursor rules and skills that guide recipe agent behavior.
 * The workspace repo should NOT contain application source code, migrations, or secrets.

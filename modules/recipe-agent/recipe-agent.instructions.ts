@@ -14,8 +14,10 @@ export const RECIPE_AGENT_GUARDIAN_SUBAGENT_PROMPT_MAX_CHARS = 8000;
 export function buildRecipeAgentGuardianSubagentPrompt(input: {
   videoId: string;
   workspacePath: string;
+  branchName: string;
+  includeAssetsManifest?: boolean;
 }) {
-  const branchName = `recipe2video/${input.videoId}`;
+  const branchName = input.branchName;
 
   return [
     "You are the persistent Recipe2Video creative planning agent for one recipe video project.",
@@ -24,10 +26,17 @@ export function buildRecipeAgentGuardianSubagentPrompt(input: {
     "Hard boundaries:",
     `- Work only inside \`${input.workspacePath}/\`.`,
     "- Do not modify application source code, package files, migrations, or docs outside the agent workspace recipe folder.",
-    `- Use Git branch \`${branchName}\` (create from default if missing). Commit and push after meaningful artifact updates.`,
+    `- Use Git branch \`${branchName}\` (create from the repo default branch if missing). Commit and push after meaningful artifact updates.`,
     `- Maintain \`${input.workspacePath}/${RECIPE_AGENT_CHECKPOINT_MANIFEST}\` (branch, commitSha, optional completedAt, optional artifactPaths) so Recipe2Video can sync from GitHub.`,
     `- When finished, include a JSON code block: {"recipe2videoCheckpoint":{"branch":"${branchName}","commitSha":"<sha>","manifestPath":"${input.workspacePath}/${RECIPE_AGENT_CHECKPOINT_MANIFEST}"}}.`,
     "- Do not call Runway, OpenAI, Supabase, Mux, Suno, or other paid generation APIs from tools. Produce planning artifacts only.",
+    "- Do not read storyboard, segment prompts, reference plans, or decisions from other Git branches or from the default branch — they belong to other Recipe2Video agent conversations.",
+    ...(input.includeAssetsManifest
+      ? [
+          `- Before planning new references or segments, read \`${input.workspacePath}/available-assets.json\` if present.`,
+          "- Reuse listed `canonicalName` values when an existing asset fits; omit entries you intentionally do not need.",
+        ]
+      : []),
     "",
     "Required artifacts:",
     ...RECIPE_AGENT_ARTIFACT_NAMES.filter(
@@ -113,10 +122,24 @@ export function buildRecipeAgentSystemPrompt(input: {
   ].join("\n");
 }
 
+export function buildPreExistingAssetsManifestUserBlock(input: {
+  workspacePath: string;
+}) {
+  return [
+    "Pre-existing assets manifest:",
+    `- Read \`${input.workspacePath}/available-assets.json\` BEFORE planning references or segments (when present).`,
+    "- Each entry includes a `canonicalName`, description, and signed URL.",
+    "- If a listed asset fits your plan, reuse its `canonicalName` in reference-plan.json and seedance-segments.json (do not regenerate similar assets).",
+    "- If you intentionally do not need a listed asset, simply omit it — it stays in the project library but won't be referenced in your prompts.",
+    "- DO NOT consult prior storyboard, segment prompts, or decisions from previous conversations.",
+  ].join("\n");
+}
+
 export function buildRecipeAgentUserMessage(input: {
   stage: RecipeAgentStage;
   message: string;
   workspacePath: string;
+  includeAssetsManifestBriefing?: boolean;
 }) {
   const stageSpecificRules = (() => {
     if (input.stage === "recipe_ingest") {
@@ -148,6 +171,9 @@ export function buildRecipeAgentUserMessage(input: {
     `Stage: ${input.stage}`,
     `Workspace: ${input.workspacePath}`,
     "",
+    ...(input.includeAssetsManifestBriefing
+      ? [buildPreExistingAssetsManifestUserBlock(input), ""]
+      : []),
     "User request:",
     input.message,
     "",

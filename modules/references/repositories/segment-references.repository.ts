@@ -69,6 +69,7 @@ export async function replaceSegmentReferencesForSegments(
   input: {
     segmentIds: string[];
     mappings: SegmentReferenceMapping[];
+    agentConversationId?: string;
   },
 ): Promise<SegmentReferenceLink[]> {
   if (input.segmentIds.length > 0) {
@@ -99,6 +100,8 @@ export async function replaceSegmentReferencesForSegments(
         role: mapping.role,
         position: mapping.position,
         required: mapping.required,
+        agent_conversation_id: input.agentConversationId ?? null,
+        is_active: true,
       })),
     )
     .select("*");

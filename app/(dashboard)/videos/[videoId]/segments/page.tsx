@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { loadRecipeAgentContext } from "@/modules/recipe-agent/load-recipe-agent-context";
 import { countGeneratingReferenceAssetsForVideo } from "@/modules/references/repositories/reference.repository";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
@@ -13,12 +14,12 @@ export default async function ProjectSegmentsPage({
   searchParams,
 }: {
   params: Promise<{ videoId: string }>;
-  searchParams: Promise<{ notice?: string; message?: string }>;
+  searchParams: Promise<{ notice?: string; message?: string; conversation?: string }>;
 }) {
   const { videoId } = await params;
   const query = await searchParams;
   const { project, dataError, seedanceSegments, hasGeneratingRecipeReferences } =
-    await loadSegmentsPageData(videoId);
+    await loadSegmentsPageData(videoId, query.conversation);
 
   return (
     <div className="space-y-6">
@@ -74,12 +75,21 @@ export default async function ProjectSegmentsPage({
   );
 }
 
-async function loadSegmentsPageData(videoId: string) {
+async function loadSegmentsPageData(
+  videoId: string,
+  requestedConversationId?: string,
+) {
   try {
     const supabase = createSupabaseAdminClient();
-    const [project, storyboardData, generatingRecipeRefCount] = await Promise.all([
-      getVideoProjectById(supabase, videoId),
-      getStoryboardReviewData(videoId),
+    const project = await getVideoProjectById(supabase, videoId);
+    const agentContext = project
+      ? await loadRecipeAgentContext(supabase, videoId, requestedConversationId)
+      : null;
+    const [storyboardData, generatingRecipeRefCount] = await Promise.all([
+      getStoryboardReviewData(
+        videoId,
+        agentContext?.storyboardScope ?? { activeOnly: true },
+      ),
       countGeneratingReferenceAssetsForVideo(supabase, videoId),
     ]);
 
