@@ -1,4 +1,6 @@
 import type { CostLog, CreateCostLogInput } from "@/modules/costs/cost.types";
+import { refundRunwaySegmentGenerationCost } from "@/modules/costs/refund-runway-generation-cost";
+import { RUNWAY_SEGMENT_GENERATION_STARTED } from "@/modules/costs/runway-cost-operations";
 import type {
   CreateGenerationInput,
   Generation,
@@ -303,7 +305,7 @@ export async function requestSegmentGenerationWorkflow(
       segmentId: segment.id,
       provider: "runway",
       model: video.selectedVideoModel,
-      operation: "seedance_segment_generation_started",
+      operation: RUNWAY_SEGMENT_GENERATION_STARTED,
       creditsUsed: costCredits,
       metadata: {
         generationId: generation.id,
@@ -380,10 +382,7 @@ export async function pollSegmentGenerationWorkflow(
       throw new Error("Succeeded Runway task did not include an output URL.");
     }
 
-    // Persist a "succeeded" cost log so the dashboard can distinguish the
-    // estimated-at-launch cost from the realised credits. Runway does not
-    // expose the actual credit consumption per task today, so we re-use the
-    // estimate (`generation.costCredits`) and tag the metadata accordingly.
+    // Audit-only row: billable credits stay on the `started` log (one charge per task).
     if (deps.logCost) {
       await deps.logCost({
         videoId: segment.videoId,
@@ -391,12 +390,13 @@ export async function pollSegmentGenerationWorkflow(
         provider: "runway",
         model: generation.model,
         operation: "seedance_segment_generation_succeeded",
-        creditsUsed: generation.costCredits ?? null,
+        creditsUsed: null,
         metadata: {
           generationId: generation.id,
           runwayTaskId: taskId,
-          actualCreditsAvailable: false,
+          billedOnOperation: RUNWAY_SEGMENT_GENERATION_STARTED,
           estimated: true,
+          estimatedCredits: generation.costCredits ?? null,
         },
         createdBy: data.requestedByUserId,
       });
@@ -417,6 +417,18 @@ export async function pollSegmentGenerationWorkflow(
 
   if (task.status === "FAILED" || task.status === "CANCELLED") {
     await deps.updateSegmentStatus(segment.id, "failed");
+    if (deps.logCost && (generation.costCredits ?? 0) > 0) {
+      await refundRunwaySegmentGenerationCost(deps.logCost, {
+        videoId: segment.videoId,
+        segmentId: segment.id,
+        generationId: generation.id,
+        runwayTaskId: taskId,
+        model: generation.model,
+        creditsToRefund: generation.costCredits ?? 0,
+        runwayTaskStatus: task.status,
+        createdBy: data.requestedByUserId,
+      });
+    }
     return { terminal: true, status: task.status };
   }
 

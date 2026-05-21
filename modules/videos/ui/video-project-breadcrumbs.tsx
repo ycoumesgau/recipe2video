@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -12,56 +11,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-
-type VideoProjectBreadcrumbContextValue = {
-  segmentTitle: string | null;
-  setSegmentTitle: (value: string | null) => void;
-};
-
-const VideoProjectBreadcrumbContext =
-  React.createContext<VideoProjectBreadcrumbContextValue | null>(null);
-
-export function VideoProjectBreadcrumbProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [segmentTitle, setSegmentTitleState] = React.useState<string | null>(
-    null,
-  );
-  const setSegmentTitle = React.useCallback((value: string | null) => {
-    setSegmentTitleState(value);
-  }, []);
-
-  const value = React.useMemo(
-    () => ({ segmentTitle, setSegmentTitle }),
-    [segmentTitle, setSegmentTitle],
-  );
-
-  return (
-    <VideoProjectBreadcrumbContext.Provider value={value}>
-      {children}
-    </VideoProjectBreadcrumbContext.Provider>
-  );
-}
-
-export function RegisterSegmentCrumb({ title }: { title: string }) {
-  const setSegmentTitle = React.useContext(
-    VideoProjectBreadcrumbContext,
-  )?.setSegmentTitle;
-
-  React.useLayoutEffect(() => {
-    if (!setSegmentTitle) {
-      return;
-    }
-    setSegmentTitle(title);
-    return () => {
-      setSegmentTitle(null);
-    };
-  }, [title, setSegmentTitle]);
-
-  return null;
-}
+import { useVideoProjectBreadcrumbContext } from "@/modules/videos/ui/video-project-breadcrumb-context";
 
 export function VideoProjectBreadcrumbs({
   projectTitle,
@@ -71,8 +21,8 @@ export function VideoProjectBreadcrumbs({
   videoId: string;
 }) {
   const pathname = usePathname();
-  const ctx = React.useContext(VideoProjectBreadcrumbContext);
-  const segmentTitle = ctx?.segmentTitle ?? null;
+  const segmentTitle =
+    useVideoProjectBreadcrumbContext()?.segmentTitle ?? null;
 
   const prefix = `/videos/${videoId}`;
   const section = resolveSection(pathname, prefix);

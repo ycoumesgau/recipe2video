@@ -96,6 +96,8 @@ async function loadSegmentReview(videoId: string, segmentId: string): Promise<{
         hasActiveReferenceImageGeneration: false,
         feedbacks: [],
         referenceResolutions: [],
+        referenceEditorRows: [],
+        referencePickerOptions: [],
         isLastSegmentOfVideo: false,
         navigation: null,
         segmentLogicalScenePositions: [],

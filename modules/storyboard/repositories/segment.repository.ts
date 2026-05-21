@@ -295,6 +295,22 @@ export async function updateSegmentStatus(
   return mapSeedanceSegment(data);
 }
 
+export async function updateSegmentReferences(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+  references: SegmentReference[],
+): Promise<SeedanceSegment> {
+  const { data, error } = await supabase
+    .from("segments")
+    .update({ references: toJson(references) })
+    .eq("id", segmentId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateSegmentReferences failed");
+  return mapSeedanceSegment(data);
+}
+
 export async function updateSegmentPrompt(
   supabase: SupabaseDataClient,
   segmentId: string,

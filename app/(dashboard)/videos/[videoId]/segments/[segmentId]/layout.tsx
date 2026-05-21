@@ -1,7 +1,7 @@
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import { getSegmentById } from "@/modules/storyboard/repositories/segment.repository";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
-import { RegisterSegmentCrumb } from "@/modules/videos/ui/video-project-breadcrumbs";
+import { RegisterSegmentCrumb } from "@/modules/videos/ui/register-segment-crumb";
 
 function formatSegmentBreadcrumbTitle(segment: SeedanceSegment) {
   return `S${segment.position}. ${segment.title}`;

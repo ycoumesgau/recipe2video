@@ -8,11 +8,7 @@ import {
 import { VideoProjectConversationSwitcher } from "@/modules/recipe-agent/ui/video-project-conversation-switcher";
 import { ensureActiveAgentConversation } from "@/modules/recipe-agent/use-cases/ensure-agent-conversation";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
-import {
-  VideoProjectBreadcrumbProvider,
-  VideoProjectBreadcrumbs,
-} from "@/modules/videos/ui/video-project-breadcrumbs";
-import { VideoProjectSubnav } from "@/modules/videos/ui/video-project-subnav";
+import { VideoProjectLayoutShell } from "@/modules/videos/ui/video-project-layout-shell";
 
 export default async function VideoProjectLayout({
   children,
@@ -28,12 +24,8 @@ export default async function VideoProjectLayout({
   ]);
 
   return (
-    <VideoProjectBreadcrumbProvider>
-      <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <VideoProjectBreadcrumbs
-          projectTitle={projectTitle}
-          videoId={videoId}
-        />
+    <VideoProjectLayoutShell
+      headerAside={
         <Suspense fallback={null}>
           <VideoProjectConversationSwitcher
             conversations={conversationSwitcherProps.conversations}
@@ -43,10 +35,12 @@ export default async function VideoProjectLayout({
             videoId={videoId}
           />
         </Suspense>
-      </div>
-      <VideoProjectSubnav videoId={videoId} />
+      }
+      projectTitle={projectTitle}
+      videoId={videoId}
+    >
       {children}
-    </VideoProjectBreadcrumbProvider>
+    </VideoProjectLayoutShell>
   );
 }
 
