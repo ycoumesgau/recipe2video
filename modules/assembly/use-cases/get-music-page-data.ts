@@ -1,6 +1,7 @@
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import { listMediaAssetsByVideoId } from "@/modules/media-assets/repositories/media-asset.repository";
+import { loadRecipeAgentContext } from "@/modules/recipe-agent/load-recipe-agent-context";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import type { VideoProject } from "@/modules/videos/video.types";
@@ -20,11 +21,19 @@ export interface MusicPageData {
   composition: Composition | null;
 }
 
-export async function getMusicPageData(videoId: string): Promise<MusicPageData> {
+export async function getMusicPageData(
+  videoId: string,
+  options: { conversationId?: string | null } = {},
+): Promise<MusicPageData> {
   const supabase = createSupabaseAdminClient();
+  const agentContext = await loadRecipeAgentContext(
+    supabase,
+    videoId,
+    options.conversationId,
+  );
   const [project, storyboardData, mediaAssets, composition] = await Promise.all([
     getVideoProjectById(supabase, videoId),
-    getStoryboardReviewData(videoId),
+    getStoryboardReviewData(videoId, agentContext.storyboardScope),
     listMediaAssetsByVideoId(supabase, videoId),
     getLatestCompositionByVideoId(supabase, videoId),
   ]);

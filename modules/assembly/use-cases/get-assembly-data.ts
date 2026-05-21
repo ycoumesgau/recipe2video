@@ -17,6 +17,8 @@ import type {
   Composition,
   SegmentPlacement,
 } from "../assembly.types";
+import { throwIfSupabaseError } from "@/shared/supabase/errors";
+
 import { buildRemotionProps } from "../build-remotion-props";
 import { ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS } from "../assembly.constants";
 import {
@@ -32,12 +34,16 @@ import { getLatestCompositionByPresetId } from "../repositories/assembly.reposit
 import {
   buildClipsFromPlacements,
   defaultPlacementsForSegments,
+  ensureLinkedAudioClipOnTimeline,
   readPlacementsState,
   readTimelineState,
   resolveLinkedAudioMediaAssetId,
 } from "../timeline-state";
 
 export { getDefaultAudioSync, getEmptyTimelineState } from "../timeline-state";
+
+/** Assembly mixes every accepted segment for the video, not only the active conversation. */
+const ASSEMBLY_SEGMENT_SCOPE = { activeOnly: false } as const;
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
@@ -102,19 +108,24 @@ export async function getAssemblyPageData(
   const supabase = createSupabaseAdminClient();
   const [project, segments, mediaAssets, presets] = await Promise.all([
     getVideoProjectById(supabase, videoId),
-    listSegmentsByVideoId(supabase, videoId),
+    listSegmentsByVideoId(supabase, videoId, ASSEMBLY_SEGMENT_SCOPE),
     listMediaAssetsByVideoId(supabase, videoId),
     listPresetsByVideoId(supabase, videoId),
   ]);
+
+  const acceptedSegments = segments.filter(
+    (segment) => segment.status === "accepted",
+  );
+  const conversationNameBySegmentId = await loadConversationNamesBySegmentIds(
+    supabase,
+    acceptedSegments.map((segment) => segment.id),
+  );
 
   const activePreset = resolveActivePreset(presets, options.presetId);
   const composition = activePreset
     ? await getLatestCompositionByPresetId(supabase, activePreset.id)
     : null;
 
-  const acceptedSegments = segments.filter(
-    (segment) => segment.status === "accepted",
-  );
   const persistedAudioMediaAssetId =
     activePreset?.audioMediaAssetId ?? composition?.audioMediaAssetId ?? null;
 
@@ -124,6 +135,7 @@ export async function getAssemblyPageData(
     acceptedSegments,
     mediaAssets,
     SIGNED_URL_TTL_SECONDS,
+    conversationNameBySegmentId,
   );
   const availableBySegmentId = new Map(
     availableEntries.map((entry) => [entry.segmentId, entry]),
@@ -165,10 +177,16 @@ export async function getAssemblyPageData(
       audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
     },
   );
-  const timelineState: AssemblyTimelineState = {
-    schema: "timeline_v2",
-    audioClips: persistedTimelineState.audioClips,
-  };
+  const timelineState: AssemblyTimelineState = ensureLinkedAudioClipOnTimeline(
+    {
+      schema: "timeline_v2",
+      audioClips: persistedTimelineState.audioClips,
+    },
+    {
+      audioMediaAssetId: persistedAudioMediaAssetId,
+      audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
+    },
+  );
 
   const linkedAudioMediaAssetId = resolveLinkedAudioMediaAssetId(
     timelineState.audioClips,
@@ -294,6 +312,7 @@ async function buildSegmentCatalogue(
   acceptedSegments: SeedanceSegment[],
   mediaAssets: MediaAsset[],
   signedUrlTtlSeconds: number,
+  conversationNameBySegmentId: Map<string, string> = new Map(),
 ): Promise<SegmentCatalogueEntry[]> {
   const entries: SegmentCatalogueEntry[] = [];
   for (const segment of acceptedSegments) {
@@ -303,6 +322,8 @@ async function buildSegmentCatalogue(
     }
     const durationSeconds =
       mediaAsset.durationSeconds ?? segment.durationTarget ?? 5;
+    const conversationName = conversationNameBySegmentId.get(segment.id);
+    const baseTitle = `S${segment.position}. ${segment.title}`;
     entries.push({
       segmentId: segment.id,
       mediaAssetId: mediaAsset.id,
@@ -312,7 +333,7 @@ async function buildSegmentCatalogue(
       // tell at a glance which storyboard slot a clip came from. The
       // `position` we read here is the storyboard position (1-indexed),
       // not the timeline position which can change with reorders.
-      title: `S${segment.position}. ${segment.title}`,
+      title: conversationName ? `${baseTitle} · ${conversationName}` : baseTitle,
       durationSeconds,
       sourceUrl: await createStorageSignedUrlForAsset(
         supabase,
@@ -364,15 +385,14 @@ function selectSegmentSourceAsset(
   segment: SeedanceSegment,
   mediaAssets: MediaAsset[],
 ) {
-  const candidates = mediaAssets.filter(
+  const playable = mediaAssets.filter(
     (asset) =>
-      asset.segmentId === segment.id &&
       asset.storageBucket &&
       asset.storagePath &&
       (asset.type === "accepted_clip" || asset.type === "runway_output"),
   );
 
-  return (
+  const pickBest = (candidates: MediaAsset[]) =>
     candidates.find(
       (asset) =>
         asset.type === "accepted_clip" &&
@@ -384,8 +404,22 @@ function selectSegmentSourceAsset(
         asset.type === "runway_output" &&
         asset.generationId === segment.selectedGenerationId,
     ) ??
-    candidates[0]
-  );
+    candidates[0] ??
+    null;
+
+  // Cross-conversation accepts store selectedGenerationId on the review
+  // segment row while media_assets.segment_id stays on the source segment.
+  if (segment.selectedGenerationId) {
+    const byGeneration = playable.filter(
+      (asset) => asset.generationId === segment.selectedGenerationId,
+    );
+    const fromGeneration = pickBest(byGeneration);
+    if (fromGeneration) {
+      return fromGeneration;
+    }
+  }
+
+  return pickBest(playable.filter((asset) => asset.segmentId === segment.id));
 }
 
 async function createStorageSignedUrlForAsset(
@@ -430,12 +464,16 @@ export async function buildRemotionPropsForCompositionRow(
     preset?.audioMediaAssetId ?? composition.audioMediaAssetId ?? null;
 
   const [segments, mediaAssets] = await Promise.all([
-    listSegmentsByVideoId(supabase, videoId),
+    listSegmentsByVideoId(supabase, videoId, ASSEMBLY_SEGMENT_SCOPE),
     listMediaAssetsByVideoId(supabase, videoId),
   ]);
 
   const acceptedSegments = segments.filter(
     (segment) => segment.status === "accepted",
+  );
+  const conversationNameBySegmentId = await loadConversationNamesBySegmentIds(
+    supabase,
+    acceptedSegments.map((segment) => segment.id),
   );
 
   const availableEntries = await buildSegmentCatalogue(
@@ -443,6 +481,7 @@ export async function buildRemotionPropsForCompositionRow(
     acceptedSegments,
     mediaAssets,
     ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
+    conversationNameBySegmentId,
   );
   const availableBySegmentId = new Map(
     availableEntries.map((entry) => [entry.segmentId, entry]),
@@ -474,10 +513,16 @@ export async function buildRemotionPropsForCompositionRow(
       audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
     },
   );
-  const timelineState: AssemblyTimelineState = {
-    schema: "timeline_v2",
-    audioClips: persistedTimelineState.audioClips,
-  };
+  const timelineState: AssemblyTimelineState = ensureLinkedAudioClipOnTimeline(
+    {
+      schema: "timeline_v2",
+      audioClips: persistedTimelineState.audioClips,
+    },
+    {
+      audioMediaAssetId: persistedAudioMediaAssetId,
+      audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
+    },
+  );
 
   const linkedAudioMediaAssetId = resolveLinkedAudioMediaAssetId(
     timelineState.audioClips,
@@ -507,4 +552,30 @@ export async function buildRemotionPropsForCompositionRow(
     audioClips: timelineState.audioClips,
     showSegmentTitles: false,
   });
+}
+
+async function loadConversationNamesBySegmentIds(
+  supabase: SupabaseDataClient,
+  segmentIds: string[],
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (segmentIds.length === 0) {
+    return names;
+  }
+
+  const { data, error } = await supabase
+    .from("segments")
+    .select("id, agent_conversations(name)")
+    .in("id", segmentIds);
+
+  throwIfSupabaseError(error, "loadConversationNamesBySegmentIds failed");
+
+  for (const row of data ?? []) {
+    const joined = row.agent_conversations as { name?: string } | null;
+    if (joined?.name) {
+      names.set(row.id, joined.name);
+    }
+  }
+
+  return names;
 }

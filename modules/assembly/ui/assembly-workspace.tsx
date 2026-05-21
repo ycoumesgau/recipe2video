@@ -61,6 +61,7 @@ import {
 import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import type {
   AssemblyAudioClip,
+  AssemblyAudioTrack,
   AssemblyPreset,
   AssemblyRemotionProps,
   AssemblySegmentClip,
@@ -110,6 +111,7 @@ export function AssemblyWorkspace({
   finalExports,
   initialRemotionProps,
   initialTimelineState,
+  linkedAudioTrack,
   missingAcceptedSegments,
   presets,
   projectStatus,
@@ -131,6 +133,8 @@ export function AssemblyWorkspace({
   finalExports: AssemblyFinalExport[];
   initialRemotionProps: AssemblyRemotionProps;
   initialTimelineState: AssemblyTimelineState;
+  /** Suno track linked on the Music page, even before timeline clips exist. */
+  linkedAudioTrack?: AssemblyAudioTrack | null;
   missingAcceptedSegments: SeedanceSegment[];
   presets: AssemblyPreset[];
   projectStatus: string;
@@ -216,10 +220,18 @@ export function AssemblyWorkspace({
     () =>
       resolveLinkedAudioMediaAssetId(
         audioClips,
-        initialRemotionProps.audio?.mediaAssetId,
+        initialRemotionProps.audio?.mediaAssetId ??
+          linkedAudioTrack?.mediaAssetId,
       ),
-    [audioClips, initialRemotionProps.audio?.mediaAssetId],
+    [
+      audioClips,
+      initialRemotionProps.audio?.mediaAssetId,
+      linkedAudioTrack?.mediaAssetId,
+    ],
   );
+
+  const resolvedAudioTrack =
+    initialRemotionProps.audio ?? linkedAudioTrack ?? null;
 
   const remotionProps = useMemo(
     () => ({
@@ -435,7 +447,7 @@ export function AssemblyWorkspace({
               ) : null}
               <TimelineEditor
                 audioClips={audioClips}
-                audioTrack={initialRemotionProps.audio ?? null}
+                audioTrack={resolvedAudioTrack}
                 fps={initialRemotionProps.fps}
                 onAudioClipsChange={handleAudioClipsChange}
                 onSegmentDroppedFromBin={handleSegmentDroppedFromBin}
@@ -445,7 +457,7 @@ export function AssemblyWorkspace({
               />
               <AddAudioClipButton
                 audioClips={audioClips}
-                audioTrack={initialRemotionProps.audio ?? null}
+                audioTrack={resolvedAudioTrack}
                 onChange={handleAudioClipsChange}
               />
             </CardContent>
@@ -471,13 +483,11 @@ export function AssemblyWorkspace({
                 segments={segments}
               />
 
-              {initialRemotionProps.audio ? (
+              {resolvedAudioTrack ? (
                 <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                  <p className="font-medium">
-                    {initialRemotionProps.audio.title}
-                  </p>
+                  <p className="font-medium">{resolvedAudioTrack.title}</p>
                   <p className="break-all text-xs text-muted-foreground">
-                    media_asset: {initialRemotionProps.audio.mediaAssetId}
+                    media_asset: {resolvedAudioTrack.mediaAssetId}
                   </p>
                 </div>
               ) : (

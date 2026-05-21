@@ -28,7 +28,7 @@ export function VideoProjectBreadcrumbs({
   const section = resolveSection(pathname, prefix);
 
   return (
-    <Breadcrumb className="mb-2">
+    <Breadcrumb>
       <BreadcrumbList>
         <BreadcrumbItem>
           <BreadcrumbLink asChild>

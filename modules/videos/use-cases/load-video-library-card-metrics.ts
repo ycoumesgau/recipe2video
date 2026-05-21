@@ -2,7 +2,7 @@ import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 
 import { sumRunwayCreditsByVideoIds } from "@/modules/costs/repositories/cost.repository";
 import { countActiveGenerationsBySegmentIds } from "@/modules/generation/repositories/generation.repository";
-import { listSegmentProgressByVideoIds } from "@/modules/storyboard/repositories/segment.repository";
+import { listSegmentProgressByVideoIds, summarizeSegmentProgressByPosition } from "@/modules/storyboard/repositories/segment.repository";
 
 import { computeNextAction } from "../compute-next-action";
 import type { VideoProject } from "../video.types";
@@ -39,10 +39,8 @@ export async function loadVideoLibraryCardMetrics(
 
   for (const project of projects) {
     const segments = segmentsByVideoId.get(project.id) ?? [];
-    const acceptedSegments = segments.filter(
-      (segment) => segment.status === "accepted",
-    ).length;
-    const totalSegments = segments.length;
+    const { acceptedCount: acceptedSegments, totalCount: totalSegments } =
+      summarizeSegmentProgressByPosition(segments);
     const activeTaskCount = segments.reduce(
       (total, segment) =>
         total + (activeGenerationsBySegmentId.get(segment.id) ?? 0),

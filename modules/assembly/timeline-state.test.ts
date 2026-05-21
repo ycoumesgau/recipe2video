@@ -8,6 +8,7 @@ import {
   computeReorderInsertIndex,
   createDefaultAudioClip,
   defaultPlacementsForSegments,
+  ensureLinkedAudioClipOnTimeline,
   generatePlacementId,
   getEmptyTimelineState,
   getPlacementTimelineDurationSeconds,
@@ -691,10 +692,52 @@ test("createDefaultAudioClip falls back to 30s when duration is missing", () => 
   assert.equal(clip.outSeconds, 30);
 });
 
-test("resolveLinkedAudioMediaAssetId returns null when there are no audio clips", () => {
+test("resolveLinkedAudioMediaAssetId returns persisted id when there are no audio clips", () => {
   assert.equal(
     resolveLinkedAudioMediaAssetId([], "asset_persisted"),
-    null,
+    "asset_persisted",
+  );
+});
+
+test("resolveLinkedAudioMediaAssetId returns null when there are no clips and no persisted id", () => {
+  assert.equal(resolveLinkedAudioMediaAssetId([], null), null);
+});
+
+test("ensureLinkedAudioClipOnTimeline seeds a default clip when music is linked but timeline is empty", () => {
+  const result = ensureLinkedAudioClipOnTimeline(getEmptyTimelineState(), {
+    audioMediaAssetId: "asset_suno",
+    audioDurationSeconds: 120,
+  });
+
+  assert.equal(result.audioClips.length, 1);
+  assert.equal(result.audioClips[0]?.mediaAssetId, "asset_suno");
+  assert.equal(result.audioClips[0]?.outSeconds, 120);
+});
+
+test("ensureLinkedAudioClipOnTimeline is a no-op when clips already exist", () => {
+  const existing = readTimelineState(
+    {
+      schema: "timeline_v2",
+      audioClips: [
+        {
+          id: "clip_a",
+          mediaAssetId: "asset_a",
+          startOnTimelineSeconds: 0,
+          inSeconds: 0,
+          outSeconds: 10,
+          volume: 1,
+        },
+      ],
+    },
+    {},
+  );
+
+  assert.deepEqual(
+    ensureLinkedAudioClipOnTimeline(existing, {
+      audioMediaAssetId: "asset_suno",
+      audioDurationSeconds: 120,
+    }),
+    existing,
   );
 });
 
