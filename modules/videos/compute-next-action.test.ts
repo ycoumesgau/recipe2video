@@ -38,6 +38,17 @@ test("computeNextAction suggests assembly when exported", () => {
   assert.equal(action.href, "/videos/video-1/assembly");
 });
 
+test("computeNextAction suggests storyboard when clarification is needed", () => {
+  const action = computeNextAction({
+    project: baseProject({ status: "clarification_needed" }),
+    acceptedCount: 0,
+    totalCount: 7,
+  });
+
+  assert.equal(action.cta, "Open storyboard");
+  assert.equal(action.href, "/videos/video-1/storyboard");
+});
+
 test("computeNextAction surfaces segment review during review status", () => {
   const action = computeNextAction({
     project: baseProject({ status: "review" }),

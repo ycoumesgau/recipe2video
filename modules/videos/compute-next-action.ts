@@ -50,7 +50,7 @@ export function computeNextAction(input: {
   if (project.status === "clarification_needed") {
     return {
       detail: "Answer the clarifying questions before generating the storyboard.",
-      cta: "Open project storyboard",
+      cta: "Open storyboard",
       href: `/videos/${project.id}/storyboard`,
     };
   }
