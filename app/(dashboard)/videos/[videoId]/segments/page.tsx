@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { countGenerationsByVideoPosition } from "@/modules/generation/repositories/generation.repository";
 import { loadRecipeAgentContext } from "@/modules/recipe-agent/load-recipe-agent-context";
 import { countGeneratingReferenceAssetsForVideo } from "@/modules/references/repositories/reference.repository";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
@@ -18,7 +19,7 @@ export default async function ProjectSegmentsPage({
 }) {
   const { videoId } = await params;
   const query = await searchParams;
-  const { project, dataError, seedanceSegments, hasGeneratingRecipeReferences } =
+  const { project, dataError, seedanceSegments, hasGeneratingRecipeReferences, generationCountsByPosition } =
     await loadSegmentsPageData(videoId, query.conversation);
 
   return (
@@ -66,6 +67,7 @@ export default async function ProjectSegmentsPage({
 
       {project ? (
         <ProjectSegmentsList
+          generationCountsByPosition={generationCountsByPosition}
           hasGeneratingRecipeReferences={hasGeneratingRecipeReferences}
           seedanceSegments={seedanceSegments}
           videoId={videoId}
@@ -85,12 +87,14 @@ async function loadSegmentsPageData(
     const agentContext = project
       ? await loadRecipeAgentContext(supabase, videoId, requestedConversationId)
       : null;
-    const [storyboardData, generatingRecipeRefCount] = await Promise.all([
+    const [storyboardData, generatingRecipeRefCount, generationCountsByPosition] =
+      await Promise.all([
       getStoryboardReviewData(
         videoId,
         agentContext?.storyboardScope ?? { activeOnly: true },
       ),
       countGeneratingReferenceAssetsForVideo(supabase, videoId),
+      countGenerationsByVideoPosition(supabase, videoId),
     ]);
 
     return {
@@ -98,12 +102,14 @@ async function loadSegmentsPageData(
       dataError: null,
       seedanceSegments: storyboardData.seedanceSegments,
       hasGeneratingRecipeReferences: generatingRecipeRefCount > 0,
+      generationCountsByPosition: Object.fromEntries(generationCountsByPosition),
     };
   } catch (error) {
     return {
       project: null,
       seedanceSegments: [],
       hasGeneratingRecipeReferences: false,
+      generationCountsByPosition: {},
       dataError:
         error instanceof Error
           ? error.message

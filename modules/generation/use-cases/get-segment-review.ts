@@ -20,12 +20,20 @@ import { getVideoProjectById } from "@/modules/videos/repositories/video.reposit
 import type { Generation } from "../generation.types";
 import {
   getGenerationById,
-  listGenerationsBySegmentId,
+  listGenerationsBySegmentIds,
 } from "../repositories/generation.repository";
 
 export interface SegmentVariantReviewItem {
   generation: Generation;
   mediaAsset: MediaAsset | null;
+  /** Segment row that produced this generation (may differ from the review page segment). */
+  sourceSegmentId: string;
+  /** Agent conversation label for the source segment row. */
+  conversationName: string | null;
+  /** True when this generation is the accepted take on its source segment. */
+  isAcceptedOnSourceSegment: boolean;
+  /** Accept/reject actions are only valid for the segment row being reviewed. */
+  canManageVariant: boolean;
 }
 
 /**
@@ -132,15 +140,32 @@ export async function getSegmentReviewData(
     };
   }
 
-  const [project, generations, feedbacks, referenceResolutions, allSegments, logicalScenes] =
+  const [project, feedbacks, referenceResolutions, allSegments, logicalScenes] =
     await Promise.all([
-    getVideoProjectById(supabase, input.videoId),
-    listGenerationsBySegmentId(supabase, input.segmentId),
-    listSegmentFeedbacksBySegmentId(supabase, input.segmentId),
-    resolveSegmentReferenceStatuses(supabase, segment),
-    listSegmentsByVideoId(supabase, input.videoId),
-    listLogicalScenesByVideoId(supabase, input.videoId),
-  ]);
+      getVideoProjectById(supabase, input.videoId),
+      listSegmentFeedbacksBySegmentId(supabase, input.segmentId),
+      resolveSegmentReferenceStatuses(supabase, segment),
+      listSegmentsByVideoId(supabase, input.videoId, { activeOnly: true }),
+      listLogicalScenesByVideoId(supabase, input.videoId, { activeOnly: true }),
+    ]);
+
+  const segmentsAtPosition = await listSegmentsByVideoId(supabase, input.videoId, {
+    activeOnly: false,
+  });
+  const peerSegmentIds = segmentsAtPosition
+    .filter((candidate) => candidate.position === segment.position)
+    .map((candidate) => candidate.id);
+  const conversationNameBySegmentId = await loadConversationNamesBySegmentIds(
+    supabase,
+    peerSegmentIds,
+  );
+  const peerSegmentById = new Map(
+    segmentsAtPosition
+      .filter((candidate) => candidate.position === segment.position)
+      .map((candidate) => [candidate.id, candidate]),
+  );
+
+  const generations = await listGenerationsBySegmentIds(supabase, peerSegmentIds);
   const segmentLogicalScenePositions = listLogicalScenesForSegment(
     segment,
     logicalScenes,
@@ -191,16 +216,51 @@ export async function getSegmentReviewData(
     referenceResolutions,
     isLastSegmentOfVideo,
     segmentLogicalScenePositions,
-    variants: allGenerations.map((generation) => ({
-      generation,
-      mediaAsset:
-        (generation.mediaAssetId
-          ? mediaAssetById.get(generation.mediaAssetId)
-          : null) ??
-        mediaAssetByGenerationId.get(generation.id) ??
-        null,
-    })),
+    variants: allGenerations.map((generation) => {
+      const sourceSegment = peerSegmentById.get(generation.segmentId);
+      return {
+        generation,
+        mediaAsset:
+          (generation.mediaAssetId
+            ? mediaAssetById.get(generation.mediaAssetId)
+            : null) ??
+          mediaAssetByGenerationId.get(generation.id) ??
+          null,
+        sourceSegmentId: generation.segmentId,
+        conversationName:
+          conversationNameBySegmentId.get(generation.segmentId) ?? null,
+        isAcceptedOnSourceSegment:
+          sourceSegment?.selectedGenerationId === generation.id,
+        canManageVariant: generation.segmentId === segment.id,
+      };
+    }),
   };
+}
+
+async function loadConversationNamesBySegmentIds(
+  supabase: SupabaseDataClient,
+  segmentIds: string[],
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (segmentIds.length === 0) {
+    return names;
+  }
+
+  const { data, error } = await supabase
+    .from("segments")
+    .select("id, agent_conversations(name)")
+    .in("id", segmentIds);
+
+  throwIfSupabaseError(error, "loadConversationNamesBySegmentIds failed");
+
+  for (const row of data ?? []) {
+    const joined = row.agent_conversations as { name?: string } | null;
+    if (joined?.name) {
+      names.set(row.id, joined.name);
+    }
+  }
+
+  return names;
 }
 
 function buildSegmentReviewNavigation(
