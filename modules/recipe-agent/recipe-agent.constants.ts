@@ -36,3 +36,15 @@ export const RECIPE_AGENT_JSON_ARTIFACT_NAMES = [
 export const RECIPE_AGENT_OPTIONAL_ARTIFACT_NAMES = [
   "song-cover-plan.json",
 ] as const;
+
+/** Wall-clock budget per stage for Cursor agent run polling. */
+export const RECIPE_AGENT_RUN_MAX_DURATION_MS_BY_STAGE = {
+  recipe_ingest: 30 * 60 * 1000,
+  seedance_segmentation: 20 * 60 * 1000,
+  default: 10 * 60 * 1000,
+} as const;
+
+export const RECIPE_AGENT_POLL_MIN_DELAY_SECONDS = 5;
+export const RECIPE_AGENT_POLL_MAX_DELAY_SECONDS = 30;
+export const RECIPE_AGENT_RECONCILE_STUCK_AFTER_MS = 35 * 60 * 1000;
+export const RECIPE_AGENT_STREAM_SLICE_MAX_MS = 3 * 60 * 1000;

@@ -110,13 +110,16 @@ const artifactValidationVariant: Record<
 
 const runStatusBadgeVariant: Record<
   RecipeAgentRunStatus,
-  "destructive" | "info" | "outline" | "secondary" | "success"
+  "destructive" | "info" | "outline" | "secondary" | "success" | "warning"
 > = {
   queued: "outline",
+  starting: "outline",
   running: "info",
+  finalizing: "warning",
   finished: "success",
   error: "destructive",
   cancelled: "secondary",
+  timed_out: "destructive",
 };
 
 export function RecipeAgentPanel({

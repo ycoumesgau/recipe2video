@@ -37,6 +37,13 @@ test("mapAgentRun maps database rows to domain shape", () => {
       needs_user_input: false,
       user_chat_message_id: null,
       assistant_chat_message_id: null,
+      cursor_run_started_at: "2026-05-10T00:00:00.000Z",
+      cursor_stream_last_seq: 3,
+      cursor_stream_last_event_signature: "sig-1",
+      cursor_assistant_text_length: 120,
+      last_polled_at: "2026-05-10T00:00:30.000Z",
+      poll_count: 2,
+      cancel_requested: false,
     }),
     {
       id: "run-row-1",
@@ -59,6 +66,13 @@ test("mapAgentRun maps database rows to domain shape", () => {
       needsUserInput: false,
       userChatMessageId: null,
       assistantChatMessageId: null,
+      cursorRunStartedAt: "2026-05-10T00:00:00.000Z",
+      cursorStreamLastSeq: 3,
+      cursorStreamLastEventSignature: "sig-1",
+      cursorAssistantTextLength: 120,
+      lastPolledAt: "2026-05-10T00:00:30.000Z",
+      pollCount: 2,
+      cancelRequested: false,
     },
   );
 });

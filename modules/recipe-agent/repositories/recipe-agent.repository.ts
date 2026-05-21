@@ -73,6 +73,14 @@ export async function createAgentRun(
       needs_user_input: input.needsUserInput ?? undefined,
       user_chat_message_id: input.userChatMessageId ?? undefined,
       assistant_chat_message_id: input.assistantChatMessageId ?? undefined,
+      cursor_run_started_at: input.cursorRunStartedAt ?? undefined,
+      cursor_stream_last_seq: input.cursorStreamLastSeq ?? undefined,
+      cursor_stream_last_event_signature:
+        input.cursorStreamLastEventSignature ?? undefined,
+      cursor_assistant_text_length: input.cursorAssistantTextLength ?? undefined,
+      last_polled_at: input.lastPolledAt ?? undefined,
+      poll_count: input.pollCount ?? undefined,
+      cancel_requested: input.cancelRequested ?? undefined,
     }))
     .select("*")
     .single();
@@ -99,6 +107,13 @@ export async function updateAgentRun(
       needs_user_input: input.needsUserInput,
       user_chat_message_id: input.userChatMessageId,
       assistant_chat_message_id: input.assistantChatMessageId,
+      cursor_run_started_at: input.cursorRunStartedAt,
+      cursor_stream_last_seq: input.cursorStreamLastSeq,
+      cursor_stream_last_event_signature: input.cursorStreamLastEventSignature,
+      cursor_assistant_text_length: input.cursorAssistantTextLength,
+      last_polled_at: input.lastPolledAt,
+      poll_count: input.pollCount,
+      cancel_requested: input.cancelRequested,
     }))
     .eq("id", agentRunId)
     .select("*")
@@ -144,6 +159,40 @@ export async function getAgentRunById(
 
   throwIfSupabaseError(error, "getAgentRunById failed");
   return data ? mapAgentRun(data) : null;
+}
+
+const ACTIVE_AGENT_RUN_STATUSES = [
+  "starting",
+  "running",
+  "finalizing",
+] as const satisfies readonly RecipeAgentRunStatus[];
+
+export async function hasActiveAgentRunForConversation(
+  supabase: SupabaseDataClient,
+  agentConversationId: string,
+): Promise<boolean> {
+  const { count, error } = await supabase
+    .from("agent_runs")
+    .select("id", { count: "exact", head: true })
+    .eq("agent_conversation_id", agentConversationId)
+    .in("status", [...ACTIVE_AGENT_RUN_STATUSES]);
+
+  throwIfSupabaseError(error, "hasActiveAgentRunForConversation failed");
+  return (count ?? 0) > 0;
+}
+
+export async function listStaleActiveAgentRuns(
+  supabase: SupabaseDataClient,
+  staleBeforeIso: string,
+): Promise<AgentRun[]> {
+  const { data, error } = await supabase
+    .from("agent_runs")
+    .select("*")
+    .in("status", [...ACTIVE_AGENT_RUN_STATUSES])
+    .lt("cursor_run_started_at", staleBeforeIso);
+
+  throwIfSupabaseError(error, "listStaleActiveAgentRuns failed");
+  return (data ?? []).map(mapAgentRun);
 }
 
 export async function upsertAgentArtifact(
@@ -259,6 +308,13 @@ export function mapAgentRun(row: AgentRunRow): AgentRun {
     needsUserInput: row.needs_user_input ?? false,
     userChatMessageId: row.user_chat_message_id ?? null,
     assistantChatMessageId: row.assistant_chat_message_id ?? null,
+    cursorRunStartedAt: row.cursor_run_started_at ?? null,
+    cursorStreamLastSeq: row.cursor_stream_last_seq ?? 0,
+    cursorStreamLastEventSignature: row.cursor_stream_last_event_signature ?? null,
+    cursorAssistantTextLength: row.cursor_assistant_text_length ?? 0,
+    lastPolledAt: row.last_polled_at ?? null,
+    pollCount: row.poll_count ?? 0,
+    cancelRequested: row.cancel_requested ?? false,
   };
 }
 

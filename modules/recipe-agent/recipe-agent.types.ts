@@ -30,10 +30,13 @@ export type RecipeAgentStatus =
 
 export type RecipeAgentRunStatus =
   | "queued"
+  | "starting"
   | "running"
+  | "finalizing"
   | "finished"
   | "error"
-  | "cancelled";
+  | "cancelled"
+  | "timed_out";
 
 export type RecipeAgentArtifactValidationStatus =
   | "pending"
@@ -57,6 +60,10 @@ export interface RecipeAgentConfig {
    * Fine-grained PAT with read access to `repoUrl` for artifact sync by commit SHA.
    */
   githubToken?: string;
+  /** Cloud orchestration: blocking (legacy) or polling (Inngest start→poll→finalize). */
+  pollingMode?: "blocking" | "polling";
+  /** When pollingMode=polling, ingest stream events between poll ticks. */
+  streamSliceEnabled?: boolean;
 }
 
 export interface RecipeAgentWorkspace {
@@ -274,6 +281,13 @@ export interface AgentRun {
   needsUserInput: boolean;
   userChatMessageId?: string | null;
   assistantChatMessageId?: string | null;
+  cursorRunStartedAt?: string | null;
+  cursorStreamLastSeq: number;
+  cursorStreamLastEventSignature?: string | null;
+  cursorAssistantTextLength: number;
+  lastPolledAt?: string | null;
+  pollCount: number;
+  cancelRequested: boolean;
 }
 
 export interface CreateAgentRunInput {
@@ -294,6 +308,13 @@ export interface CreateAgentRunInput {
   needsUserInput?: boolean;
   userChatMessageId?: string | null;
   assistantChatMessageId?: string | null;
+  cursorRunStartedAt?: string | null;
+  cursorStreamLastSeq?: number;
+  cursorStreamLastEventSignature?: string | null;
+  cursorAssistantTextLength?: number;
+  lastPolledAt?: string | null;
+  pollCount?: number;
+  cancelRequested?: boolean;
 }
 
 export interface UpdateAgentRunInput {
@@ -307,6 +328,13 @@ export interface UpdateAgentRunInput {
   needsUserInput?: boolean;
   userChatMessageId?: string | null;
   assistantChatMessageId?: string | null;
+  cursorRunStartedAt?: string | null;
+  cursorStreamLastSeq?: number;
+  cursorStreamLastEventSignature?: string | null;
+  cursorAssistantTextLength?: number;
+  lastPolledAt?: string | null;
+  pollCount?: number;
+  cancelRequested?: boolean;
 }
 
 export interface AgentArtifact {
