@@ -1,5 +1,5 @@
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
-import { logCost } from "@/modules/costs/repositories/cost.repository";
+import { RUNWAY_REFERENCE_IMAGE_GENERATION_STARTED } from "@/modules/costs/runway-cost-operations";
 import {
   RUNWAY_MAX_REFERENCE_BYTES,
   RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
@@ -76,7 +76,11 @@ export interface RequestReferenceGenerationDeps
     referenceId: string,
     status: ReferenceStatus,
   ): Promise<void>;
-  logCost(input: Parameters<typeof logCost>[1]): Promise<unknown>;
+  logCost(input: Parameters<typeof import("@/modules/costs/repositories/cost.repository").logCost>[1]): Promise<unknown>;
+  hasReferenceStartCostLog?(
+    referenceId: string,
+    runwayTaskId: string,
+  ): Promise<boolean>;
 }
 
 export interface PersistReferenceOutputDeps {
@@ -182,26 +186,31 @@ export async function requestReferenceImageGenerationWorkflow(
     RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
   );
 
-  await deps.logCost({
-    videoId: prepared.videoId,
-    segmentId: null,
-    provider: "runway",
-    model: REFERENCE_IMAGE_MODEL,
-    operation: "reference_image_generation_started",
-    creditsUsed: estimatedCredits,
-    metadata: {
-      referenceId: data.referenceId,
-      runwayTaskId: task.id,
-      endpoint: task.endpoint,
-      estimated: true,
-      ratio: RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
-      estimatedCredits,
-      conditioningResolvedTags: prepared.anchors.map((anchor) => anchor.tag),
-      conditioningUnresolved: prepared.unresolvedAnchorNames,
-      conditioningExcluded: prepared.excludedAnchors,
-    },
-    createdBy: data.requestedByUserId,
-  });
+  const alreadyLogged =
+    (await deps.hasReferenceStartCostLog?.(data.referenceId, task.id)) ?? false;
+
+  if (!alreadyLogged) {
+    await deps.logCost({
+      videoId: prepared.videoId,
+      segmentId: null,
+      provider: "runway",
+      model: REFERENCE_IMAGE_MODEL,
+      operation: RUNWAY_REFERENCE_IMAGE_GENERATION_STARTED,
+      creditsUsed: estimatedCredits,
+      metadata: {
+        referenceId: data.referenceId,
+        runwayTaskId: task.id,
+        endpoint: task.endpoint,
+        estimated: true,
+        ratio: RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO,
+        estimatedCredits,
+        conditioningResolvedTags: prepared.anchors.map((anchor) => anchor.tag),
+        conditioningUnresolved: prepared.unresolvedAnchorNames,
+        conditioningExcluded: prepared.excludedAnchors,
+      },
+      createdBy: data.requestedByUserId,
+    });
+  }
 
   const pollStartedAt = new Date().toISOString();
   await deps.sendEvent({

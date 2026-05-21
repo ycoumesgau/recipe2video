@@ -268,6 +268,10 @@ function getSegmentLabel(log: CostLog) {
 }
 
 function isFailedOrRejectedSpend(log: CostLog) {
+  if (log.operation.endsWith("_refunded")) {
+    return true;
+  }
+
   const values = [
     readMetadataString(log, "generationStatus"),
     readMetadataString(log, "segmentStatus"),

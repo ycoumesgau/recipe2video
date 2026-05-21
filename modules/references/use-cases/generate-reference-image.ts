@@ -1,6 +1,9 @@
 import "server-only";
 
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
+import {
+  hasRunwayReferenceImageStartCostLog,
+} from "@/modules/costs/refund-runway-generation-cost";
 import { logCost } from "@/modules/costs/repositories/cost.repository";
 
 import { updateReferenceAssetStatus } from "../repositories/reference.repository";
@@ -42,6 +45,13 @@ export async function generateReferenceImage(
     logCost: async (costInput) => {
       await logCost(input.supabase, costInput);
     },
+    hasReferenceStartCostLog: (referenceId, runwayTaskId) =>
+      hasRunwayReferenceImageStartCostLog(
+        input.supabase,
+        input.videoId,
+        referenceId,
+        runwayTaskId,
+      ),
     sendEvent: input.sendEvent,
   };
 

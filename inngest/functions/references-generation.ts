@@ -1,5 +1,9 @@
 import { assertAllowlistedUser } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import {
+  findRunwayReferenceImageStartedCredits,
+} from "@/modules/costs/refund-runway-generation-cost";
+import { logCost } from "@/modules/costs/repositories/cost.repository";
 import { getRunwayTask } from "@/modules/generation/services/runway.service";
 import { generateReferenceImage } from "@/modules/references/use-cases/generate-reference-image";
 import { finalizeReferenceImageOutput } from "@/modules/references/use-cases/finalize-reference-image-output";
@@ -244,6 +248,14 @@ export const pollReferenceGeneration = inngest.createFunction(
       updateReferenceAssetStatus: async (referenceId, status) => {
         await updateReferenceAssetStatus(supabase, { referenceId, status });
       },
+      findReferenceStartCredits: (referenceId, runwayTaskId) =>
+        findRunwayReferenceImageStartedCredits(
+          supabase,
+          data.videoId,
+          referenceId,
+          runwayTaskId,
+        ),
+      logCost: (costInput) => logCost(supabase, costInput),
       sendEvent: referenceWorkflowSendEvent,
     });
   },

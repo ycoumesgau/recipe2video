@@ -1,3 +1,5 @@
+import type { CreateCostLogInput } from "@/modules/costs/cost.types";
+import { refundRunwayReferenceImageCost } from "@/modules/costs/refund-runway-generation-cost";
 import { normalizeRunwayProgress } from "@/modules/generation/runway-progress-normalize";
 import type { RunwayTaskStatus } from "@/modules/generation/runway.types";
 
@@ -42,6 +44,11 @@ export interface PollReferenceGenerationDeps {
     status: ReferenceStatus,
   ): Promise<void>;
   sendEvent(event: ReferenceWorkflowEvent): Promise<void>;
+  findReferenceStartCredits?(
+    referenceId: string,
+    runwayTaskId: string,
+  ): Promise<number>;
+  logCost?(input: CreateCostLogInput): Promise<unknown>;
 }
 
 export async function pollReferenceImageGenerationWorkflow(
@@ -56,6 +63,7 @@ export async function pollReferenceImageGenerationWorkflow(
 
   if (hasExceededReferencePollBudget(data.pollStartedAt)) {
     await deps.updateReferenceAssetStatus(data.referenceId, "failed");
+    await maybeRefundReferenceImageCost(deps, data, "FAILED");
     if (data.awaitCompletionEvent) {
       await deps.sendEvent({
         name: "reference.generation.completed",
@@ -118,6 +126,7 @@ export async function pollReferenceImageGenerationWorkflow(
 
   if (task.status === "FAILED" || task.status === "CANCELLED") {
     await deps.updateReferenceAssetStatus(data.referenceId, "failed");
+    await maybeRefundReferenceImageCost(deps, data, task.status);
     if (data.awaitCompletionEvent) {
       await deps.sendEvent({
         name: "reference.generation.completed",
@@ -154,6 +163,34 @@ export function hasExceededReferencePollBudget(pollStartedAt: string) {
     return false;
   }
   return Date.now() - startedMs > REFERENCE_IMAGE_MAX_POLL_DURATION_MS;
+}
+
+async function maybeRefundReferenceImageCost(
+  deps: PollReferenceGenerationDeps,
+  data: ReferenceGenerationPollRequestedData,
+  runwayTaskStatus: "FAILED" | "CANCELLED",
+) {
+  if (!deps.logCost || !deps.findReferenceStartCredits) {
+    return;
+  }
+
+  const creditsToRefund = await deps.findReferenceStartCredits(
+    data.referenceId,
+    data.taskId,
+  );
+
+  if (creditsToRefund <= 0) {
+    return;
+  }
+
+  await refundRunwayReferenceImageCost(deps.logCost, {
+    videoId: data.videoId,
+    referenceId: data.referenceId,
+    runwayTaskId: data.taskId,
+    creditsToRefund,
+    runwayTaskStatus,
+    createdBy: data.requestedByUserId,
+  });
 }
 
 function computeReferencePollDelaySeconds(task: RunwayTaskStatus) {
