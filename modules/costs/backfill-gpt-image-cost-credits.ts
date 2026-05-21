@@ -113,7 +113,7 @@ export function resolveGptImageRatio(log: CostLog): string {
   }
 
   if (log.operation.startsWith("album_cover")) {
-    return "2048:2048";
+    return "2560:2560";
   }
 
   return RUNWAY_RECIPE_REFERENCE_IMAGE_RATIO;

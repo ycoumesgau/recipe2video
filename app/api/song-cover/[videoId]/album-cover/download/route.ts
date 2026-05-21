@@ -11,7 +11,7 @@ import { getSongCoverArtifactForVideoByKind } from "@/modules/song-cover/reposit
 /**
  * Download the album cover at 3000x3000 JPEG.
  *
- * The Runway output is stored at `2048:2048` (2K tier). Distributors
+ * The Runway output is stored at `2560:2560` (2K tier). Distributors
  * require 3000x3000 minimum, so we upscale on the fly with sharp using
  * `lanczos3` resampling.
  *
