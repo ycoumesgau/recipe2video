@@ -1,4 +1,4 @@
-import type { CreateCostLogInput } from "@/modules/costs/cost.types";
+import type { CostLog, CreateCostLogInput } from "@/modules/costs/cost.types";
 import { refundRunwayReferenceImageCost } from "@/modules/costs/refund-runway-generation-cost";
 import { normalizeRunwayProgress } from "@/modules/generation/runway-progress-normalize";
 import type { RunwayTaskStatus } from "@/modules/generation/runway.types";
@@ -48,7 +48,7 @@ export interface PollReferenceGenerationDeps {
     referenceId: string,
     runwayTaskId: string,
   ): Promise<number>;
-  logCost?(input: CreateCostLogInput): Promise<unknown>;
+  logCost?(input: CreateCostLogInput): Promise<CostLog>;
 }
 
 export async function pollReferenceImageGenerationWorkflow(
