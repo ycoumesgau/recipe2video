@@ -8,7 +8,7 @@ export const DEFAULT_VIDEO_MODEL = "seedance2";
 export const DEFAULT_IMAGE_MODEL = "gpt_image_2";
 export const DEFAULT_TTS_MODEL = "eleven_multilingual_v2";
 export const DEFAULT_SFX_MODEL = "eleven_text_to_sound_v2";
-export const DEFAULT_CURSOR_AGENT_MODEL = "composer-2.5";
+export const DEFAULT_CURSOR_AGENT_MODEL = "gpt-5.5";
 
 export const TARGET_DURATION_OPTIONS = [
   { value: "auto", label: "Auto (model decides)" },

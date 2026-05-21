@@ -51,11 +51,8 @@ test("getCursorAgentSelectionDisplay falls back to default model when missing", 
     },
   });
 
-  assert.equal(display?.modelLabel, "Composer 2.5");
-  assert.equal(
-    display?.reasoningLabel,
-    "Not configurable for this model",
-  );
+  assert.equal(display?.modelLabel, "GPT-5.5");
+  assert.equal(display?.reasoningLabel, "High");
 });
 
 test("formatCursorAgentModelLabel returns raw value for unknown models", () => {
