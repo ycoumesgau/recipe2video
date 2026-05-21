@@ -16,7 +16,7 @@ export function resolveRecipeAgentConfig(
   );
   const modelContext = emptyToUndefined(env.CURSOR_AGENT_MODEL_CONTEXT);
   const modelFast = emptyToUndefined(env.CURSOR_AGENT_MODEL_FAST);
-  const pollingMode = resolvePollingMode(env.RECIPE_AGENT_POLLING_MODE);
+  const pollingMode = resolvePollingMode(env.RECIPE_AGENT_POLLING_MODE, runtime);
   const streamSliceEnabled =
     env.RECIPE_AGENT_STREAM_SLICE === "true" ||
     env.RECIPE_AGENT_STREAM_SLICE === "1";
@@ -67,8 +67,9 @@ export function resolveRecipeAgentConfig(
 
 function resolvePollingMode(
   value: string | undefined,
+  runtime: RecipeAgentRuntime,
 ): "blocking" | "polling" {
-  if (!value || value === "blocking") {
+  if (value === "blocking") {
     return "blocking";
   }
 
@@ -76,9 +77,7 @@ function resolvePollingMode(
     return "polling";
   }
 
-  throw new Error(
-    `RECIPE_AGENT_POLLING_MODE must be "blocking" or "polling". Received "${value}".`,
-  );
+  return runtime === "cloud" ? "polling" : "blocking";
 }
 
 function resolveRuntime(value: string | undefined): RecipeAgentRuntime {

@@ -21,6 +21,26 @@ import type { CursorAgentSdkAdapter } from "../recipe-agent.types";
 import { buildRecipeAgentWorkspace } from "../recipe-agent.workspace";
 import { createCursorRecipeAgentService } from "./cursor-agent.service";
 
+test("resolveRecipeAgentConfig defaults cloud runtime to polling mode", () => {
+  const config = resolveRecipeAgentConfig({
+    CURSOR_API_KEY: "cursor-test",
+    CURSOR_AGENT_REPO_URL: "https://github.com/ycoumesgau/recipe2video.git",
+    CURSOR_AGENT_RUNTIME: "cloud",
+  });
+
+  assert.equal(config.pollingMode, "polling");
+});
+
+test("resolveRecipeAgentConfig keeps local runtime on blocking mode by default", () => {
+  const config = resolveRecipeAgentConfig({
+    CURSOR_API_KEY: "cursor-test",
+    CURSOR_AGENT_RUNTIME: "local",
+    CURSOR_AGENT_LOCAL_CWD: "/tmp/recipe2video",
+  });
+
+  assert.equal(config.pollingMode, "blocking");
+});
+
 test("resolveRecipeAgentConfig requires Cursor API key", () => {
   assert.throws(
     () =>
@@ -512,6 +532,45 @@ test("pollRun reads run status via getRun", async () => {
 
   assert.equal(polled.status, "running");
   assert.equal(polled.cursorStreamLastSeq, 0);
+});
+
+test("pollRun stream slice dedups replayed assistant text", async () => {
+  const sdk = new FakeCursorSdkAdapter();
+  const runningRun = new FakeRun(
+    "bc-existing",
+    [],
+    [],
+    "Hello from the recipe agent",
+    undefined,
+    "running",
+  );
+  sdk.registerRun(runningRun);
+  const service = createCursorRecipeAgentService({
+    sdk,
+    config: {
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "gpt-5.5",
+      repoUrl: "https://github.com/ycoumesgau/recipe2video.git",
+      startingRef: "main",
+      streamSliceEnabled: true,
+    },
+  });
+  const events: Array<{ seq: number }> = [];
+
+  const polled = await service.pollRun({
+    agentId: "bc-existing",
+    runId: "run-1",
+    enableStreamSlice: true,
+    assistantTextLength: 5,
+    onStreamEvent: async (event) => {
+      events.push({ seq: event.seq });
+    },
+  });
+
+  assert.equal(polled.status, "running");
+  assert.ok(polled.cursorAssistantTextLength > 5);
+  assert.ok(events.length >= 1);
 });
 
 test("finalizeRun waits and returns artifacts", async () => {

@@ -63,6 +63,9 @@ import {
   syncRecipeAgentArtifacts,
   type RecipeAgentArtifactSyncPlan,
 } from "./sync-recipe-agent-artifacts";
+import {
+  shouldUsePollingOrchestration,
+} from "./orchestrate-recipe-agent-polling";
 
 interface EnsureRecipeAgentInput {
   supabase?: SupabaseDataClient;
@@ -200,6 +203,13 @@ export async function sendRecipeAgentMessage(
   input: SendRecipeAgentMessageInput,
   dependencies?: RecipeAgentOrchestrationDependencies,
 ) {
+  const config = resolveRecipeAgentConfig();
+  if (shouldUsePollingOrchestration(config) && !dependencies) {
+    throw new Error(
+      "Cloud recipe agent messages must be handled by the polling Inngest workflow.",
+    );
+  }
+
   const deps = dependencies ?? createDefaultDependencies(input.supabase);
   const project = await deps.getVideoProject(input.videoId);
 
@@ -690,7 +700,7 @@ function isCursorAgentNotFoundError(error: unknown) {
   return error instanceof Error && error.message.includes("agent_not_found");
 }
 
-function createDefaultDependencies(
+export function createDefaultDependencies(
   supabase: SupabaseDataClient | undefined,
 ): RecipeAgentOrchestrationDependencies {
   if (!supabase) {

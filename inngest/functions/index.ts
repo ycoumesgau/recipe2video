@@ -4,7 +4,11 @@ import {
   logCostWorkflow,
 } from "./planning-stubs";
 import {
+  cancelRecipeAgentRunWorkflowFn,
   createRecipeAgentWorkflow,
+  finalizeRecipeAgentRunWorkflowFn,
+  pollRecipeAgentRunWorkflowFn,
+  reconcileRecipeAgentRunsWorkflowFn,
   sendRecipeAgentMessageWorkflow,
   syncRecipeAgentArtifactsWorkflow,
 } from "./recipe-agent";
@@ -41,6 +45,10 @@ export const functions = [
   logCostWorkflow,
   createRecipeAgentWorkflow,
   sendRecipeAgentMessageWorkflow,
+  pollRecipeAgentRunWorkflowFn,
+  finalizeRecipeAgentRunWorkflowFn,
+  cancelRecipeAgentRunWorkflowFn,
+  reconcileRecipeAgentRunsWorkflowFn,
   syncRecipeAgentArtifactsWorkflow,
   generateAlbumCoverWorkflow,
   generateSpotifyCanvasWorkflow,

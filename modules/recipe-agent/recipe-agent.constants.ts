@@ -48,3 +48,15 @@ export const RECIPE_AGENT_POLL_MIN_DELAY_SECONDS = 5;
 export const RECIPE_AGENT_POLL_MAX_DELAY_SECONDS = 30;
 export const RECIPE_AGENT_RECONCILE_STUCK_AFTER_MS = 35 * 60 * 1000;
 export const RECIPE_AGENT_STREAM_SLICE_MAX_MS = 3 * 60 * 1000;
+
+export function resolveRecipeAgentRunMaxDurationMs(
+  stage: keyof typeof RECIPE_AGENT_RUN_MAX_DURATION_MS_BY_STAGE | string,
+): number {
+  if (stage in RECIPE_AGENT_RUN_MAX_DURATION_MS_BY_STAGE) {
+    return RECIPE_AGENT_RUN_MAX_DURATION_MS_BY_STAGE[
+      stage as keyof typeof RECIPE_AGENT_RUN_MAX_DURATION_MS_BY_STAGE
+    ];
+  }
+
+  return RECIPE_AGENT_RUN_MAX_DURATION_MS_BY_STAGE.default;
+}
