@@ -23,12 +23,17 @@ export async function seedRecipeAgentChatTurn(
   supabase: SupabaseDataClient,
   input: {
     videoId: string;
+    agentConversationId: string;
     agentRunId: string;
     userMessage: string;
     stage: RecipeAgentStage;
   },
 ): Promise<{ userMessageId: string; assistantMessageId: string }> {
-  const thread = await ensureRecipeAgentThread(supabase, input.videoId);
+  const thread = await ensureRecipeAgentThread(
+    supabase,
+    input.videoId,
+    input.agentConversationId,
+  );
 
   const userRow = await insertRecipeAgentMessage(supabase, {
     threadId: thread.id,

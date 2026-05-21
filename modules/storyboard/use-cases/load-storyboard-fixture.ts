@@ -10,6 +10,9 @@ import {
   buildFixturePromptQa,
   getParisBrestStoryboardFixture,
 } from "../paris-brest-storyboard.fixture";
+import type {
+  StoryboardListScope,
+} from "../repositories/segment.repository";
 import {
   listLogicalScenesByVideoId,
   replaceLogicalScenesForVideo,
@@ -33,11 +36,13 @@ export interface StoryboardReviewData {
 
 export async function getStoryboardReviewData(
   videoId: string,
+  scope?: StoryboardListScope,
 ): Promise<StoryboardReviewData> {
   const supabase = createSupabaseAdminClient();
+  const listScope = scope ?? { activeOnly: true };
   const [logicalScenes, seedanceSegments] = await Promise.all([
-    listLogicalScenesByVideoId(supabase, videoId),
-    listSegmentsByVideoId(supabase, videoId),
+    listLogicalScenesByVideoId(supabase, videoId, listScope),
+    listSegmentsByVideoId(supabase, videoId, listScope),
   ]);
 
   return { logicalScenes, seedanceSegments };

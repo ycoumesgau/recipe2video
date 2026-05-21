@@ -20,12 +20,18 @@ type StepRow = Database["public"]["Tables"]["recipe_agent_steps"]["Row"];
 export async function getRecipeAgentThreadByVideoId(
   supabase: SupabaseDataClient,
   videoId: string,
+  agentConversationId?: string,
 ): Promise<RecipeAgentThread | null> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("recipe_agent_threads")
     .select("*")
-    .eq("video_id", videoId)
-    .maybeSingle();
+    .eq("video_id", videoId);
+
+  if (agentConversationId) {
+    query = query.eq("agent_conversation_id", agentConversationId);
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   throwIfSupabaseError(error, "getRecipeAgentThreadByVideoId failed");
   return data ? mapThread(data) : null;
@@ -34,15 +40,23 @@ export async function getRecipeAgentThreadByVideoId(
 export async function ensureRecipeAgentThread(
   supabase: SupabaseDataClient,
   videoId: string,
+  agentConversationId: string,
 ): Promise<RecipeAgentThread> {
-  const existing = await getRecipeAgentThreadByVideoId(supabase, videoId);
+  const existing = await getRecipeAgentThreadByVideoId(
+    supabase,
+    videoId,
+    agentConversationId,
+  );
   if (existing) {
     return existing;
   }
 
   const { data, error } = await supabase
     .from("recipe_agent_threads")
-    .insert({ video_id: videoId })
+    .insert({
+      video_id: videoId,
+      agent_conversation_id: agentConversationId,
+    })
     .select("*")
     .single();
 
@@ -209,6 +223,7 @@ function mapThread(row: ThreadRow): RecipeAgentThread {
   return {
     id: row.id,
     videoId: row.video_id,
+    agentConversationId: row.agent_conversation_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
@@ -13,7 +13,19 @@ const linkActiveClass =
 
 export function VideoProjectSubnav({ videoId }: { videoId: string }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const conversation = searchParams.get("conversation");
   const base = `/videos/${videoId}`;
+
+  function hrefFor(path: string) {
+    if (!conversation) {
+      return path;
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("conversation", conversation);
+    return `${path}?${params.toString()}`;
+  }
 
   const isOverview =
     pathname === base || pathname === `${base}/`;
@@ -29,18 +41,18 @@ export function VideoProjectSubnav({ videoId }: { videoId: string }) {
   const isCosts = pathname.startsWith(`${base}/costs`);
 
   const items: { href: string; label: string; active: boolean }[] = [
-    { href: base, label: "Overview", active: isOverview },
-    { href: `${base}/storyboard`, label: "Storyboard", active: isStoryboard },
-    { href: `${base}/references`, label: "References", active: isReferences },
-    { href: `${base}/segments`, label: "Segments", active: isSegments },
-    { href: `${base}/music`, label: "Music", active: isMusic },
+    { href: hrefFor(base), label: "Overview", active: isOverview },
+    { href: hrefFor(`${base}/storyboard`), label: "Storyboard", active: isStoryboard },
+    { href: hrefFor(`${base}/references`), label: "References", active: isReferences },
+    { href: hrefFor(`${base}/segments`), label: "Segments", active: isSegments },
+    { href: hrefFor(`${base}/music`), label: "Music", active: isMusic },
     {
-      href: `${base}/cover-and-canvas`,
+      href: hrefFor(`${base}/cover-and-canvas`),
       label: "Cover & Canvas",
       active: isCoverAndCanvas,
     },
-    { href: `${base}/assembly`, label: "Assembly", active: isAssembly },
-    { href: `${base}/costs`, label: "Costs & logs", active: isCosts },
+    { href: hrefFor(`${base}/assembly`), label: "Assembly", active: isAssembly },
+    { href: hrefFor(`${base}/costs`), label: "Costs & logs", active: isCosts },
   ];
 
   return (

@@ -49,6 +49,7 @@ import {
 } from "../actions";
 import type {
   AgentArtifact,
+  AgentConversation,
   AgentRun,
   AgentRunTimelineEvent,
   RecipeAgentArtifactValidationStatus,
@@ -60,6 +61,7 @@ import type {
 } from "../recipe-agent.types";
 
 import { RecipeAgentChat } from "./recipe-agent-chat";
+import { RecipeAgentConversationToolbar } from "./recipe-agent-conversation-toolbar";
 
 /** Client refresh + short polling: Inngest updates DB after `revalidatePath`, and RSC needs `router.refresh()`. */
 const AGENT_CREATE_SYNC_MS = 60_000;
@@ -124,6 +126,10 @@ export function RecipeAgentPanel({
   latestRunTimelineEvents,
   chatMessages,
   latestRunSteps,
+  conversations,
+  activeConversationId,
+  activeConversation,
+  serverActiveConversationId,
 }: {
   artifacts: AgentArtifact[];
   project: VideoProject;
@@ -131,6 +137,10 @@ export function RecipeAgentPanel({
   latestRunTimelineEvents: AgentRunTimelineEvent[];
   chatMessages: RecipeAgentChatMessage[];
   latestRunSteps: RecipeAgentStep[];
+  conversations: AgentConversation[];
+  activeConversationId: string;
+  activeConversation: AgentConversation;
+  serverActiveConversationId: string | null;
 }) {
   const router = useRouter();
   const [queuedSyncKind, setQueuedSyncKind] = useState<
@@ -179,14 +189,19 @@ export function RecipeAgentPanel({
     });
   }, [messageState.kind, messageState.message, router]);
 
+  const agentStatus = activeConversation.isActive
+    ? project.agentStatus
+    : activeConversation.agentStatus;
+  const cursorAgentId = activeConversation.cursorAgentId ?? project.cursorAgentId;
+
   useEffect(() => {
     if (queuedSyncKind === null) {
       return;
     }
 
     const satisfied =
-      (queuedSyncKind === "create" && Boolean(project.cursorAgentId)) ||
-      (queuedSyncKind === "message" && project.agentStatus === "running");
+      (queuedSyncKind === "create" && Boolean(cursorAgentId)) ||
+      (queuedSyncKind === "message" && agentStatus === "running");
 
     if (satisfied) {
       queueMicrotask(() => {
@@ -223,7 +238,7 @@ export function RecipeAgentPanel({
         clearInterval(idRef.current);
       }
     };
-  }, [queuedSyncKind, project.agentStatus, project.cursorAgentId, router]);
+  }, [queuedSyncKind, agentStatus, cursorAgentId, router]);
 
   const invalidArtifacts = artifacts.filter(
     (artifact) => artifact.validationStatus === "invalid",
@@ -244,39 +259,55 @@ export function RecipeAgentPanel({
               artifacts only; Runway generation remains gated by checkpoints.
             </CardDescription>
           </div>
-          <Badge variant={statusVariant[project.agentStatus]}>
-            {formatAgentStatus(project.agentStatus)}
+          <Badge variant={statusVariant[agentStatus]}>
+            {formatAgentStatus(agentStatus)}
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        <RecipeAgentConversationToolbar
+          conversations={conversations}
+          serverActiveConversationId={serverActiveConversationId}
+          videoId={project.id}
+        />
+
         <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
-          <Metric label="Agent ID" value={project.cursorAgentId ?? "Not created"} />
-          <Metric label="Workspace" value={project.agentWorkspacePath ?? "-"} />
+          <Metric label="Agent ID" value={cursorAgentId ?? "Not created"} />
+          <Metric
+            label="Workspace"
+            value={activeConversation.agentWorkspacePath ?? project.agentWorkspacePath ?? "-"}
+          />
           <Metric
             label="Last sync"
             value={
-              project.lastAgentSyncAt
-                ? formatDate(project.lastAgentSyncAt)
+              activeConversation.lastAgentSyncAt ?? project.lastAgentSyncAt
+                ? formatDate(
+                    activeConversation.lastAgentSyncAt ??
+                      project.lastAgentSyncAt ??
+                      "",
+                  )
                 : "No sync yet"
             }
           />
           <Metric
             label="Git branch"
-            value={project.agentGitBranch ?? "—"}
+            value={activeConversation.agentGitBranch ?? project.agentGitBranch ?? "—"}
           />
           <Metric
             label="Checkpoint SHA"
             value={
-              project.agentGitCommitSha
-                ? project.agentGitCommitSha.slice(0, 7)
+              activeConversation.agentGitCommitSha ?? project.agentGitCommitSha
+                ? (activeConversation.agentGitCommitSha ?? project.agentGitCommitSha)!.slice(
+                    0,
+                    7,
+                  )
                 : "—"
             }
           />
         </div>
 
         <RecipeAgentChat
-          agentStatus={project.agentStatus}
+          agentStatus={agentStatus}
           initialMessages={chatMessages}
           initialSteps={latestRunSteps}
           latestRunId={latestRun?.id ?? null}
@@ -284,7 +315,7 @@ export function RecipeAgentPanel({
           videoId={project.id}
         />
 
-        {project.agentStatus === "needs_input" ? (
+        {agentStatus === "needs_input" ? (
           <Alert>
             <MessageSquareText className="h-4 w-4" />
             <AlertTitle>Agent is waiting for your reply</AlertTitle>
@@ -308,9 +339,10 @@ export function RecipeAgentPanel({
           </Alert>
         ) : null}
 
-        {!project.cursorAgentId ? (
+        {!cursorAgentId ? (
           <form action={createAction}>
             <input name="videoId" type="hidden" value={project.id} />
+            <input name="conversationId" type="hidden" value={activeConversationId} />
             <PendingButton icon={<Sparkles className="h-4 w-4" />}>
               Create recipe agent
             </PendingButton>
@@ -319,6 +351,7 @@ export function RecipeAgentPanel({
 
         <form action={messageAction} className="space-y-3" encType="multipart/form-data">
           <input name="videoId" type="hidden" value={project.id} />
+          <input name="conversationId" type="hidden" value={activeConversationId} />
           <div className="grid gap-3 md:grid-cols-[220px_1fr]">
             <Select defaultValue="general" name="stage">
               <SelectTrigger aria-label="Recipe agent stage">
@@ -350,7 +383,11 @@ export function RecipeAgentPanel({
 
         <div className="grid gap-4 lg:grid-cols-[1fr_0.85fr]">
           <RunHistoryCard latestRun={latestRun} runs={runs} />
-          <ArtifactSummaryCard artifacts={artifacts} project={project} />
+          <ArtifactSummaryCard
+            activeConversation={activeConversation}
+            artifacts={artifacts}
+            project={project}
+          />
         </div>
       </CardContent>
     </Card>
@@ -421,9 +458,11 @@ function RunHistoryCard({
 function ArtifactSummaryCard({
   artifacts,
   project,
+  activeConversation,
 }: {
   artifacts: AgentArtifact[];
   project: VideoProject;
+  activeConversation: AgentConversation;
 }) {
   const router = useRouter();
   const [gitSyncState, gitSyncAction] = useActionState(
@@ -447,8 +486,9 @@ function ArtifactSummaryCard({
   }, [gitSyncState.kind, gitSyncState.message, router]);
 
   const canSyncFromGit = Boolean(
-    project.agentWorkspacePath?.trim() &&
-      (project.agentGitBranch?.trim() || project.agentGitCommitSha?.trim()),
+    (activeConversation.agentWorkspacePath ?? project.agentWorkspacePath)?.trim() &&
+      ((activeConversation.agentGitBranch ?? project.agentGitBranch)?.trim() ||
+        (activeConversation.agentGitCommitSha ?? project.agentGitCommitSha)?.trim()),
   );
 
   return (

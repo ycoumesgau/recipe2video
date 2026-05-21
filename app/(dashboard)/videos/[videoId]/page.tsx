@@ -27,6 +27,7 @@ import {
   listAgentRunsByVideoId,
 } from "@/modules/recipe-agent/repositories/recipe-agent.repository";
 import { RecipeAgentPanel } from "@/modules/recipe-agent/ui/recipe-agent-panel";
+import { loadRecipeAgentContext } from "@/modules/recipe-agent/load-recipe-agent-context";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { listRecipeSourceImagePreviewUrls } from "@/modules/media-assets/use-cases/list-recipe-source-image-preview-urls";
 import { computeNextAction } from "@/modules/videos/compute-next-action";
@@ -46,10 +47,13 @@ import { VideoProjectRscSync } from "@/modules/videos/ui/video-project-rsc-sync"
 
 export default async function VideoDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ videoId: string }>;
+  searchParams: Promise<{ conversation?: string }>;
 }) {
   const { videoId } = await params;
+  const query = await searchParams;
   const {
     project,
     costData,
@@ -62,7 +66,10 @@ export default async function VideoDetailPage({
     chatMessages,
     latestRunSteps,
     recipeSourcePhotoPreviews,
-  } = await loadProject(videoId);
+    agentConversations,
+    activeConversation,
+    serverActiveConversationId,
+  } = await loadProject(videoId, query.conversation);
 
   const acceptedSegments = seedanceSegments.filter(
     (segment) => segment.status === "accepted",
@@ -123,7 +130,7 @@ export default async function VideoDetailPage({
         </Alert>
       ) : null}
 
-      {project && nextAction ? (
+      {project && nextAction && activeConversation ? (
         <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
           <div className="space-y-4">
             <VideoProjectRscSync
@@ -161,12 +168,17 @@ export default async function VideoDetailPage({
             </Card>
 
             <RecipeAgentPanel
+              key={activeConversation.id}
+              activeConversation={activeConversation}
+              activeConversationId={activeConversation.id}
               artifacts={agentArtifacts}
               chatMessages={chatMessages}
+              conversations={agentConversations}
               latestRunSteps={latestRunSteps}
               latestRunTimelineEvents={latestRunTimelineEvents}
               project={project}
               runs={agentRuns}
+              serverActiveConversationId={serverActiveConversationId}
             />
           </div>
 
@@ -267,14 +279,20 @@ export default async function VideoDetailPage({
   );
 }
 
-async function loadProject(videoId: string) {
+async function loadProject(videoId: string, requestedConversationId?: string) {
   const useMockFallback = (await readDashboardDataMode()) === "mock";
 
   try {
     const supabase = createSupabaseAdminClient();
     const project = await getVideoProjectById(supabase, videoId);
+    const agentContext = project
+      ? await loadRecipeAgentContext(supabase, videoId, requestedConversationId)
+      : null;
     const [{ seedanceSegments }, costData] = await Promise.all([
-      getStoryboardReviewData(videoId),
+      getStoryboardReviewData(
+        videoId,
+        agentContext?.storyboardScope ?? { activeOnly: true },
+      ),
       loadProjectCostDashboardData(videoId, { useMockFallback }),
     ]);
     const activeTaskCount = await countActiveGenerationsForSegments(
@@ -287,16 +305,25 @@ async function loadProject(videoId: string) {
         ? await listRecipeSourceImagePreviewUrls(supabase, project.id)
         : [];
     const [agentRuns, agentArtifacts, latestRunTimelineEvents, chatMessages, latestRunSteps] =
-      project
+      project && agentContext
         ? await (async () => {
-            const runs = await listAgentRunsByVideoId(supabase, videoId);
-            const artifacts = await listAgentArtifactsByVideoId(supabase, videoId);
+            const conversationId = agentContext.activeConversation.id;
+            const runs = await listAgentRunsByVideoId(supabase, videoId, {
+              agentConversationId: conversationId,
+            });
+            const artifacts = await listAgentArtifactsByVideoId(supabase, videoId, {
+              agentConversationId: conversationId,
+            });
             const latestRunId = runs[0]?.id;
             const timeline =
               latestRunId !== undefined
                 ? await listAgentRunEventsByAgentRunId(supabase, latestRunId)
                 : [];
-            const thread = await getRecipeAgentThreadByVideoId(supabase, videoId);
+            const thread = await getRecipeAgentThreadByVideoId(
+              supabase,
+              videoId,
+              conversationId,
+            );
             const messages = thread
               ? await listRecipeAgentMessagesByThreadId(supabase, thread.id)
               : [];
@@ -320,6 +347,9 @@ async function loadProject(videoId: string) {
       chatMessages,
       latestRunSteps,
       recipeSourcePhotoPreviews,
+      agentConversations: agentContext?.conversations ?? [],
+      activeConversation: agentContext?.activeConversation ?? null,
+      serverActiveConversationId: agentContext?.serverActiveConversationId ?? null,
     };
   } catch (error) {
     return {
@@ -337,6 +367,9 @@ async function loadProject(videoId: string) {
       chatMessages: [],
       latestRunSteps: [],
       recipeSourcePhotoPreviews: [],
+      agentConversations: [],
+      activeConversation: null,
+      serverActiveConversationId: null,
     };
   }
 }

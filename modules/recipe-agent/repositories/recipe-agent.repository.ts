@@ -57,6 +57,7 @@ export async function createAgentRun(
     .from("agent_runs")
     .insert(stripUndefined({
       video_id: input.videoId,
+      agent_conversation_id: input.agentConversationId,
       cursor_agent_id: input.cursorAgentId,
       cursor_run_id: input.cursorRunId ?? undefined,
       stage: input.stage,
@@ -110,12 +111,22 @@ export async function updateAgentRun(
 export async function listAgentRunsByVideoId(
   supabase: SupabaseDataClient,
   videoId: string,
+  options: { agentConversationId?: string; limit?: number } = {},
 ): Promise<AgentRun[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("agent_runs")
     .select("*")
     .eq("video_id", videoId)
     .order("created_at", { ascending: false });
+
+  if (options.agentConversationId) {
+    query = query.eq("agent_conversation_id", options.agentConversationId);
+  }
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
 
   throwIfSupabaseError(error, "listAgentRunsByVideoId failed");
   return data.map(mapAgentRun);
@@ -144,6 +155,7 @@ export async function upsertAgentArtifact(
     .upsert(
       stripUndefined({
         video_id: input.videoId,
+        agent_conversation_id: input.agentConversationId,
         artifact_name: input.artifactName,
         artifact_path: input.artifactPath,
         content: input.content,
@@ -151,7 +163,7 @@ export async function upsertAgentArtifact(
         validation_status: input.validationStatus ?? "pending",
         validation_errors: toJson(input.validationErrors ?? []),
       }),
-      { onConflict: "video_id,artifact_name" },
+      { onConflict: "video_id,agent_conversation_id,artifact_name" },
     )
     .select("*")
     .single();
@@ -208,12 +220,18 @@ export async function listAgentRunEventsByAgentRunId(
 export async function listAgentArtifactsByVideoId(
   supabase: SupabaseDataClient,
   videoId: string,
+  options: { agentConversationId?: string } = {},
 ): Promise<AgentArtifact[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("agent_artifacts")
     .select("*")
-    .eq("video_id", videoId)
-    .order("artifact_name", { ascending: true });
+    .eq("video_id", videoId);
+
+  if (options.agentConversationId) {
+    query = query.eq("agent_conversation_id", options.agentConversationId);
+  }
+
+  const { data, error } = await query.order("artifact_name", { ascending: true });
 
   throwIfSupabaseError(error, "listAgentArtifactsByVideoId failed");
   return data.map(mapAgentArtifact);
@@ -223,6 +241,7 @@ export function mapAgentRun(row: AgentRunRow): AgentRun {
   return {
     id: row.id,
     videoId: row.video_id,
+    agentConversationId: row.agent_conversation_id,
     cursorAgentId: row.cursor_agent_id,
     cursorRunId: row.cursor_run_id,
     stage: row.stage as RecipeAgentStage,
@@ -258,6 +277,7 @@ export function mapAgentArtifact(row: AgentArtifactRow): AgentArtifact {
   return {
     id: row.id,
     videoId: row.video_id,
+    agentConversationId: row.agent_conversation_id,
     artifactName: row.artifact_name,
     artifactPath: row.artifact_path,
     content: row.content,

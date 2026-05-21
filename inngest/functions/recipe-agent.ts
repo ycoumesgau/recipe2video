@@ -1,8 +1,11 @@
 import { assertAllowlistedUser } from "@/modules/auth/assert-allowlisted-user";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import {
-  updateVideoAgentSession,
-} from "@/modules/recipe-agent/repositories/recipe-agent.repository";
+  getAgentConversationById,
+  mirrorActiveConversationToVideo,
+  updateAgentConversation,
+} from "@/modules/recipe-agent/repositories/agent-conversations.repository";
+import { ensureActiveAgentConversation } from "@/modules/recipe-agent/use-cases/ensure-agent-conversation";
 import {
   syncRecipeAgentArtifacts,
 } from "@/modules/recipe-agent/use-cases/sync-recipe-agent-artifacts";
@@ -34,6 +37,7 @@ export const createRecipeAgentWorkflow = inngest.createFunction(
     return sendRecipeAgentMessage({
       supabase,
       videoId: data.videoId,
+      conversationId: data.conversationId,
       requestedByUserId: data.requestedByUserId,
       stage: "general",
       message:
@@ -61,10 +65,12 @@ export const sendRecipeAgentMessageWorkflow = inngest.createFunction(
     return sendRecipeAgentMessage({
       supabase,
       videoId: data.videoId,
+      conversationId: data.conversationId,
       requestedByUserId: data.requestedByUserId,
       stage: data.stage,
       message: data.message,
       attachmentMediaAssetIds: data.attachmentMediaAssetIds,
+      includeAssetsManifestBriefing: data.includeAssetsManifestBriefing,
     });
   },
 );
@@ -81,15 +87,26 @@ export const syncRecipeAgentArtifactsWorkflow = inngest.createFunction(
 
     await assertAllowlistedUser(data.requestedByUserId);
 
+    const conversation = data.conversationId
+      ? await getAgentConversationById(supabase, data.conversationId)
+      : await ensureActiveAgentConversation(supabase, data.videoId);
+
+    if (!conversation) {
+      throw new Error(`No agent conversation found for video ${data.videoId}.`);
+    }
+
     const plan = await syncRecipeAgentArtifacts(supabase, {
       videoId: data.videoId,
+      agentConversationId: conversation.id,
+      syncStoryboardTables: conversation.isActive,
       artifacts: data.artifacts,
     });
 
-    await updateVideoAgentSession(supabase, data.videoId, {
+    const updated = await updateAgentConversation(supabase, conversation.id, {
       lastAgentSyncAt: new Date().toISOString(),
       agentStatus: plan.valid ? "idle" : "validation_failed",
     });
+    await mirrorActiveConversationToVideo(supabase, data.videoId, updated);
 
     return {
       valid: plan.valid,

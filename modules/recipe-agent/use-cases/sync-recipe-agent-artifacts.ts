@@ -132,6 +132,8 @@ type ReferencePlanEntry = z.infer<typeof ReferencePlanEntrySchema>;
 
 interface BuildRecipeAgentArtifactSyncPlanInput {
   videoId: string;
+  agentConversationId: string;
+  syncStoryboardTables?: boolean;
   artifacts: RecipeAgentArtifact[];
 }
 
@@ -186,6 +188,7 @@ export function buildRecipeAgentArtifactSyncPlan(
       const songCoverOutcome = validateSongCoverPlanArtifact(content);
       artifactRecords.push({
         videoId: input.videoId,
+        agentConversationId: input.agentConversationId,
         artifactName: artifact.name,
         artifactPath: artifact.path,
         content,
@@ -207,6 +210,7 @@ export function buildRecipeAgentArtifactSyncPlan(
       const jsonOutcome = validateSunoPromptJsonArtifact(content);
       artifactRecords.push({
         videoId: input.videoId,
+        agentConversationId: input.agentConversationId,
         artifactName: artifact.name,
         artifactPath: artifact.path,
         content,
@@ -228,6 +232,7 @@ export function buildRecipeAgentArtifactSyncPlan(
 
     artifactRecords.push({
       videoId: input.videoId,
+      agentConversationId: input.agentConversationId,
       artifactName: artifact.name,
       artifactPath: artifact.path,
       content,
@@ -326,11 +331,20 @@ export async function syncRecipeAgentArtifacts(
     return plan;
   }
 
+  if (input.syncStoryboardTables === false) {
+    return plan;
+  }
+
+  const writeScope = { agentConversationId: input.agentConversationId };
+
   if (plan.recipePatch) {
     await mergeVideoProjectRecipeData(supabase, input.videoId, plan.recipePatch);
   }
 
-  const existingSegments = await listSegmentsByVideoId(supabase, input.videoId);
+  const existingSegments = await listSegmentsByVideoId(supabase, input.videoId, {
+    activeOnly: false,
+    agentConversationId: input.agentConversationId,
+  });
   const useNonDestructiveStoryboardSync = existingSegments.length > 0;
 
   let persistedScenes: LogicalScene[] = [];
@@ -341,12 +355,14 @@ export async function syncRecipeAgentArtifacts(
         supabase,
         input.videoId,
         plan.logicalScenes,
+        writeScope,
       );
     } else {
       persistedScenes = await replaceLogicalScenesForVideo(
         supabase,
         input.videoId,
         plan.logicalScenes,
+        writeScope,
       );
     }
   }
@@ -368,12 +384,14 @@ export async function syncRecipeAgentArtifacts(
         supabase,
         input.videoId,
         segmentInputs,
+        writeScope,
       );
     } else {
       persistedSegments = await replaceSegmentsForVideo(
         supabase,
         input.videoId,
         segmentInputs,
+        writeScope,
       );
     }
 
@@ -388,7 +406,12 @@ export async function syncRecipeAgentArtifacts(
     }
 
     const segmentCountForSummary = useNonDestructiveStoryboardSync
-      ? (await listSegmentsByVideoId(supabase, input.videoId)).length
+      ? (
+          await listSegmentsByVideoId(supabase, input.videoId, {
+            activeOnly: false,
+            agentConversationId: input.agentConversationId,
+          })
+        ).length
       : persistedSegments.length;
 
     await updateVideoProjectStoryboardSummary(supabase, input.videoId, {
@@ -502,6 +525,7 @@ export async function syncRecipeAgentArtifacts(
     await replaceSegmentReferencesForSegments(supabase, {
       segmentIds: persistedSegments.map((segment) => segment.id),
       mappings,
+      agentConversationId: input.agentConversationId,
     });
   }
 

@@ -15,10 +15,39 @@ import { persistAgentMessageAttachments } from "@/modules/media-assets/use-cases
 
 import type { RecipeAgentStage } from "./recipe-agent.types";
 import { syncRecipeAgentArtifactsFromGithubOnly } from "./use-cases/sync-recipe-agent-from-github";
+import { switchActiveConversation } from "./use-cases/switch-active-conversation";
+import {
+  buildAvailableAssetsManifest,
+  commitAvailableAssetsManifest,
+} from "./use-cases/build-available-assets-manifest";
+import {
+  buildConversationBranchForSlug,
+  uniqueConversationName,
+  uniqueConversationSlug,
+} from "./use-cases/ensure-agent-conversation";
+import { buildRecipeAgentWorkspace } from "./recipe-agent.workspace";
+import { slugifyConversationName } from "./agent-conversation.utils";
+import {
+  countAgentConversationsByVideoId,
+  findSoftDeletedAgentConversationByVideoAndName,
+  getActiveAgentConversationByVideoId,
+  insertAgentConversation,
+  listAgentConversationsByVideoId,
+  renameAgentConversation,
+  softDeleteAgentConversation,
+  updateAgentConversation,
+} from "./repositories/agent-conversations.repository";
+import {
+  CURSOR_AGENT_FAST_BY_MODEL,
+  CURSOR_AGENT_MODEL_OPTIONS,
+  DEFAULT_CURSOR_AGENT_MODEL,
+  MAX_COMPLEMENTARY_AGENT_INSTRUCTIONS_LENGTH,
+} from "@/modules/videos/video.constants";
 
 export interface RecipeAgentActionState {
   kind?: "success" | "error";
   message?: string;
+  conversationId?: string;
 }
 
 export async function submitRecipeAgentMessageAction(
@@ -28,6 +57,10 @@ export async function submitRecipeAgentMessageAction(
   try {
     const { profile } = await assertCostlyActionAllowed();
     const videoId = requireFormString(formData, "videoId");
+    const supabase = createSupabaseAdminClient();
+    const conversationId =
+      optionalFormString(formData, "conversationId") ??
+      (await resolveActiveConversationIdForVideo(supabase, videoId));
     const stage = requireRecipeAgentStage(formData);
     const message = requireFormString(formData, "message");
 
@@ -39,7 +72,6 @@ export async function submitRecipeAgentMessageAction(
       .getAll("agentAttachments")
       .filter((value): value is File => value instanceof File && value.size > 0);
 
-    const supabase = createSupabaseAdminClient();
     const attachments = await persistAgentMessageAttachments({
       supabase,
       videoId,
@@ -51,6 +83,7 @@ export async function submitRecipeAgentMessageAction(
       name: INNGEST_EVENTS.recipeAgentMessageRequested,
       data: {
         videoId,
+        conversationId,
         stage,
         message,
         requestedByUserId: profile.id,
@@ -116,11 +149,18 @@ export async function createRecipeAgentAction(
   try {
     const { profile } = await assertCostlyActionAllowed();
     const videoId = requireFormString(formData, "videoId");
+    const conversationId =
+      optionalFormString(formData, "conversationId") ??
+      (await resolveActiveConversationIdForVideo(
+        createSupabaseAdminClient(),
+        videoId,
+      ));
 
     await inngest.send({
       name: INNGEST_EVENTS.recipeAgentCreateRequested,
       data: {
         videoId,
+        conversationId,
         requestedByUserId: profile.id,
         isAllowlisted: true,
       },
@@ -135,6 +175,277 @@ export async function createRecipeAgentAction(
   } catch (error) {
     return toActionError(error, "Unable to queue recipe agent creation.");
   }
+}
+
+export async function switchActiveConversationAction(
+  videoId: string,
+  conversationId: string,
+): Promise<RecipeAgentActionState> {
+  try {
+    await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    await switchActiveConversation({ supabase, videoId, toConversationId: conversationId });
+    revalidateProjectPaths(videoId);
+    return {
+      kind: "success",
+      message: "Active conversation switched.",
+      conversationId,
+    };
+  } catch (error) {
+    return toActionError(error, "Unable to switch agent conversation.");
+  }
+}
+
+export async function createAgentConversationAction(input: {
+  videoId: string;
+  name: string;
+  cursorAgentModel: string;
+  cursorAgentReasoning?: string | null;
+  customInstructions?: string | null;
+  includeAssetsManifest: boolean;
+}): Promise<RecipeAgentActionState> {
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const trimmedName = input.name.trim();
+    const existing = await listAgentConversationsByVideoId(supabase, input.videoId);
+    const takenNames = new Set(existing.map((conversation) => conversation.name));
+    const takenSlugs = new Set(existing.map((conversation) => conversation.slug));
+    const workspace = buildRecipeAgentWorkspace(input.videoId);
+    const model = normalizeCursorAgentModel(input.cursorAgentModel);
+    const fast =
+      CURSOR_AGENT_FAST_BY_MODEL[
+        model as keyof typeof CURSOR_AGENT_FAST_BY_MODEL
+      ] === "true";
+    const customInstructions =
+      input.customInstructions?.slice(
+        0,
+        MAX_COMPLEMENTARY_AGENT_INSTRUCTIONS_LENGTH,
+      ) ?? null;
+
+    const activeConversation = existing.find((entry) => entry.isActive);
+    const manifestSourceBranch =
+      activeConversation?.agentGitBranch ??
+      buildConversationBranchForSlug(input.videoId, "initial");
+
+    const softDeleted = await findSoftDeletedAgentConversationByVideoAndName(
+      supabase,
+      input.videoId,
+      trimmedName,
+    );
+
+    let conversation: Awaited<ReturnType<typeof insertAgentConversation>>;
+    if (softDeleted) {
+      const branch =
+        softDeleted.agentGitBranch ??
+        buildConversationBranchForSlug(input.videoId, softDeleted.slug);
+      conversation = await updateAgentConversation(supabase, softDeleted.id, {
+        deletedAt: null,
+        cursorAgentModel: model,
+        cursorAgentReasoning: input.cursorAgentReasoning ?? null,
+        cursorAgentFast: fast,
+        customInstructions,
+        includeAssetsManifest: input.includeAssetsManifest,
+        isActive: false,
+        agentWorkspacePath: workspace.workspacePath,
+        agentGitBranch: branch,
+        agentStatus: "idle",
+        cursorAgentId: null,
+        cursorAgentRuntime: null,
+      });
+    } else {
+      const name = uniqueConversationName(trimmedName, takenNames);
+      const slug = uniqueConversationSlug(name, takenSlugs);
+      const branch = buildConversationBranchForSlug(input.videoId, slug);
+
+      conversation = await insertAgentConversation(supabase, {
+        videoId: input.videoId,
+        name,
+        slug,
+        cursorAgentModel: model,
+        cursorAgentReasoning: input.cursorAgentReasoning ?? null,
+        cursorAgentFast: fast,
+        customInstructions,
+        includeAssetsManifest: input.includeAssetsManifest,
+        isActive: false,
+        agentWorkspacePath: workspace.workspacePath,
+        agentGitBranch: branch,
+      });
+    }
+
+    const branch =
+      conversation.agentGitBranch ??
+      buildConversationBranchForSlug(input.videoId, conversation.slug);
+
+    if (input.includeAssetsManifest) {
+      const manifest = await buildAvailableAssetsManifest(supabase, {
+        videoId: input.videoId,
+        fromConversationId: activeConversation?.id ?? null,
+      });
+      await commitAvailableAssetsManifest({
+        videoId: input.videoId,
+        branch,
+        fromBranch: manifestSourceBranch,
+        manifest,
+      });
+    }
+
+    await switchActiveConversation({
+      supabase,
+      videoId: input.videoId,
+      toConversationId: conversation.id,
+    });
+
+    const messageParts = [
+      "Start a fresh Recipe2Video planning pass for this recipe video project.",
+      "Do not reuse storyboard, segment prompts, or decisions from previous conversations.",
+      "Produce or update the required planning artifacts from scratch for this conversation branch.",
+      ...(input.customInstructions
+        ? ["", "Creator instructions for this conversation:", input.customInstructions]
+        : []),
+    ];
+
+    await inngest.send({
+      name: INNGEST_EVENTS.recipeAgentMessageRequested,
+      data: {
+        videoId: input.videoId,
+        conversationId: conversation.id,
+        stage: "general",
+        message: messageParts.join("\n"),
+        requestedByUserId: profile.id,
+        isAllowlisted: true,
+        includeAssetsManifestBriefing: input.includeAssetsManifest,
+      },
+    });
+
+    revalidateProjectPaths(input.videoId);
+
+    return {
+      kind: "success",
+      message: "New agent conversation created and initialization queued.",
+      conversationId: conversation.id,
+    };
+  } catch (error) {
+    return toActionError(error, "Unable to create agent conversation.");
+  }
+}
+
+export async function renameAgentConversationAction(
+  videoId: string,
+  conversationId: string,
+  name: string,
+): Promise<RecipeAgentActionState> {
+  try {
+    await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const slug = slugifyConversationName(name);
+    await renameAgentConversation(supabase, conversationId, name, slug);
+    revalidateProjectPaths(videoId);
+    return { kind: "success", message: "Conversation renamed." };
+  } catch (error) {
+    return toActionError(error, "Unable to rename conversation.");
+  }
+}
+
+export async function deleteAgentConversationAction(
+  videoId: string,
+  conversationId: string,
+): Promise<RecipeAgentActionState> {
+  try {
+    await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const count = await countAgentConversationsByVideoId(supabase, videoId);
+    if (count <= 1) {
+      throw new Error("At least one agent conversation must remain for this video.");
+    }
+
+    await softDeleteAgentConversation(supabase, conversationId);
+    const remaining = await listAgentConversationsByVideoId(supabase, videoId);
+    const fallback = remaining.find((conversation) => conversation.isActive) ?? remaining[0];
+    if (fallback) {
+      await switchActiveConversation({
+        supabase,
+        videoId,
+        toConversationId: fallback.id,
+      });
+    }
+
+    revalidateProjectPaths(videoId);
+    return { kind: "success", message: "Conversation deleted." };
+  } catch (error) {
+    return toActionError(error, "Unable to delete conversation.");
+  }
+}
+
+export async function refreshAssetsManifestAction(
+  videoId: string,
+  conversationId: string,
+): Promise<RecipeAgentActionState> {
+  try {
+    await assertCostlyActionAllowed();
+    const supabase = createSupabaseAdminClient();
+    const conversation = await getActiveAgentConversationByVideoId(supabase, videoId);
+    const target =
+      (await listAgentConversationsByVideoId(supabase, videoId)).find(
+        (entry) => entry.id === conversationId,
+      ) ?? conversation;
+
+    if (!target?.agentGitBranch) {
+      throw new Error("Conversation has no Git branch configured yet.");
+    }
+
+    const manifest = await buildAvailableAssetsManifest(supabase, {
+      videoId,
+      fromConversationId: conversation?.id ?? null,
+    });
+    const fromBranch =
+      conversation?.agentGitBranch ??
+      buildConversationBranchForSlug(videoId, "initial");
+    await commitAvailableAssetsManifest({
+      videoId,
+      branch: target.agentGitBranch,
+      fromBranch,
+      manifest,
+      commitMessage: `Recipe2Video: refresh available-assets manifest (${target.name})`,
+    });
+
+    revalidateProjectPaths(videoId);
+    return { kind: "success", message: "Assets manifest refreshed on Git branch." };
+  } catch (error) {
+    return toActionError(error, "Unable to refresh assets manifest.");
+  }
+}
+
+function optionalFormString(formData: FormData, key: string) {
+  const value = formData.get(key);
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+async function resolveActiveConversationIdForVideo(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  videoId: string,
+) {
+  const active = await getActiveAgentConversationByVideoId(supabase, videoId);
+  if (active) {
+    return active.id;
+  }
+
+  const { ensureActiveAgentConversation } = await import(
+    "./use-cases/ensure-agent-conversation"
+  );
+  const conversation = await ensureActiveAgentConversation(supabase, videoId);
+  return conversation.id;
+}
+
+function normalizeCursorAgentModel(
+  model: string,
+): (typeof CURSOR_AGENT_MODEL_OPTIONS)[number]["value"] {
+  const match = CURSOR_AGENT_MODEL_OPTIONS.find((option) => option.value === model);
+  return match?.value ?? DEFAULT_CURSOR_AGENT_MODEL;
 }
 
 function requireRecipeAgentStage(formData: FormData): RecipeAgentStage {
@@ -171,6 +482,7 @@ function revalidateProjectPaths(videoId: string) {
   revalidatePath(`/videos/${videoId}`);
   revalidatePath(`/videos/${videoId}/storyboard`);
   revalidatePath(`/videos/${videoId}/references`);
+  revalidatePath(`/videos/${videoId}/segments`);
   revalidatePath(`/videos/${videoId}/music`);
   revalidatePath(`/videos/${videoId}/assembly`);
 }

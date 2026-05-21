@@ -138,6 +138,81 @@ export type Database = {
         };
         Relationships: [];
       };
+      agent_conversations: {
+        Row: {
+          id: string;
+          video_id: string;
+          name: string;
+          slug: string;
+          cursor_agent_id: string | null;
+          cursor_agent_runtime: string | null;
+          agent_workspace_path: string | null;
+          agent_git_branch: string | null;
+          agent_git_commit_sha: string | null;
+          agent_status: string;
+          last_agent_run_id: string | null;
+          last_agent_sync_at: string | null;
+          cursor_agent_model: string;
+          cursor_agent_reasoning: string | null;
+          cursor_agent_fast: boolean;
+          custom_instructions: string | null;
+          include_assets_manifest: boolean;
+          is_active: boolean;
+          archived_at: string | null;
+          deleted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          video_id: string;
+          name: string;
+          slug: string;
+          cursor_agent_id?: string | null;
+          cursor_agent_runtime?: string | null;
+          agent_workspace_path?: string | null;
+          agent_git_branch?: string | null;
+          agent_git_commit_sha?: string | null;
+          agent_status?: string;
+          last_agent_run_id?: string | null;
+          last_agent_sync_at?: string | null;
+          cursor_agent_model?: string;
+          cursor_agent_reasoning?: string | null;
+          cursor_agent_fast?: boolean;
+          custom_instructions?: string | null;
+          include_assets_manifest?: boolean;
+          is_active?: boolean;
+          archived_at?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          video_id?: string;
+          name?: string;
+          slug?: string;
+          cursor_agent_id?: string | null;
+          cursor_agent_runtime?: string | null;
+          agent_workspace_path?: string | null;
+          agent_git_branch?: string | null;
+          agent_git_commit_sha?: string | null;
+          agent_status?: string;
+          last_agent_run_id?: string | null;
+          last_agent_sync_at?: string | null;
+          cursor_agent_model?: string;
+          cursor_agent_reasoning?: string | null;
+          cursor_agent_fast?: boolean;
+          custom_instructions?: string | null;
+          include_assets_manifest?: boolean;
+          is_active?: boolean;
+          archived_at?: string | null;
+          deleted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       logical_scenes: {
         Row: {
           id: string;
@@ -151,6 +226,8 @@ export type Database = {
           zoom: string | null;
           duration_target: number | null;
           note: string | null;
+          agent_conversation_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: string;
@@ -164,6 +241,8 @@ export type Database = {
           zoom?: string | null;
           duration_target?: number | null;
           note?: string | null;
+          agent_conversation_id?: string | null;
+          is_active?: boolean;
         };
         Update: {
           id?: string;
@@ -177,6 +256,8 @@ export type Database = {
           zoom?: string | null;
           duration_target?: number | null;
           note?: string | null;
+          agent_conversation_id?: string | null;
+          is_active?: boolean;
         };
         Relationships: [];
       };
@@ -198,6 +279,8 @@ export type Database = {
           created_by: string | null;
           created_at: string;
           updated_at: string;
+          agent_conversation_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: string;
@@ -216,6 +299,8 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          agent_conversation_id?: string | null;
+          is_active?: boolean;
         };
         Update: {
           id?: string;
@@ -234,6 +319,8 @@ export type Database = {
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
+          agent_conversation_id?: string | null;
+          is_active?: boolean;
         };
         Relationships: [];
       };
@@ -475,6 +562,8 @@ export type Database = {
           position: number;
           required: boolean;
           created_at: string;
+          agent_conversation_id: string | null;
+          is_active: boolean;
         };
         Insert: {
           id?: string;
@@ -485,6 +574,8 @@ export type Database = {
           position: number;
           required?: boolean;
           created_at?: string;
+          agent_conversation_id?: string | null;
+          is_active?: boolean;
         };
         Update: {
           id?: string;
@@ -495,6 +586,8 @@ export type Database = {
           position?: number;
           required?: boolean;
           created_at?: string;
+          agent_conversation_id?: string | null;
+          is_active?: boolean;
         };
         Relationships: [];
       };
@@ -760,6 +853,7 @@ export type Database = {
         Row: {
           id: string;
           video_id: string;
+          agent_conversation_id: string | null;
           cursor_agent_id: string;
           cursor_run_id: string | null;
           stage: string;
@@ -781,6 +875,7 @@ export type Database = {
         Insert: {
           id?: string;
           video_id: string;
+          agent_conversation_id?: string | null;
           cursor_agent_id: string;
           cursor_run_id?: string | null;
           stage: string;
@@ -802,6 +897,7 @@ export type Database = {
         Update: {
           id?: string;
           video_id?: string;
+          agent_conversation_id?: string | null;
           cursor_agent_id?: string;
           cursor_run_id?: string | null;
           stage?: string;
@@ -934,18 +1030,21 @@ export type Database = {
         Row: {
           id: string;
           video_id: string;
+          agent_conversation_id: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
           video_id: string;
+          agent_conversation_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           video_id?: string;
+          agent_conversation_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -955,6 +1054,7 @@ export type Database = {
         Row: {
           id: string;
           video_id: string;
+          agent_conversation_id: string | null;
           artifact_name: string;
           artifact_path: string;
           content: string;
@@ -967,6 +1067,7 @@ export type Database = {
         Insert: {
           id?: string;
           video_id: string;
+          agent_conversation_id?: string | null;
           artifact_name: string;
           artifact_path: string;
           content: string;
@@ -979,6 +1080,7 @@ export type Database = {
         Update: {
           id?: string;
           video_id?: string;
+          agent_conversation_id?: string | null;
           artifact_name?: string;
           artifact_path?: string;
           content?: string;

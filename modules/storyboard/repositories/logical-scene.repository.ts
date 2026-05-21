@@ -3,6 +3,10 @@ import type { Database } from "@/shared/supabase/database.types";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
 
 import type { LogicalScene } from "../storyboard.types";
+import type {
+  StoryboardListScope,
+  StoryboardWriteScope,
+} from "./segment.repository";
 
 type LogicalSceneRow = Database["public"]["Tables"]["logical_scenes"]["Row"];
 
@@ -16,12 +20,17 @@ export type CreateLogicalSceneInput = Omit<
 export async function listLogicalScenesByVideoId(
   supabase: SupabaseDataClient,
   videoId: string,
+  scope: StoryboardListScope = { activeOnly: true },
 ): Promise<LogicalScene[]> {
-  const { data, error } = await supabase
-    .from("logical_scenes")
-    .select("*")
-    .eq("video_id", videoId)
-    .order("position", { ascending: true });
+  let query = supabase.from("logical_scenes").select("*").eq("video_id", videoId);
+  if (scope.activeOnly !== false) {
+    query = query.eq("is_active", true);
+  }
+  if (scope.agentConversationId) {
+    query = query.eq("agent_conversation_id", scope.agentConversationId);
+  }
+
+  const { data, error } = await query.order("position", { ascending: true });
 
   throwIfSupabaseError(error, "listLogicalScenesByVideoId failed");
   return data.map(mapLogicalScene);
@@ -31,11 +40,20 @@ export async function replaceLogicalScenesForVideo(
   supabase: SupabaseDataClient,
   videoId: string,
   scenes: CreateLogicalSceneInput[],
+  scope?: StoryboardWriteScope,
 ): Promise<LogicalScene[]> {
-  const { error: deleteError } = await supabase
+  let deleteQuery = supabase
     .from("logical_scenes")
     .delete()
     .eq("video_id", videoId);
+  if (scope?.agentConversationId) {
+    deleteQuery = deleteQuery.eq(
+      "agent_conversation_id",
+      scope.agentConversationId,
+    );
+  }
+
+  const { error: deleteError } = await deleteQuery;
 
   throwIfSupabaseError(deleteError, "replaceLogicalScenesForVideo delete failed");
 
@@ -53,6 +71,8 @@ export async function replaceLogicalScenesForVideo(
         zoom: scene.zoom ?? null,
         duration_target: scene.durationTarget ?? null,
         note: scene.note ?? null,
+        agent_conversation_id: scope?.agentConversationId ?? null,
+        is_active: true,
       })),
     )
     .select("*")
@@ -73,8 +93,12 @@ export async function upsertLogicalScenesForVideoByPosition(
   supabase: SupabaseDataClient,
   videoId: string,
   scenes: CreateLogicalSceneInput[],
+  scope?: StoryboardWriteScope,
 ): Promise<LogicalScene[]> {
-  const existing = await listLogicalScenesByVideoId(supabase, videoId);
+  const existing = await listLogicalScenesByVideoId(supabase, videoId, {
+    activeOnly: false,
+    agentConversationId: scope?.agentConversationId,
+  });
   const existingByPosition = new Map(
     existing.map((scene) => [scene.position, scene]),
   );
@@ -122,6 +146,8 @@ export async function upsertLogicalScenesForVideoByPosition(
         zoom: scene.zoom ?? null,
         duration_target: scene.durationTarget ?? null,
         note: scene.note ?? null,
+        agent_conversation_id: scope?.agentConversationId ?? null,
+        is_active: true,
       })
       .select("*")
       .single();

@@ -27,6 +27,12 @@ import {
   buildRecipeAgentMessagePayload,
   type CreateVideoDraftIntent,
 } from "./create-video-agent-message";
+import {
+  buildConversationBranchForSlug,
+  resolveConversationDefaultsFromProject,
+} from "@/modules/recipe-agent/use-cases/ensure-agent-conversation";
+import { buildRecipeAgentWorkspace } from "@/modules/recipe-agent/recipe-agent.workspace";
+import { insertAgentConversation } from "@/modules/recipe-agent/repositories/agent-conversations.repository";
 
 export interface CreateVideoDraftInput {
   /** When non-empty after trim, used as `videos.title` instead of `buildDraftTitle`. */
@@ -128,6 +134,22 @@ export async function createVideoDraft(
     createdBy: profile.id,
   });
 
+  const conversationDefaults = resolveConversationDefaultsFromProject(project);
+  const workspace = buildRecipeAgentWorkspace(project.id);
+  const initialConversation = await insertAgentConversation(supabase, {
+    videoId: project.id,
+    name: "Initial",
+    slug: "initial",
+    cursorAgentModel: conversationDefaults.model,
+    cursorAgentReasoning: conversationDefaults.reasoning,
+    cursorAgentFast: conversationDefaults.fast,
+    customInstructions: complementaryAgentInstructions ?? null,
+    includeAssetsManifest: false,
+    isActive: true,
+    agentWorkspacePath: workspace.workspacePath,
+    agentGitBranch: buildConversationBranchForSlug(project.id, "initial"),
+  });
+
   for (const [index, file] of sourceFiles.entries()) {
     await persistMediaAssetFile({
       supabase,
@@ -154,6 +176,7 @@ export async function createVideoDraft(
   // Cursor/OpenAI.
   const agentPayload = buildRecipeAgentMessagePayload({
     videoId: project.id,
+    conversationId: initialConversation.id,
     profileId: profile.id,
     sourceSummary,
     productionDefaults,

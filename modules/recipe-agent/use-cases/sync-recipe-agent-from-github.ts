@@ -7,7 +7,11 @@ import type { VideoProject } from "@/modules/videos/video.types";
 import type { VideoStatus } from "@/modules/videos/video-status";
 
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
-import { updateVideoAgentSession } from "../repositories/recipe-agent.repository";
+import {
+  mirrorActiveConversationToVideo,
+  updateAgentConversation,
+} from "../repositories/agent-conversations.repository";
+import { ensureActiveAgentConversation } from "./ensure-agent-conversation";
 import { extractAssistantCheckpoint } from "../services/checkpoint-parse";
 import {
   buildAgentRecipeWorkspacePathCandidatesForGithub,
@@ -259,7 +263,13 @@ export async function syncRecipeAgentArtifactsFromGithubOnly(
     throw new Error(`Video ${input.videoId} not found.`);
   }
 
-  if (!project.agentGitBranch?.trim() && !project.agentGitCommitSha?.trim()) {
+  const conversation = await ensureActiveAgentConversation(
+    supabase,
+    input.videoId,
+    project,
+  );
+
+  if (!conversation.agentGitBranch?.trim() && !conversation.agentGitCommitSha?.trim()) {
     throw new Error(
       "No Git branch or commit is stored for this project. Run the recipe agent once so a checkpoint branch or SHA is recorded.",
     );
@@ -280,18 +290,21 @@ export async function syncRecipeAgentArtifactsFromGithubOnly(
   const artifactsToSync = selectArtifactsForStage("general", enriched.artifacts);
   const syncPlan = await syncRecipeAgentArtifacts(supabase, {
     videoId: input.videoId,
+    agentConversationId: conversation.id,
+    syncStoryboardTables: conversation.isActive,
     artifacts: artifactsToSync,
   });
 
-  await updateVideoAgentSession(supabase, input.videoId, {
+  const updatedConversation = await updateAgentConversation(supabase, conversation.id, {
     lastAgentSyncAt: new Date().toISOString(),
-    agentGitBranch: enriched.gitBranch ?? null,
+    agentGitBranch: enriched.gitBranch ?? conversation.agentGitBranch ?? null,
     agentGitCommitSha: enriched.gitSha ?? null,
     agentStatus: syncPlan.valid ? "idle" : "validation_failed",
     ...(enriched.resolvedWorkspacePath
       ? { agentWorkspacePath: enriched.resolvedWorkspacePath }
       : {}),
   });
+  await mirrorActiveConversationToVideo(supabase, input.videoId, updatedConversation);
 
   const nextVideoStatus = resolveVideoStatusAfterAgentSync({
     stage: "general",

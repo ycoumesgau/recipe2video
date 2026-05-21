@@ -1,17 +1,21 @@
 import { Badge } from "@/components/ui/badge";
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import { loadRecipeAgentContext } from "@/modules/recipe-agent/load-recipe-agent-context";
 import { StoryboardReview } from "@/modules/storyboard/ui/storyboard-review";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
 export default async function StoryboardPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ videoId: string }>;
+  searchParams: Promise<{ conversation?: string }>;
 }) {
   const { videoId } = await params;
+  const query = await searchParams;
   const { project, dataError, logicalScenes, seedanceSegments } =
-    await loadStoryboardPageData(videoId);
+    await loadStoryboardPageData(videoId, query.conversation);
 
   return (
     <div className="space-y-6">
@@ -38,13 +42,20 @@ export default async function StoryboardPage({
   );
 }
 
-async function loadStoryboardPageData(videoId: string) {
+async function loadStoryboardPageData(
+  videoId: string,
+  requestedConversationId?: string,
+) {
   try {
     const supabase = createSupabaseAdminClient();
-    const [project, storyboardData] = await Promise.all([
-      getVideoProjectById(supabase, videoId),
-      getStoryboardReviewData(videoId),
-    ]);
+    const project = await getVideoProjectById(supabase, videoId);
+    const agentContext = project
+      ? await loadRecipeAgentContext(supabase, videoId, requestedConversationId)
+      : null;
+    const storyboardData = await getStoryboardReviewData(
+      videoId,
+      agentContext?.storyboardScope ?? { activeOnly: true },
+    );
 
     return {
       project,

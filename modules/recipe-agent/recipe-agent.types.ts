@@ -81,9 +81,74 @@ export interface RecipeAgentArtifact {
   source?: "sdk" | "github";
 }
 
+export interface AgentConversation {
+  id: string;
+  videoId: string;
+  name: string;
+  slug: string;
+  cursorAgentId?: string | null;
+  cursorAgentRuntime?: RecipeAgentRuntime | null;
+  agentWorkspacePath?: string | null;
+  agentGitBranch?: string | null;
+  agentGitCommitSha?: string | null;
+  agentStatus: RecipeAgentStatus;
+  lastAgentRunId?: string | null;
+  lastAgentSyncAt?: string | null;
+  cursorAgentModel: string;
+  cursorAgentReasoning?: string | null;
+  cursorAgentFast: boolean;
+  customInstructions?: string | null;
+  includeAssetsManifest: boolean;
+  isActive: boolean;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAgentConversationInput {
+  videoId: string;
+  name: string;
+  slug: string;
+  cursorAgentModel: string;
+  cursorAgentReasoning?: string | null;
+  cursorAgentFast?: boolean;
+  customInstructions?: string | null;
+  includeAssetsManifest?: boolean;
+  isActive?: boolean;
+  agentWorkspacePath?: string | null;
+  agentGitBranch?: string | null;
+}
+
+export interface UpdateAgentConversationInput {
+  name?: string;
+  slug?: string;
+  cursorAgentId?: string | null;
+  cursorAgentRuntime?: RecipeAgentRuntime | null;
+  agentWorkspacePath?: string | null;
+  agentGitBranch?: string | null;
+  agentGitCommitSha?: string | null;
+  agentStatus?: RecipeAgentStatus;
+  lastAgentRunId?: string | null;
+  lastAgentSyncAt?: string | null;
+  cursorAgentModel?: string;
+  cursorAgentReasoning?: string | null;
+  cursorAgentFast?: boolean;
+  customInstructions?: string | null;
+  includeAssetsManifest?: boolean;
+  isActive?: boolean;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
+}
+
 export interface CreateRecipeAgentInput {
   videoId: string;
   title?: string | null;
+  conversationId: string;
+  conversationName: string;
+  conversationSlug: string;
+  gitBranch: string;
+  includeAssetsManifest?: boolean;
 }
 
 export interface SendRecipeAgentMessageInput {
@@ -156,6 +221,7 @@ export type RecipeAgentStepState = "pending" | "running" | "done" | "error";
 export interface RecipeAgentThread {
   id: string;
   videoId: string;
+  agentConversationId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -190,6 +256,7 @@ export interface RecipeAgentStep {
 export interface AgentRun {
   id: string;
   videoId: string;
+  agentConversationId?: string | null;
   cursorAgentId: string;
   cursorRunId?: string | null;
   stage: RecipeAgentStage;
@@ -211,6 +278,7 @@ export interface AgentRun {
 
 export interface CreateAgentRunInput {
   videoId: string;
+  agentConversationId: string;
   cursorAgentId: string;
   cursorRunId?: string | null;
   stage: RecipeAgentStage;
@@ -244,6 +312,7 @@ export interface UpdateAgentRunInput {
 export interface AgentArtifact {
   id: string;
   videoId: string;
+  agentConversationId?: string | null;
   artifactName: string;
   artifactPath: string;
   content: string;
@@ -256,6 +325,7 @@ export interface AgentArtifact {
 
 export interface UpsertAgentArtifactInput {
   videoId: string;
+  agentConversationId: string;
   artifactName: string;
   artifactPath: string;
   content: string;
