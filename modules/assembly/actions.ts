@@ -30,6 +30,8 @@ import {
   renamePreset,
 } from "./repositories/assembly-presets.repository";
 import { tryClaimCompositionCloudRender } from "./repositories/assembly.repository";
+import { completeSunoAudioUpload } from "./use-cases/complete-suno-audio-upload";
+import { prepareSunoAudioUpload } from "./use-cases/prepare-suno-audio-upload";
 import { uploadSunoAudio } from "./use-cases/upload-suno-audio";
 import { getAssemblyPageData } from "./use-cases/get-assembly-data";
 import { saveAssemblyPresetSettings } from "./use-cases/save-assembly-preset-settings";
@@ -41,6 +43,92 @@ export interface AssemblyActionState {
   presetId?: string;
 }
 
+export interface SunoAudioUploadPrepareState {
+  status?: "ready" | "error";
+  message?: string;
+  signedUrl?: string;
+  token?: string;
+  storagePath?: string;
+}
+
+export async function prepareSunoAudioUploadAction(input: {
+  videoId: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+}): Promise<SunoAudioUploadPrepareState> {
+  const videoId = input.videoId.trim();
+
+  try {
+    await assertCostlyActionAllowed();
+
+    const prepared = await prepareSunoAudioUpload({
+      supabase: createSupabaseAdminClient(),
+      videoId,
+      file: {
+        name: input.fileName.trim() || "suno-audio.mp3",
+        size: input.fileSize,
+        type: input.mimeType,
+      },
+    });
+
+    return {
+      status: "ready",
+      signedUrl: prepared.signedUrl,
+      token: prepared.token,
+      storagePath: prepared.storagePath,
+    };
+  } catch (error) {
+    if (isAuthAccessError(error)) {
+      return {
+        status: "error",
+        message: getSunoActionErrorMessage(error),
+      };
+    }
+
+    return {
+      status: "error",
+      message: getSunoActionErrorMessage(error),
+    };
+  }
+}
+
+export async function completeSunoAudioUploadAction(input: {
+  videoId: string;
+  storagePath: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+}) {
+  const videoId = input.videoId.trim();
+
+  try {
+    const { profile } = await assertCostlyActionAllowed();
+
+    await completeSunoAudioUpload({
+      supabase: createSupabaseAdminClient(),
+      videoId,
+      storagePath: input.storagePath.trim(),
+      file: {
+        name: input.fileName,
+        size: input.fileSize,
+        type: input.mimeType,
+      },
+      createdBy: profile.id,
+    });
+
+    revalidateAssemblyPaths(videoId);
+    redirectWithNotice(videoId, "success", "Suno audio uploaded and linked.");
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(videoId, "error", getSunoActionErrorMessage(error));
+  }
+}
+
+/** @deprecated Prefer signed direct upload via prepare + complete actions (Vercel 4.5 MB limit). */
 export async function uploadSunoAudioAction(formData: FormData) {
   const videoId = requireString(formData, "videoId");
 

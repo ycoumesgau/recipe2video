@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronDown,
   FileAudio,
-  Upload,
 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -23,14 +22,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import type { LogicalScene, SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import type { VideoProject } from "@/modules/videos/video.types";
 
 import type { Composition } from "../assembly.types";
-import { uploadSunoAudioAction } from "../actions";
+import { SunoAudioUploadForm } from "./suno-audio-upload-form";
 import { resolveSunoAssemblyPromptView } from "../suno-assembly-prompt";
 import { SunoPromptPack } from "./suno-prompt-pack";
 
@@ -97,26 +94,7 @@ function SunoAudioUploadCard({ videoId }: { videoId: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form action={uploadSunoAudioAction} className="space-y-4">
-          <input name="videoId" type="hidden" value={videoId} />
-          <div className="space-y-2">
-            <Label htmlFor="file">Suno audio file</Label>
-            <Input
-              accept="audio/mpeg,audio/mp3,audio/wav,audio/aac,audio/flac"
-              id="file"
-              name="file"
-              required
-              type="file"
-            />
-            <p className="text-xs text-muted-foreground">
-              MP3, WAV, AAC, or FLAC. Maximum 50 MB.
-            </p>
-          </div>
-          <Button type="submit">
-            <Upload className="h-4 w-4" />
-            Upload and link audio
-          </Button>
-        </form>
+        <SunoAudioUploadForm videoId={videoId} />
       </CardContent>
     </Card>
   );
