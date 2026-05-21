@@ -16,11 +16,11 @@ export default async function MusicPage({
   searchParams,
 }: {
   params: Promise<{ videoId: string }>;
-  searchParams: Promise<{ notice?: string; message?: string }>;
+  searchParams: Promise<{ notice?: string; message?: string; conversation?: string }>;
 }) {
   const { videoId } = await params;
-  const { notice, message } = await searchParams;
-  const data = await loadMusicPage(videoId);
+  const { notice, message, conversation } = await searchParams;
+  const data = await loadMusicPage(videoId, conversation);
 
   if (data.error || !data.musicData) {
     return (
@@ -93,9 +93,11 @@ export default async function MusicPage({
   );
 }
 
-async function loadMusicPage(videoId: string) {
+async function loadMusicPage(videoId: string, conversationId?: string) {
   try {
-    const musicData = await getMusicPageData(videoId);
+    const musicData = await getMusicPageData(videoId, {
+      conversationId: conversationId?.trim() || null,
+    });
     return { musicData, error: null };
   } catch (error) {
     return {

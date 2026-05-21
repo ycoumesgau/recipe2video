@@ -209,8 +209,35 @@ export async function listSegmentsByVideoId(
 export type SegmentProgressRow = {
   id: string;
   videoId: string;
+  position: number;
   status: SegmentStatus;
 };
+
+/**
+ * Count storyboard slots (distinct `position`) rather than raw segment rows.
+ * A slot counts as accepted when any conversation's segment at that position
+ * is accepted — matching Assembly's cross-conversation mix semantics.
+ */
+export function summarizeSegmentProgressByPosition(rows: SegmentProgressRow[]): {
+  acceptedCount: number;
+  totalCount: number;
+} {
+  const byPosition = new Map<number, SegmentProgressRow[]>();
+  for (const row of rows) {
+    const bucket = byPosition.get(row.position) ?? [];
+    bucket.push(row);
+    byPosition.set(row.position, bucket);
+  }
+
+  let acceptedCount = 0;
+  for (const positionRows of byPosition.values()) {
+    if (positionRows.some((row) => row.status === "accepted")) {
+      acceptedCount += 1;
+    }
+  }
+
+  return { acceptedCount, totalCount: byPosition.size };
+}
 
 /**
  * Lightweight segment rows for dashboard cards (status counts per project).
@@ -225,7 +252,7 @@ export async function listSegmentProgressByVideoIds(
 
   const { data, error } = await supabase
     .from("segments")
-    .select("id, video_id, status")
+    .select("id, video_id, position, status")
     .in("video_id", videoIds);
 
   throwIfSupabaseError(error, "listSegmentProgressByVideoIds failed");
@@ -233,6 +260,7 @@ export async function listSegmentProgressByVideoIds(
   return (data ?? []).map((row) => ({
     id: row.id,
     videoId: row.video_id,
+    position: row.position,
     status: row.status as SegmentStatus,
   }));
 }

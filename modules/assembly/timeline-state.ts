@@ -68,6 +68,36 @@ export function getEmptyTimelineState(): AssemblyTimelineState {
 }
 
 /**
+ * When a Suno track is linked to the preset but the timeline has no audio
+ * clips yet, materialise a full-length clip so Assembly preview/export can
+ * use the uploaded music without forcing another Music-page visit.
+ */
+export function ensureLinkedAudioClipOnTimeline(
+  timelineState: AssemblyTimelineState,
+  input: {
+    audioMediaAssetId?: string | null;
+    audioDurationSeconds?: number | null;
+  },
+): AssemblyTimelineState {
+  if (
+    timelineState.audioClips.length > 0 ||
+    !input.audioMediaAssetId
+  ) {
+    return timelineState;
+  }
+
+  return {
+    schema: TIMELINE_SCHEMA,
+    audioClips: [
+      createDefaultAudioClip({
+        mediaAssetId: input.audioMediaAssetId,
+        durationSeconds: input.audioDurationSeconds,
+      }),
+    ],
+  };
+}
+
+/**
  * Decode whatever sits inside `compositions.audio_sync` into the new audio
  * timeline shape, deriving a single audio clip from the legacy fields when
  * applicable. Note: this function does NOT carry `segmentTrims` anymore;
@@ -490,7 +520,7 @@ export function resolveLinkedAudioMediaAssetId(
   persistedAudioMediaAssetId?: string | null,
 ): string | null {
   if (audioClips.length === 0) {
-    return null;
+    return persistedAudioMediaAssetId ?? null;
   }
   if (
     persistedAudioMediaAssetId &&

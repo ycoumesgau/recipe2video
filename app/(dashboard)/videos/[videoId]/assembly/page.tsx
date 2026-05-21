@@ -86,6 +86,7 @@ export default async function AssemblyPage({
           finalExports={data.assemblyData.finalExports}
           initialRemotionProps={data.assemblyData.remotionProps}
           initialTimelineState={data.assemblyData.timelineState}
+          linkedAudioTrack={data.assemblyData.audioTrack}
           missingAcceptedSegments={data.assemblyData.missingAcceptedSegments}
           presets={data.assemblyData.presets}
           projectStatus={data.assemblyData.projectStatus}
