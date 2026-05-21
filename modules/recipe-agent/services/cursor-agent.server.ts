@@ -9,6 +9,7 @@ export function createLiveCursorRecipeAgentService() {
     sdk: {
       create: (options) => Agent.create(options),
       resume: (agentId, options) => Agent.resume(agentId, options),
+      getRun: (runId, options) => Agent.getRun(runId, options),
     },
   });
 }

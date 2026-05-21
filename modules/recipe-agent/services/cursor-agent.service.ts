@@ -1,5 +1,6 @@
-import type { AgentOptions, ModelSelection, Run, SDKAgent } from "@cursor/sdk";
+import type { AgentOptions, GetRunOptions, ModelSelection, Run, RunStatus, SDKAgent } from "@cursor/sdk";
 
+import { RECIPE_AGENT_STREAM_SLICE_MAX_MS } from "../recipe-agent.constants";
 import { resolveRecipeAgentConfig } from "../recipe-agent.config";
 import {
   buildRecipeAgentGuardianSubagentPrompt,
@@ -26,6 +27,34 @@ interface CreateCursorRecipeAgentServiceOptions {
   sdk: CursorAgentSdkAdapter;
 }
 
+export interface StartRecipeAgentMessageResult {
+  agentId: string;
+  runId: string;
+  cursorRunStartedAt: string;
+}
+
+export interface PollRecipeAgentRunInput {
+  agentId: string;
+  runId: string;
+  streamLastSeq?: number;
+  streamLastEventSignature?: string | null;
+  assistantTextLength?: number;
+  onStreamEvent?: SendRecipeAgentMessageInput["onStreamEvent"];
+  enableStreamSlice?: boolean;
+  maxStreamSliceMs?: number;
+}
+
+export interface PollRecipeAgentRunResult {
+  status: RunStatus;
+  needsUserInput: boolean;
+  cursorStreamLastSeq: number;
+  cursorStreamLastEventSignature?: string | null;
+  cursorAssistantTextLength: number;
+  assistantText?: string;
+  durationMs?: number;
+  result?: string;
+}
+
 export interface CursorRecipeAgentService {
   createRecipeAgent(input: CreateRecipeAgentInput): Promise<RecipeAgentSession>;
   createRecipeAgentAndSendMessage(
@@ -38,6 +67,25 @@ export interface CursorRecipeAgentService {
     result: RecipeAgentRunResult;
   }>;
   sendMessage(input: SendRecipeAgentMessageInput): Promise<RecipeAgentRunResult>;
+  startMessage(
+    input: SendRecipeAgentMessageInput,
+  ): Promise<StartRecipeAgentMessageResult>;
+  startMessageWithNewAgent(
+    input: CreateRecipeAgentInput &
+      Omit<SendRecipeAgentMessageInput, "agentId">,
+  ): Promise<{
+    session: RecipeAgentSession;
+    runId: string;
+    cursorRunStartedAt: string;
+  }>;
+  pollRun(input: PollRecipeAgentRunInput): Promise<PollRecipeAgentRunResult>;
+  finalizeRun(
+    input: SendRecipeAgentMessageInput & {
+      runId: string;
+      streamMeta?: RecipeAgentRunStreamMeta;
+    },
+  ): Promise<RecipeAgentRunResult>;
+  cancelRun(input: { agentId: string; runId: string }): Promise<void>;
 }
 
 export function createCursorRecipeAgentService(
@@ -135,6 +183,156 @@ export function createCursorRecipeAgentService(
       } finally {
         await disposeAgent(agent);
       }
+    },
+
+    async startMessage(input) {
+      const workspace = buildRecipeAgentWorkspace(input.videoId);
+      const agent = await options.sdk.resume(
+        input.agentId,
+        buildResumeOptions(config),
+      );
+
+      try {
+        return await startMessageWithAgent({
+          agent,
+          agentId: input.agentId,
+          videoId: input.videoId,
+          stage: input.stage,
+          message: input.message,
+          cursorImages: input.cursorImages,
+          workspacePath: workspace.workspacePath,
+        });
+      } finally {
+        await disposeAgent(agent);
+      }
+    },
+
+    async startMessageWithNewAgent(input) {
+      const workspace = buildRecipeAgentWorkspace(input.videoId);
+      const agent = await options.sdk.create(
+        buildAgentOptions({
+          config,
+          name: buildAgentName(input),
+          workspacePath: workspace.workspacePath,
+          videoId: input.videoId,
+          gitBranch: input.gitBranch,
+          includeAssetsManifest: input.includeAssetsManifest,
+        }),
+      );
+      const session = {
+        agentId: agent.agentId,
+        runtime: config.runtime,
+        workspacePath: workspace.workspacePath,
+        model: config.model,
+      };
+
+      try {
+        const started = await startMessageWithAgent({
+          agent,
+          agentId: session.agentId,
+          videoId: input.videoId,
+          stage: input.stage,
+          message: input.message,
+          cursorImages: input.cursorImages,
+          workspacePath: workspace.workspacePath,
+          includeAssetsManifestBriefing: input.includeAssetsManifest,
+        });
+
+        return {
+          session,
+          runId: started.runId,
+          cursorRunStartedAt: started.cursorRunStartedAt,
+        };
+      } finally {
+        await disposeAgent(agent);
+      }
+    },
+
+    async pollRun(input) {
+      const run = await getCloudRun(options.sdk, config, input.agentId, input.runId);
+      const enableStreamSlice =
+        input.enableStreamSlice ?? config.streamSliceEnabled ?? false;
+      const streamSlice = enableStreamSlice
+        ? await consumeAgentRunStreamSlice(run, {
+            startSeq: input.streamLastSeq ?? 0,
+            startAssistantTextLength: input.assistantTextLength ?? 0,
+            startEventSignature: input.streamLastEventSignature ?? null,
+            onStreamEvent: input.onStreamEvent,
+            maxDurationMs:
+              input.maxStreamSliceMs ?? RECIPE_AGENT_STREAM_SLICE_MAX_MS,
+          })
+        : {
+            needsUserInput: false,
+            cursorStreamLastSeq: input.streamLastSeq ?? 0,
+            cursorStreamLastEventSignature:
+              input.streamLastEventSignature ?? null,
+            cursorAssistantTextLength: input.assistantTextLength ?? 0,
+          };
+
+      return {
+        status: run.status,
+        needsUserInput: streamSlice.needsUserInput,
+        cursorStreamLastSeq: streamSlice.cursorStreamLastSeq,
+        cursorStreamLastEventSignature: streamSlice.cursorStreamLastEventSignature,
+        cursorAssistantTextLength: streamSlice.cursorAssistantTextLength,
+        assistantText: streamSlice.assistantText,
+        durationMs: run.durationMs,
+        result: run.result,
+      };
+    },
+
+    async finalizeRun(input) {
+      const workspace = buildRecipeAgentWorkspace(input.videoId);
+      const agent = await options.sdk.resume(
+        input.agentId,
+        buildResumeOptions(config),
+      );
+      const run = await getCloudRun(options.sdk, config, input.agentId, input.runId);
+
+      try {
+        const waitResult =
+          run.status === "running"
+            ? await run.wait()
+            : {
+                id: run.id,
+                status:
+                  run.status === "finished" ||
+                  run.status === "error" ||
+                  run.status === "cancelled"
+                    ? run.status
+                    : "error",
+                result: run.result,
+                durationMs: run.durationMs,
+              };
+        const streamMeta = input.streamMeta ?? { needsUserInput: false };
+        const artifacts = await listRecipeArtifacts({
+          agent,
+          run,
+          includeContents: input.includeArtifactContents ?? false,
+          workspacePath: workspace.workspacePath,
+        });
+
+        return {
+          agentId: input.agentId,
+          runId: waitResult.id,
+          status: waitResult.status,
+          result: pickRunResultText(
+            waitResult.result,
+            streamMeta.assistantText,
+          ),
+          durationMs: waitResult.durationMs,
+          workspacePath: workspace.workspacePath,
+          artifacts,
+          streamMeta,
+        };
+      } finally {
+        await disposeAgent(agent);
+      }
+    },
+
+    async cancelRun(input) {
+      const run = await getCloudRun(options.sdk, config, input.agentId, input.runId);
+      await run.cancel();
     },
   };
 }
@@ -464,6 +662,137 @@ function getNestedValue(value: Record<string, unknown>, path: string[]) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+async function startMessageWithAgent(input: {
+  agent: SDKAgent;
+  agentId: string;
+  videoId: string;
+  stage: SendRecipeAgentMessageInput["stage"];
+  message: string;
+  cursorImages?: SendRecipeAgentMessageInput["cursorImages"];
+  workspacePath: string;
+  includeAssetsManifestBriefing?: boolean;
+}): Promise<StartRecipeAgentMessageResult> {
+  const text = buildRecipeAgentUserMessage({
+    stage: input.stage,
+    message: input.message,
+    workspacePath: input.workspacePath,
+    includeAssetsManifestBriefing: input.includeAssetsManifestBriefing,
+  });
+  const payload =
+    input.cursorImages && input.cursorImages.length > 0
+      ? { text, images: input.cursorImages }
+      : text;
+  const run = await input.agent.send(payload);
+
+  return {
+    agentId: input.agentId,
+    runId: run.id,
+    cursorRunStartedAt: new Date().toISOString(),
+  };
+}
+
+async function getCloudRun(
+  sdk: CursorAgentSdkAdapter,
+  config: RecipeAgentConfig,
+  agentId: string,
+  runId: string,
+): Promise<Run> {
+  const options: GetRunOptions =
+    config.runtime === "cloud"
+      ? { runtime: "cloud", agentId, apiKey: config.apiKey }
+      : { runtime: "local", cwd: config.localCwd };
+
+  return sdk.getRun(runId, options);
+}
+
+async function consumeAgentRunStreamSlice(
+  run: Run,
+  input: {
+    startSeq: number;
+    startAssistantTextLength: number;
+    startEventSignature: string | null;
+    onStreamEvent?: SendRecipeAgentMessageInput["onStreamEvent"];
+    maxDurationMs: number;
+  },
+): Promise<
+  RecipeAgentRunStreamMeta & {
+    cursorStreamLastSeq: number;
+    cursorStreamLastEventSignature: string | null;
+    cursorAssistantTextLength: number;
+  }
+> {
+  if (!run.supports("stream")) {
+    return {
+      needsUserInput: false,
+      cursorStreamLastSeq: input.startSeq,
+      cursorStreamLastEventSignature: input.startEventSignature,
+      cursorAssistantTextLength: input.startAssistantTextLength,
+    };
+  }
+
+  let seq = input.startSeq;
+  let needsUserInput = false;
+  let assistantText = "";
+  let lastEventSignature = input.startEventSignature;
+  const deadline = Date.now() + input.maxDurationMs;
+
+  for await (const event of run.stream()) {
+    if (Date.now() >= deadline) {
+      break;
+    }
+
+    seq += 1;
+    const signature = buildStreamEventSignature(event, seq);
+    if (
+      seq <= input.startSeq ||
+      (lastEventSignature !== null && signature === lastEventSignature)
+    ) {
+      continue;
+    }
+
+    const summarized = summarizeCursorStreamEvent(event, seq);
+
+    if (summarized.eventType === "request") {
+      needsUserInput = true;
+    }
+
+    if (
+      summarized.eventType === "assistant" &&
+      typeof summarized.payload.textPreview === "string"
+    ) {
+      assistantText += summarized.payload.textPreview;
+    }
+
+    await input.onStreamEvent?.(summarized);
+    lastEventSignature = signature;
+  }
+
+  const combinedAssistantText =
+    assistantText.length > 0 ? assistantText : undefined;
+
+  return {
+    needsUserInput,
+    assistantText: combinedAssistantText,
+    cursorStreamLastSeq: seq,
+    cursorStreamLastEventSignature: lastEventSignature,
+    cursorAssistantTextLength:
+      input.startAssistantTextLength + assistantText.length,
+  };
+}
+
+function buildStreamEventSignature(event: unknown, seq: number) {
+  if (!isRecord(event)) {
+    return `seq:${seq}`;
+  }
+
+  const callId =
+    getNestedString(event, ["call_id"]) ??
+    getNestedString(event, ["request_id"]) ??
+    getNestedString(event, ["run_id"]);
+
+  return callId ? `${callId}:${seq}` : `seq:${seq}`;
 }
 
 async function sendMessageWithAgent(input: {

@@ -1,5 +1,7 @@
 import type {
   AgentOptions,
+  GetRunOptions,
+  Run,
   RunResultStatus,
   SDKAgent,
   SDKArtifact,
@@ -204,6 +206,7 @@ export interface RecipeAgentRunStreamMeta {
 export interface CursorAgentSdkAdapter {
   create(options: AgentOptions): Promise<SDKAgent>;
   resume(agentId: string, options?: Partial<AgentOptions>): Promise<SDKAgent>;
+  getRun(runId: string, options?: GetRunOptions): Promise<Run>;
 }
 
 export type CursorSdkArtifact = SDKArtifact;

@@ -701,6 +701,8 @@ function createDefaultDependencies(
     create: (options: Parameters<typeof Agent.create>[0]) => Agent.create(options),
     resume: (agentId: string, options?: Parameters<typeof Agent.resume>[1]) =>
       Agent.resume(agentId, options),
+    getRun: (runId: string, options?: Parameters<typeof Agent.getRun>[1]) =>
+      Agent.getRun(runId, options),
   };
   const baseConfig = resolveRecipeAgentConfig();
   const baseRecipeAgentService = createCursorRecipeAgentService({
