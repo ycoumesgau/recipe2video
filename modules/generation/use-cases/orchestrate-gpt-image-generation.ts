@@ -54,7 +54,7 @@ export interface GptImageGenerationRequest {
    * Ordered list of Runway ratio strings to try. The orchestrator
    * attempts them in order and stops at the first one that does not
    * trigger an `invalid_input`-class error. Useful for the album cover
-   * Album cover uses `2048:2048` (2K tier); legacy rows may list
+   * Album cover uses `2560:2560` (2K tier); legacy rows may list
    * additional fallbacks in `ratioAttempts`.
    */
   ratioCandidates: string[];
