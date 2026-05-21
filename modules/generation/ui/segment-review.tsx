@@ -45,9 +45,9 @@ import {
   updateSegmentPromptAction,
 } from "../actions";
 import { FrameExtractionCard } from "./frame-extraction-card";
+import { SegmentReferencesEditor } from "./segment-references-editor";
 import type { GenerationStatus } from "../generation-status";
 import type {
-  SegmentReferenceResolutionItem,
   SegmentReviewData,
   SegmentVariantReviewItem,
 } from "../use-cases/get-segment-review";
@@ -191,7 +191,13 @@ export function SegmentReview({
             currentPrompt={data.segment.prompt}
             feedbacks={data.feedbacks}
           />
-          <ReferencesPanel resolutions={data.referenceResolutions} />
+          <SegmentReferencesEditor
+            initialRows={data.referenceEditorRows}
+            pickerOptions={data.referencePickerOptions}
+            resolutions={data.referenceResolutions}
+            segmentId={segmentId}
+            videoId={videoId}
+          />
         </div>
 
         <div className="space-y-4">
@@ -217,6 +223,7 @@ export function SegmentReview({
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="video">Video</TabsTrigger>
           <TabsTrigger value="prompt">Prompt</TabsTrigger>
+          <TabsTrigger value="references">References</TabsTrigger>
           <TabsTrigger value="chat">Chat</TabsTrigger>
           <TabsTrigger value="variants">Variants</TabsTrigger>
         </TabsList>
@@ -242,6 +249,15 @@ export function SegmentReview({
           <PromptHistoryCard
             currentPrompt={data.segment.prompt}
             feedbacks={data.feedbacks}
+          />
+        </TabsContent>
+        <TabsContent value="references">
+          <SegmentReferencesEditor
+            initialRows={data.referenceEditorRows}
+            pickerOptions={data.referencePickerOptions}
+            resolutions={data.referenceResolutions}
+            segmentId={segmentId}
+            videoId={videoId}
           />
         </TabsContent>
         <TabsContent value="chat">
@@ -783,139 +799,6 @@ function PromptHistoryCard({
   );
 }
 
-function ReferencesPanel({
-  resolutions,
-}: {
-  resolutions: SegmentReferenceResolutionItem[];
-}) {
-  // The legacy `ReferencesPanel` displayed `runwayUri` from the segment's
-  // JSON, which is never populated for library globals (those are streamed
-  // to Runway just-in-time via signed URLs). The "Missing Runway URI"
-  // string then falsely suggested an upload step that does not exist for
-  // globals. The new panel reads the actual segment_references resolution
-  // and reports whether each reference is ready, missing storage, or
-  // unresolved.
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>References</CardTitle>
-        <CardDescription>
-          Library globals are streamed to Runway with a fresh signed URL at
-          generation time. Recipe-specific references must be approved before
-          they show up here as ready.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {resolutions.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            No references are attached to this segment.
-          </div>
-        ) : (
-          resolutions.map((resolution) => (
-            <ReferenceResolutionRow
-              key={`${resolution.position ?? "unresolved"}-${resolution.declaredName}`}
-              resolution={resolution}
-            />
-          ))
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ReferenceResolutionRow({
-  resolution,
-}: {
-  resolution: SegmentReferenceResolutionItem;
-}) {
-  const status = computeResolutionStatus(resolution);
-
-  return (
-    <div className="rounded-lg border bg-muted/20 p-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">@{resolution.declaredLabel}</Badge>
-        {resolution.required ? <Badge variant="secondary">required</Badge> : null}
-        <Badge variant={status.variant} className="ml-auto">
-          {status.label}
-        </Badge>
-      </div>
-      <p className="mt-2 font-medium">{resolution.declaredName}</p>
-      <p className="text-muted-foreground">{resolution.role}</p>
-      <p className="mt-2 text-xs text-muted-foreground">{status.description}</p>
-      {resolution.recipeReferenceStatus === "generating" ? (
-        <div className="mt-3 space-y-1">
-          <Progress
-            value={progressForRecipeReferenceImage(
-              resolution.runwayProgress,
-              resolution.runwayTaskStatus,
-            )}
-          />
-          <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-            <span>Runway {resolution.runwayTaskStatus ?? "PENDING"}</span>
-            {typeof resolution.runwayProgress === "number" ? (
-              <span>{resolution.runwayProgress.toFixed(0)}%</span>
-            ) : (
-              <span>queued / running</span>
-            )}
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function computeResolutionStatus(resolution: SegmentReferenceResolutionItem): {
-  label: string;
-  description: string;
-  variant:
-    | "default"
-    | "secondary"
-    | "destructive"
-    | "outline"
-    | "success"
-    | "warning";
-} {
-  if (!resolution.resolvedCanonicalName) {
-    return {
-      label: "not resolved",
-      description:
-        "This reference name is not in asset_library nor declared in reference-plan.json. Sync the agent or rename the reference to a known canonical / alias.",
-      variant: "destructive",
-    };
-  }
-
-  if (resolution.recipeReferenceStatus === "generating") {
-    return {
-      label: "image generating",
-      description:
-        "GPT-Image 2 is running on Runway for this recipe-specific anchor. This card refreshes automatically when the image lands in Storage.",
-      variant: "warning",
-    };
-  }
-
-  if (!resolution.hasStorage) {
-    return {
-      label: "no storage",
-      description: `${resolution.resolvedCanonicalName} is wired but its media is missing in Supabase Storage. Upload or regenerate the source image before launching Seedance.`,
-      variant: "destructive",
-    };
-  }
-
-  if (resolution.resolvedSource === "asset_library") {
-    return {
-      label: "ready · library global",
-      description: `Resolved to ${resolution.resolvedCanonicalName}. Streamed to Runway just-in-time with a fresh signed URL — no manual upload needed.`,
-      variant: "success",
-    };
-  }
-
-  return {
-    label: "ready · recipe-specific",
-    description: `Resolved to ${resolution.resolvedCanonicalName}. Will be streamed to Runway with a fresh signed URL at generation time.`,
-    variant: "success",
-  };
-}
-
 function StatusPanel({
   hasActiveGeneration,
   hasActiveReferenceImageGeneration,
@@ -1002,23 +885,4 @@ function shouldShowMuxPlayer(
 
 function shouldShowRunwayProgress(generation: SegmentVariantReviewItem["generation"]) {
   return ["pending", "queued", "processing"].includes(generation.status);
-}
-
-function progressForRecipeReferenceImage(
-  runwayProgress: number | null,
-  runwayTaskStatus: string | null,
-): number {
-  if (typeof runwayProgress === "number") {
-    return Math.max(0, Math.min(100, runwayProgress));
-  }
-  if (runwayTaskStatus === "RUNNING") {
-    return 55;
-  }
-  if (runwayTaskStatus === "THROTTLED") {
-    return 18;
-  }
-  if (runwayTaskStatus === "PENDING") {
-    return 25;
-  }
-  return 15;
 }

@@ -20,6 +20,11 @@ import { applyStandardOutroToSegment } from "@/modules/storyboard/use-cases/appl
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import { VIDEO_MODEL_OPTIONS } from "@/modules/videos/video.constants";
 
+import {
+  parseSegmentReferenceDraftsJson,
+  updateSegmentReferencesForSegment,
+} from "@/modules/references/use-cases/update-segment-references";
+
 import { RUNWAY_DEFAULT_VIDEO_MODEL } from "./runway.constants";
 import {
   getGenerationById,
@@ -81,6 +86,41 @@ export async function rejectSegmentVariantAction(formData: FormData) {
 
     revalidateSegmentReviewPaths(ids.videoId, ids.segmentId);
     redirectWithNotice(ids, "success", "Variant rejected for this segment.");
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(ids, "error", getActionErrorMessage(error));
+  }
+}
+
+export async function updateSegmentReferencesAction(formData: FormData) {
+  const ids = {
+    videoId: requireString(formData, "videoId"),
+    segmentId: requireString(formData, "segmentId"),
+  };
+
+  try {
+    await assertCostlyActionAllowed();
+    const referencesJson = getString(formData, "referencesJson");
+    const references = parseSegmentReferenceDraftsJson(referencesJson);
+
+    await updateSegmentReferencesForSegment(createSupabaseAdminClient(), {
+      videoId: ids.videoId,
+      segmentId: ids.segmentId,
+      references,
+    });
+
+    revalidateSegmentReviewPaths(ids.videoId, ids.segmentId);
+    revalidatePath(`/videos/${ids.videoId}/references`);
+    redirectWithNotice(
+      ids,
+      "success",
+      references.length === 0
+        ? "All references removed from this segment."
+        : "Segment references saved. Request regeneration to apply the new wiring.",
+    );
   } catch (error) {
     if (isNextRedirectError(error)) {
       throw error;
