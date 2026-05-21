@@ -17,6 +17,7 @@ import type {
   RecipeAgentSession,
   RecipeAgentStage,
 } from "../recipe-agent.types";
+import type { SDKImage } from "@cursor/sdk";
 import {
   getAgentConversationById,
   mirrorActiveConversationToVideo,
@@ -74,7 +75,7 @@ interface RecipeAgentPollingDeps extends RecipeAgentOrchestrationDependencies {
   buildCursorImages?(
     input: StartRecipeAgentRunInput,
     project: VideoProject,
-  ): Promise<unknown[]>;
+  ): Promise<SDKImage[]>;
   seedRecipeAgentChatTurnHook?: (
     input: Parameters<typeof seedRecipeAgentChatTurn>[1],
   ) => Promise<{ userMessageId: string; assistantMessageId: string }>;

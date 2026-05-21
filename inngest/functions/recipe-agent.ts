@@ -57,9 +57,9 @@ async function recipeAgentWorkflowSendEvent(workflowEvent: {
 }
 
 function createRecipeAgentServiceForConversation(conversation: {
-  cursorAgentModel: string | null;
-  cursorAgentReasoning: string | null;
-  cursorAgentFast: boolean | null;
+  cursorAgentModel?: string | null;
+  cursorAgentReasoning?: string | null;
+  cursorAgentFast?: boolean | null;
 }) {
   const baseConfig = resolveRecipeAgentConfig();
   const sdkAdapter = {
@@ -79,7 +79,7 @@ function createRecipeAgentServiceForConversation(conversation: {
           ...(conversation.cursorAgentReasoning
             ? { modelReasoning: conversation.cursorAgentReasoning }
             : {}),
-          ...(conversation.cursorAgentFast !== null
+          ...(conversation.cursorAgentFast != null
             ? { modelFast: conversation.cursorAgentFast ? "true" : "false" }
             : {}),
         }

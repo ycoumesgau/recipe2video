@@ -252,13 +252,13 @@ export function RecipeAgentPanel({
     (artifact) => artifact.validationStatus === "invalid",
   );
   const latestRun = runs[0];
-  const activeRunStatuses = new Set([
-    "starting",
-    "running",
-    "finalizing",
-  ] satisfies RecipeAgentRunStatus[]);
   const activeRun =
-    latestRun && activeRunStatuses.has(latestRun.status) ? latestRun : null;
+    latestRun &&
+    (latestRun.status === "starting" ||
+      latestRun.status === "running" ||
+      latestRun.status === "finalizing")
+      ? latestRun
+      : null;
 
   useEffect(() => {
     if (agentStatus !== "running" || !activeRun) {
