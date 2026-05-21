@@ -9,7 +9,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { planRunwayCostCreditsBackfill } from "@/modules/costs/plan-runway-cost-credits-backfill";
 import { mapCostLog } from "@/modules/costs/repositories/cost.repository";
-import type { Database } from "@/shared/supabase/database.types";
+import type { Database, Json } from "@/shared/supabase/database.types";
 
 const dryRun = process.argv.includes("--dry-run");
 
@@ -124,7 +124,10 @@ async function main() {
 
     const { error } = await supabase
       .from("cost_logs")
-      .update({ credits_used: patch.creditsUsed, metadata })
+      .update({
+        credits_used: patch.creditsUsed,
+        metadata: metadata as Json,
+      })
       .eq("id", patch.logId);
 
     if (error) {
@@ -141,7 +144,7 @@ async function main() {
       model: insert.model,
       operation: insert.operation,
       credits_used: insert.creditsUsed,
-      metadata: insert.metadata,
+      metadata: insert.metadata as Json,
       created_by: insert.createdBy,
     });
 
