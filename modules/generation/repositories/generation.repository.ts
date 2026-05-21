@@ -56,14 +56,86 @@ export async function listGenerationsBySegmentId(
   supabase: SupabaseDataClient,
   segmentId: string,
 ): Promise<Generation[]> {
+  return listGenerationsBySegmentIds(supabase, [segmentId]);
+}
+
+export async function listGenerationsBySegmentIds(
+  supabase: SupabaseDataClient,
+  segmentIds: string[],
+): Promise<Generation[]> {
+  if (segmentIds.length === 0) {
+    return [];
+  }
+
   const { data, error } = await supabase
     .from("generations")
     .select("*")
-    .eq("segment_id", segmentId)
+    .in("segment_id", segmentIds)
     .order("created_at", { ascending: false });
 
-  throwIfSupabaseError(error, "listGenerationsBySegmentId failed");
+  throwIfSupabaseError(error, "listGenerationsBySegmentIds failed");
   return data.map(mapGeneration);
+}
+
+export async function countGenerationsBySegmentIds(
+  supabase: SupabaseDataClient,
+  segmentIds: string[],
+): Promise<number> {
+  if (segmentIds.length === 0) {
+    return 0;
+  }
+
+  const { count, error } = await supabase
+    .from("generations")
+    .select("id", { count: "exact", head: true })
+    .in("segment_id", segmentIds);
+
+  throwIfSupabaseError(error, "countGenerationsBySegmentIds failed");
+  return count ?? 0;
+}
+
+export async function countGenerationsByVideoPosition(
+  supabase: SupabaseDataClient,
+  videoId: string,
+): Promise<Map<number, number>> {
+  const { data: segmentRows, error: segmentError } = await supabase
+    .from("segments")
+    .select("id, position")
+    .eq("video_id", videoId);
+
+  throwIfSupabaseError(segmentError, "countGenerationsByVideoPosition segments failed");
+
+  const segments = segmentRows ?? [];
+  if (segments.length === 0) {
+    return new Map();
+  }
+
+  const positionBySegmentId = new Map(
+    segments.map((segment) => [segment.id, segment.position]),
+  );
+  const { data, error } = await supabase
+    .from("generations")
+    .select("segment_id")
+    .in(
+      "segment_id",
+      segments.map((segment) => segment.id),
+    );
+
+  throwIfSupabaseError(error, "countGenerationsByVideoPosition generations failed");
+
+  const counts = new Map<number, number>();
+  for (const row of data ?? []) {
+    if (!row.segment_id) {
+      continue;
+    }
+    const position = positionBySegmentId.get(row.segment_id);
+    if (position === undefined) {
+      continue;
+    }
+    counts.set(position, (counts.get(position) ?? 0) + 1);
+  }
+
+  return counts;
 }
 
 const ACTIVE_GENERATION_STATUSES: GenerationStatus[] = [

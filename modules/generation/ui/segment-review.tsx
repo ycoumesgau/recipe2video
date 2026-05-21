@@ -122,8 +122,12 @@ export function SegmentReview({
 
   const selectedVariant =
     data.variants.find(
-      (variant) => variant.generation.id === data.segment?.selectedGenerationId,
-    ) ?? data.variants[0];
+      (variant) =>
+        variant.canManageVariant &&
+        variant.generation.id === data.segment?.selectedGenerationId,
+    ) ??
+    data.variants.find((variant) => variant.canManageVariant) ??
+    data.variants[0];
   const selectedGenerationId = selectedVariant?.generation.id ?? null;
 
   return (
@@ -270,6 +274,9 @@ function PlaybackCard({
       <CardHeader>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="secondary">Mux playback</Badge>
+          {selectedVariant?.conversationName ? (
+            <Badge variant="outline">{selectedVariant.conversationName}</Badge>
+          ) : null}
           {selectedVariant ? (
             <Badge variant={generationStatusVariant[selectedVariant.generation.status]}>
               {selectedVariant.generation.status}
@@ -329,7 +336,10 @@ function VariantList({
             <VariantCard
               key={variant.generation.id}
               index={index}
-              isSelected={selectedGenerationId === variant.generation.id}
+              isSelected={
+                variant.canManageVariant &&
+                selectedGenerationId === variant.generation.id
+              }
               segmentId={segmentId}
               variant={variant}
               videoId={videoId}
@@ -354,7 +364,7 @@ function VariantCard({
   variant: SegmentVariantReviewItem;
   videoId: string;
 }) {
-  const { generation, mediaAsset } = variant;
+  const { generation, mediaAsset, conversationName, canManageVariant } = variant;
 
   return (
     <div className="space-y-3 rounded-lg border p-3">
@@ -362,7 +372,13 @@ function VariantCard({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-medium">Variant {index + 1}</p>
+            {conversationName ? (
+              <Badge variant="outline">{conversationName}</Badge>
+            ) : null}
             {isSelected ? <Badge>Accepted</Badge> : null}
+            {variant.isAcceptedOnSourceSegment && !isSelected ? (
+              <Badge variant="secondary">Accepted elsewhere</Badge>
+            ) : null}
             <Badge variant={generationStatusVariant[generation.status]}>
               {generation.status}
             </Badge>
@@ -370,11 +386,17 @@ function VariantCard({
           <p className="mt-1 text-xs text-muted-foreground">
             {generation.id}
           </p>
+          {!canManageVariant ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              View-only from another conversation. Switch conversation to accept
+              or regenerate on the active segment.
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <VariantActionButton
             action={acceptSegmentVariantAction}
-            disabled={generation.status !== "succeeded"}
+            disabled={!canManageVariant || generation.status !== "succeeded"}
             generationId={generation.id}
             label="Accept"
             segmentId={segmentId}
@@ -384,6 +406,7 @@ function VariantCard({
           </VariantActionButton>
           <VariantActionButton
             action={rejectSegmentVariantAction}
+            disabled={!canManageVariant}
             generationId={generation.id}
             label="Reject"
             segmentId={segmentId}

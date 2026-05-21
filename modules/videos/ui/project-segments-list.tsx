@@ -18,10 +18,12 @@ import { launchSelectedSegmentsAction } from "@/modules/generation/actions";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 
 export function ProjectSegmentsList({
+  generationCountsByPosition,
   hasGeneratingRecipeReferences,
   seedanceSegments,
   videoId,
 }: {
+  generationCountsByPosition: Record<number, number>;
   hasGeneratingRecipeReferences: boolean;
   seedanceSegments: SeedanceSegment[];
   videoId: string;
@@ -111,7 +113,7 @@ export function ProjectSegmentsList({
                       <CardDescription>{segment.arc}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="grid gap-2 text-sm md:grid-cols-3">
+                      <div className="grid gap-2 text-sm md:grid-cols-4">
                         <OverviewItem
                           label="Duration"
                           value={formatSeconds(segment.durationTarget)}
@@ -119,6 +121,12 @@ export function ProjectSegmentsList({
                         <OverviewItem
                           label="References"
                           value={String(segment.references.length)}
+                        />
+                        <OverviewItem
+                          label="Variants"
+                          value={String(
+                            generationCountsByPosition[segment.position] ?? 0,
+                          )}
                         />
                         <OverviewItem
                           label="Accepted"
