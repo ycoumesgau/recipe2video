@@ -10,6 +10,8 @@ import {
 } from "@/modules/storyboard/repositories/segment.repository";
 import { listLogicalScenesForSegment } from "@/modules/storyboard/services/resolve-logical-scene-ids";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
+import { listAssetLibrary } from "@/modules/references/repositories/asset-library.repository";
+import { listReferenceAssetsForVideo } from "@/modules/references/repositories/reference.repository";
 import { matchesReference } from "@/modules/references/reference-matching";
 import type { ReferenceStatus } from "@/modules/references/reference-status";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
@@ -69,6 +71,29 @@ export interface SegmentReferenceResolutionItem {
   runwayProgress: number | null;
 }
 
+/** One wired reference row for the segment review editor (source of truth: DB links). */
+export interface SegmentReferenceEditorRow {
+  libraryAssetId: string | null;
+  recipeReferenceId: string | null;
+  role: string;
+  required: boolean;
+  canonicalName: string;
+  displayLabel: string;
+  source: "asset_library" | "reference_assets";
+  hasStorage: boolean;
+  recipeReferenceStatus: ReferenceStatus | null;
+}
+
+export interface SegmentReferencePickerOption {
+  pickerKey: string;
+  libraryAssetId: string | null;
+  recipeReferenceId: string | null;
+  canonicalName: string;
+  label: string;
+  source: "asset_library" | "reference_assets";
+  isLibraryGlobal: boolean;
+}
+
 export interface SegmentNavigationPeer {
   segmentId: string;
   position: number;
@@ -103,6 +128,10 @@ export interface SegmentReviewData {
    * upload action that does not exist for library globals.
    */
   referenceResolutions: SegmentReferenceResolutionItem[];
+  /** Current wiring for the editable references panel. */
+  referenceEditorRows: SegmentReferenceEditorRow[];
+  /** Assets the operator can attach when editing segment references. */
+  referencePickerOptions: SegmentReferencePickerOption[];
   /**
    * True when this segment has the highest position in its video; used
    * by the segment-review UI to gate the "Apply standard outro" backfill
@@ -132,20 +161,32 @@ export async function getSegmentReviewData(
       hasActiveReferenceImageGeneration: false,
       feedbacks: [],
       referenceResolutions: [],
+      referenceEditorRows: [],
+      referencePickerOptions: [],
       isLastSegmentOfVideo: false,
       navigation: null,
       segmentLogicalScenePositions: [],
     };
   }
 
-  const [project, feedbacks, referenceResolutions, allSegments, logicalScenes] =
-    await Promise.all([
-      getVideoProjectById(supabase, input.videoId),
-      listSegmentFeedbacksBySegmentId(supabase, input.segmentId),
-      resolveSegmentReferenceStatuses(supabase, segment),
-      listSegmentsByVideoId(supabase, input.videoId, { activeOnly: true }),
-      listLogicalScenesByVideoId(supabase, input.videoId, { activeOnly: true }),
-    ]);
+  const [
+    project,
+    feedbacks,
+    referenceResolutions,
+    referenceEditorBundle,
+    allSegments,
+    logicalScenes,
+  ] = await Promise.all([
+    getVideoProjectById(supabase, input.videoId),
+    listSegmentFeedbacksBySegmentId(supabase, input.segmentId),
+    resolveSegmentReferenceStatuses(supabase, segment),
+    loadSegmentReferenceEditorBundle(supabase, {
+      videoId: input.videoId,
+      segmentId: segment.id,
+    }),
+    listSegmentsByVideoId(supabase, input.videoId, { activeOnly: true }),
+    listLogicalScenesByVideoId(supabase, input.videoId, { activeOnly: true }),
+  ]);
 
   const segmentsAtPosition = await listSegmentsByVideoId(supabase, input.videoId, {
     activeOnly: false,
@@ -212,6 +253,8 @@ export async function getSegmentReviewData(
     hasActiveReferenceImageGeneration,
     feedbacks,
     referenceResolutions,
+    referenceEditorRows: referenceEditorBundle.rows,
+    referencePickerOptions: referenceEditorBundle.pickerOptions,
     isLastSegmentOfVideo,
     segmentLogicalScenePositions,
     variants: allGenerations.map((generation) => {
@@ -326,21 +369,107 @@ interface SegmentReferencesJoinRow {
  * "no storage yet" or "not declared" without ever falling back to the
  * legacy `runwayUri` column, which is no longer populated for globals.
  */
-async function resolveSegmentReferenceStatuses(
+async function loadSegmentReferenceEditorBundle(
   supabase: SupabaseDataClient,
-  segment: SeedanceSegment,
-): Promise<SegmentReferenceResolutionItem[]> {
+  input: { videoId: string; segmentId: string },
+): Promise<{
+  rows: SegmentReferenceEditorRow[];
+  pickerOptions: SegmentReferencePickerOption[];
+}> {
+  const [linkRows, libraryCatalog, recipeCatalog] = await Promise.all([
+    fetchSegmentReferenceJoinRows(supabase, input.segmentId),
+    listAssetLibrary(supabase),
+    listReferenceAssetsForVideo(supabase, input.videoId),
+  ]);
+
+  const mediaAssetIds = Array.from(
+    new Set(
+      linkRows
+        .map(
+          (row) =>
+            row.asset_library?.media_asset_id ??
+            row.reference_assets?.media_asset_id ??
+            null,
+        )
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const storageById = await fetchMediaAssetStorageMap(supabase, mediaAssetIds);
+
+  const rows: SegmentReferenceEditorRow[] = linkRows.map((row) => {
+    const isLibrary = Boolean(row.library_asset_id);
+    const joined = isLibrary ? row.asset_library : row.reference_assets;
+    const canonicalName = joined?.canonical_name ?? "(unknown)";
+    const aliases =
+      isLibrary && Array.isArray(row.asset_library?.aliases)
+        ? row.asset_library!.aliases
+        : [];
+    const mediaAssetId = joined?.media_asset_id ?? null;
+    const recipeRef = row.reference_assets;
+
+    return {
+      libraryAssetId: row.library_asset_id,
+      recipeReferenceId: row.recipe_reference_id,
+      role: row.role,
+      required: row.required,
+      canonicalName,
+      displayLabel: aliases[0] ?? canonicalName,
+      source: isLibrary ? "asset_library" : "reference_assets",
+      hasStorage: mediaAssetId ? Boolean(storageById.get(mediaAssetId)) : false,
+      recipeReferenceStatus:
+        !isLibrary && recipeRef
+          ? (recipeRef.status as ReferenceStatus)
+          : null,
+    };
+  });
+
+  const pickerOptions: SegmentReferencePickerOption[] = [
+    ...libraryCatalog.map((entry) => ({
+      pickerKey: `library:${entry.id}`,
+      libraryAssetId: entry.id,
+      recipeReferenceId: null,
+      canonicalName: entry.canonicalName,
+      label: entry.aliases[0] ?? entry.canonicalName,
+      source: "asset_library" as const,
+      isLibraryGlobal: true,
+    })),
+    ...recipeCatalog
+      .filter((reference) => reference.status !== "rejected")
+      .map((reference) => ({
+        pickerKey: `recipe:${reference.id}`,
+        libraryAssetId: null,
+        recipeReferenceId: reference.id,
+        canonicalName: reference.canonicalName,
+        label: reference.canonicalName,
+        source: "reference_assets" as const,
+        isLibraryGlobal: false,
+      })),
+  ].sort((left, right) => left.label.localeCompare(right.label));
+
+  return { rows, pickerOptions };
+}
+
+async function fetchSegmentReferenceJoinRows(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+): Promise<SegmentReferencesJoinRow[]> {
   const { data, error } = await supabase
     .from("segment_references")
     .select(
       "position, role, required, library_asset_id, recipe_reference_id, asset_library:asset_library!segment_references_library_asset_id_fkey(canonical_name, aliases, media_asset_id), reference_assets:reference_assets!segment_references_recipe_reference_id_fkey(id, canonical_name, media_asset_id, status, runway_task_status, runway_progress)",
     )
-    .eq("segment_id", segment.id)
+    .eq("segment_id", segmentId)
     .order("position", { ascending: true });
 
-  throwIfSupabaseError(error, "resolveSegmentReferenceStatuses failed");
+  throwIfSupabaseError(error, "fetchSegmentReferenceJoinRows failed");
+  return (data ?? []) as unknown as SegmentReferencesJoinRow[];
+}
 
-  const rows = (data ?? []) as unknown as SegmentReferencesJoinRow[];
+async function resolveSegmentReferenceStatuses(
+  supabase: SupabaseDataClient,
+  segment: SeedanceSegment,
+): Promise<SegmentReferenceResolutionItem[]> {
+  const rows = await fetchSegmentReferenceJoinRows(supabase, segment.id);
 
   const mediaAssetIds = Array.from(
     new Set(
