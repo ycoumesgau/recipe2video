@@ -330,16 +330,19 @@ function PlaybackCard({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {latestVariant ? (
+        {!latestVariant ? (
+          <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed bg-muted/40 text-sm text-muted-foreground">
+            No generated variants are available for this segment yet.
+          </div>
+        ) : shouldShowMuxPlayer(
+            latestVariant.generation.status,
+            latestVariant.mediaAsset?.muxPlaybackId,
+          ) ? (
           <RecipeMuxPlayer
             playbackId={latestVariant.mediaAsset?.muxPlaybackId}
             title={segmentDisplayName}
           />
-        ) : (
-          <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed bg-muted/40 text-sm text-muted-foreground">
-            No generated variants are available for this segment yet.
-          </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -448,10 +451,12 @@ function VariantCard({
         </div>
       </div>
 
-      <RecipeMuxPlayer
-        playbackId={mediaAsset?.muxPlaybackId}
-        title={mediaAsset?.originalFilename ?? generation.id}
-      />
+      {shouldShowMuxPlayer(generation.status, mediaAsset?.muxPlaybackId) ? (
+        <RecipeMuxPlayer
+          playbackId={mediaAsset?.muxPlaybackId}
+          title={mediaAsset?.originalFilename ?? generation.id}
+        />
+      ) : null}
 
       <div className="grid gap-2 text-xs md:grid-cols-4">
         <Metric label="Model" value={generation.model} />
@@ -982,6 +987,17 @@ function formatDate(value?: string | null) {
       {new Date(value).toLocaleString()}
     </span>
   );
+}
+
+function shouldShowMuxPlayer(
+  status: GenerationStatus,
+  muxPlaybackId?: string | null,
+) {
+  if (status === "failed" || status === "cancelled" || status === "expired") {
+    return false;
+  }
+
+  return Boolean(muxPlaybackId);
 }
 
 function shouldShowRunwayProgress(generation: SegmentVariantReviewItem["generation"]) {
