@@ -330,19 +330,16 @@ function PlaybackCard({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {!latestVariant ? (
-          <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed bg-muted/40 text-sm text-muted-foreground">
-            No generated variants are available for this segment yet.
-          </div>
-        ) : shouldShowMuxPlayer(
-            latestVariant.generation.status,
-            latestVariant.mediaAsset?.muxPlaybackId,
-          ) ? (
+        {latestVariant ? (
           <RecipeMuxPlayer
             playbackId={latestVariant.mediaAsset?.muxPlaybackId}
             title={segmentDisplayName}
           />
-        ) : null}
+        ) : (
+          <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed bg-muted/40 text-sm text-muted-foreground">
+            No generated variants are available for this segment yet.
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -451,7 +448,7 @@ function VariantCard({
         </div>
       </div>
 
-      {shouldShowMuxPlayer(generation.status, mediaAsset?.muxPlaybackId) ? (
+      {shouldShowVariantMuxPlayer(generation.status, mediaAsset?.muxPlaybackId) ? (
         <RecipeMuxPlayer
           playbackId={mediaAsset?.muxPlaybackId}
           title={mediaAsset?.originalFilename ?? generation.id}
@@ -989,7 +986,8 @@ function formatDate(value?: string | null) {
   );
 }
 
-function shouldShowMuxPlayer(
+/** Variant list only — Latest generation keeps the Mux placeholder while rendering. */
+function shouldShowVariantMuxPlayer(
   status: GenerationStatus,
   muxPlaybackId?: string | null,
 ) {
