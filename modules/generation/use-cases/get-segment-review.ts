@@ -30,10 +30,8 @@ export interface SegmentVariantReviewItem {
   sourceSegmentId: string;
   /** Agent conversation label for the source segment row. */
   conversationName: string | null;
-  /** True when this generation is the accepted take on its source segment. */
+  /** True when this generation is the accepted take on its source segment row. */
   isAcceptedOnSourceSegment: boolean;
-  /** Accept/reject actions are only valid for the segment row being reviewed. */
-  canManageVariant: boolean;
 }
 
 /**
@@ -231,7 +229,6 @@ export async function getSegmentReviewData(
           conversationNameBySegmentId.get(generation.segmentId) ?? null,
         isAcceptedOnSourceSegment:
           sourceSegment?.selectedGenerationId === generation.id,
-        canManageVariant: generation.segmentId === segment.id,
       };
     }),
   };
