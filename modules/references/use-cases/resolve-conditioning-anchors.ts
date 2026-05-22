@@ -15,8 +15,12 @@ import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.cons
 // exposes upload/download helpers that must never ship to the client),
 // whereas the signed-URL helper is intentionally test-friendly.
 import { createLibraryStorageSignedUrl } from "@/modules/media-assets/services/create-library-storage-signed-url";
+import { tryCreateStorageSignedUrl } from "@/modules/media-assets/services/storage-signed-url";
+import { normalizeReferenceName } from "../reference-matching";
 
 import { findAssetLibraryByCanonicalNames } from "../repositories/asset-library.repository";
+import { findReferenceAssetsByCanonicalNamesForVideo } from "../repositories/reference.repository";
+import type { ReferenceAsset } from "../reference.types";
 import {
   isConditioningExcludedCategory,
   type ConditioningContext,
@@ -48,12 +52,17 @@ const CONDITIONING_SIGNED_URL_TTL_SECONDS = 60 * 15;
  * the GPT-Image 2 contract intact (the model resolves `@Tag` against the
  * matching `referenceImages` entry).
  */
+export type ConditioningAnchorSource = "asset_library" | "reference_assets";
+
 export interface ConditioningAnchor {
   /**
-   * Canonical name (snake_case storage key) of the matched library entry.
-   * Used for error reporting; the prompt and the Runway payload use `tag`.
+   * Canonical name of the matched entry (library snake_case or recipe
+   * PascalCase frame id). Used for error reporting; the prompt and the
+   * Runway payload use `tag`.
    */
   canonicalName: string;
+  /** Whether this anchor came from the global library or this video's refs. */
+  source: ConditioningAnchorSource;
   /**
    * The exact name string the caller asked for. Surfaced so the agent's
    * declared order in `reference-plan.json` is preserved, and so we can
@@ -102,25 +111,41 @@ export interface ResolveConditioningAnchorsResult {
 }
 
 /**
- * Resolve a list of `asset_library` canonical names (or aliases) into the
- * payload Runway needs for `referenceImages[]`: a fresh signed URL plus the
- * agent-facing @-tag.
+ * Resolve conditioning names into the payload Runway needs for
+ * `referenceImages[]`: a fresh signed URL plus the agent-facing @-tag.
+ *
+ * Resolution order (per name):
+ *   1. Active `asset_library` entry (canonical or alias).
+ *   2. When `options.videoId` is set, a recipe-specific `reference_assets`
+ *      row on that video with stored media (lets earlier generated frames
+ *      anchor later ones on the same recipe).
  *
  * Caller invariants:
- *   - Pass the names exactly as the agent wrote them — `findAssetLibraryByCanonicalNames`
- *     already indexes both canonical_name and aliases.
- *   - Names that resolve to the SAME library entry are de-duplicated (last
- *     wins) so we don't burn two of GPT-Image 2's 16-reference slots on the
- *     same asset.
+ *   - Pass the names exactly as the agent wrote them — library lookup
+ *     indexes both canonical_name and aliases; recipe lookup indexes
+ *     canonical_name and a normalized form.
+ *   - Names that resolve to the SAME underlying entry are de-duplicated so
+ *     we don't burn two of GPT-Image 2's 16-reference slots on one asset.
  *   - Names with no media in Supabase Storage are reported as
  *     `unresolvedNames` (they have no usable URI).
  *   - Order of `anchors[]` matches the order of `requestedNames` after
  *     de-duplication.
  */
+export interface ResolveConditioningAnchorsOptions {
+  /** Required to resolve recipe-specific reference frames as anchors. */
+  videoId?: string;
+  /**
+   * When generating a recipe reference, pass its id so a self-declared
+   * anchor name cannot resolve to the in-flight row (no media yet).
+   */
+  excludeReferenceId?: string;
+}
+
 export async function resolveConditioningAnchors(
   supabase: SupabaseDataClient,
   requestedNames: string[],
   context: ConditioningContext = "recipe_state",
+  options: ResolveConditioningAnchorsOptions = {},
 ): Promise<ResolveConditioningAnchorsResult> {
   const trimmed = requestedNames
     .map((name) => name.trim())
@@ -135,8 +160,21 @@ export async function resolveConditioningAnchors(
     trimmed,
   );
 
+  const recipeIndex = options.videoId
+    ? await findReferenceAssetsByCanonicalNamesForVideo(
+        supabase,
+        options.videoId,
+        trimmed,
+      )
+    : new Map<string, ReferenceAsset>();
+
   const mediaAssetIds = new Set<string>();
   for (const entry of new Set(libraryIndex.values())) {
+    if (entry.mediaAssetId) {
+      mediaAssetIds.add(entry.mediaAssetId);
+    }
+  }
+  for (const entry of new Set(recipeIndex.values())) {
     if (entry.mediaAssetId) {
       mediaAssetIds.add(entry.mediaAssetId);
     }
@@ -147,7 +185,8 @@ export async function resolveConditioningAnchors(
     Array.from(mediaAssetIds),
   );
 
-  const seenEntryIds = new Set<string>();
+  const seenLibraryEntryIds = new Set<string>();
+  const seenRecipeReferenceIds = new Set<string>();
   // We first build the anchors with a raw tag derived from each entry's
   // alias / canonical_name, then call `makeRunwayTagsUnique` to enforce
   // the 16-char limit AND ensure uniqueness across the batch in a single
@@ -156,6 +195,7 @@ export async function resolveConditioningAnchors(
   const pending: Array<{
     canonicalName: string;
     requestedName: string;
+    source: ConditioningAnchorSource;
     rawTag: string;
     uri: string;
     fileSizeBytes: number;
@@ -165,62 +205,102 @@ export async function resolveConditioningAnchors(
   const excludedAnchors: ResolveConditioningAnchorsResult["excludedAnchors"] = [];
 
   for (const requestedName of trimmed) {
-    const entry = libraryIndex.get(requestedName);
+    const libraryEntry = lookupLibraryEntry(libraryIndex, requestedName);
 
-    if (!entry) {
-      unresolvedNames.push(requestedName);
-      continue;
-    }
+    if (libraryEntry) {
+      if (seenLibraryEntryIds.has(libraryEntry.id)) {
+        continue;
+      }
 
-    // Same library entry surfaced under two different aliases (the agent
-    // wrote both `island_default` and `KitchenIslandDefault`): we only
-    // include it once. We do NOT touch `unresolvedNames` here — the entry
-    // is fine, it's just a duplicate request.
-    if (seenEntryIds.has(entry.id)) {
-      continue;
-    }
+      if (isConditioningExcludedCategory(libraryEntry.category, context)) {
+        seenLibraryEntryIds.add(libraryEntry.id);
+        excludedAnchors.push({
+          canonicalName: libraryEntry.canonicalName,
+          requestedName,
+          category: libraryEntry.category,
+        });
+        continue;
+      }
 
-    // Hard policy: character-class entries (mascot sheet, poses,
-    // expressions) are never used as visual anchors for recipe-specific
-    // images. They add noise to the dish frame and the kitchen/utensil
-    // anchors already carry the Licorn visual identity. Reported on the
-    // dedicated `excludedAnchors` list so the UI can show the operator
-    // "we kept your declared anchor but skipped this one on purpose"
-    // rather than a generic "not found".
-    if (isConditioningExcludedCategory(entry.category, context)) {
-      seenEntryIds.add(entry.id);
-      excludedAnchors.push({
-        canonicalName: entry.canonicalName,
+      if (!libraryEntry.mediaAssetId) {
+        unresolvedNames.push(requestedName);
+        continue;
+      }
+
+      const storage = mediaById.get(libraryEntry.mediaAssetId);
+      if (!storage?.storage_bucket || !storage.storage_path) {
+        unresolvedNames.push(requestedName);
+        continue;
+      }
+
+      const uri = await createLibraryStorageSignedUrl(supabase, {
+        bucket: storage.storage_bucket as MediaStorageBucket,
+        path: storage.storage_path,
+        libraryCanonicalName: libraryEntry.canonicalName,
+        expiresInSeconds: CONDITIONING_SIGNED_URL_TTL_SECONDS,
+      });
+
+      seenLibraryEntryIds.add(libraryEntry.id);
+      const sourceForTag =
+        libraryEntry.aliases[0]?.trim() || libraryEntry.canonicalName;
+      pending.push({
+        canonicalName: libraryEntry.canonicalName,
         requestedName,
-        category: entry.category,
+        source: "asset_library",
+        rawTag: deriveRunwayTag(sourceForTag),
+        uri,
+        fileSizeBytes: storage.file_size_bytes ?? 0,
+        mimeType: storage.mime_type ?? null,
       });
       continue;
     }
 
-    if (!entry.mediaAssetId) {
+    const recipeEntry = lookupRecipeReferenceEntry(recipeIndex, requestedName);
+    if (!recipeEntry) {
       unresolvedNames.push(requestedName);
       continue;
     }
 
-    const storage = mediaById.get(entry.mediaAssetId);
+    if (
+      options.excludeReferenceId &&
+      recipeEntry.id === options.excludeReferenceId
+    ) {
+      unresolvedNames.push(requestedName);
+      continue;
+    }
+
+    if (seenRecipeReferenceIds.has(recipeEntry.id)) {
+      continue;
+    }
+
+    if (!recipeEntry.mediaAssetId) {
+      unresolvedNames.push(requestedName);
+      continue;
+    }
+
+    const storage = mediaById.get(recipeEntry.mediaAssetId);
     if (!storage?.storage_bucket || !storage.storage_path) {
       unresolvedNames.push(requestedName);
       continue;
     }
 
-    const uri = await createLibraryStorageSignedUrl(supabase, {
+    const uri = await tryCreateStorageSignedUrl(supabase, {
       bucket: storage.storage_bucket as MediaStorageBucket,
       path: storage.storage_path,
-      libraryCanonicalName: entry.canonicalName,
       expiresInSeconds: CONDITIONING_SIGNED_URL_TTL_SECONDS,
     });
 
-    seenEntryIds.add(entry.id);
-    const sourceForTag = entry.aliases[0]?.trim() || entry.canonicalName;
+    if (!uri) {
+      unresolvedNames.push(requestedName);
+      continue;
+    }
+
+    seenRecipeReferenceIds.add(recipeEntry.id);
     pending.push({
-      canonicalName: entry.canonicalName,
+      canonicalName: recipeEntry.canonicalName,
       requestedName,
-      rawTag: deriveRunwayTag(sourceForTag),
+      source: "reference_assets",
+      rawTag: deriveRunwayTag(recipeEntry.canonicalName),
       uri,
       fileSizeBytes: storage.file_size_bytes ?? 0,
       mimeType: storage.mime_type ?? null,
@@ -231,6 +311,7 @@ export async function resolveConditioningAnchors(
   const anchors: ConditioningAnchor[] = pending.map((entry, index) => ({
     canonicalName: entry.canonicalName,
     requestedName: entry.requestedName,
+    source: entry.source,
     tag: uniqueTags[index]!,
     uri: entry.uri,
     fileSizeBytes: entry.fileSizeBytes,
@@ -240,6 +321,25 @@ export async function resolveConditioningAnchors(
   return { anchors, unresolvedNames, excludedAnchors };
 }
 
+function lookupLibraryEntry(
+  libraryIndex: Awaited<ReturnType<typeof findAssetLibraryByCanonicalNames>>,
+  requestedName: string,
+) {
+  return (
+    libraryIndex.get(requestedName) ??
+    libraryIndex.get(normalizeReferenceName(requestedName))
+  );
+}
+
+function lookupRecipeReferenceEntry(
+  recipeIndex: Map<string, ReferenceAsset>,
+  requestedName: string,
+): ReferenceAsset | undefined {
+  return (
+    recipeIndex.get(requestedName) ??
+    recipeIndex.get(normalizeReferenceName(requestedName))
+  );
+}
 
 async function fetchMediaAssetStorageLocations(
   supabase: SupabaseDataClient,

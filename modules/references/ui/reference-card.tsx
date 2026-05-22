@@ -203,12 +203,13 @@ function ConditioningPanel({
         ) : null}
       </summary>
       <p className="mt-2 text-muted-foreground">
-        Library globals passed to GPT-Image 2 as `referenceImages[]` when
-        (re)generating this reference. Each anchor is invoked from the prompt
-        via its `@Tag` so the model grounds geometry, color, and palette on
-        them instead of inventing from scratch. Character anchors
-        (mascot, poses, expressions) are intentionally skipped — the kitchen
-        already carries the Licorn visual identity for dish-state frames.
+        Library globals and other recipe reference frames passed to GPT-Image 2
+        as `referenceImages[]` when (re)generating this reference. Each anchor
+        is invoked from the prompt via its `@Tag` so the model grounds geometry,
+        color, and palette on them instead of inventing from scratch. Recipe
+        anchors must already be stored (generate and approve them first).
+        Character library anchors (mascot, poses, expressions) are intentionally
+        skipped for dish-state frames.
       </p>
 
       {anchors.length > 0 ? (
@@ -237,7 +238,9 @@ function ConditioningPanel({
                 className="truncate text-muted-foreground"
                 title={anchor.category}
               >
-                {anchor.category}
+                {anchor.source === "reference_assets"
+                  ? `recipe · ${anchor.category}`
+                  : anchor.category}
               </p>
             </div>
           ))}
@@ -256,9 +259,10 @@ function ConditioningPanel({
           <AlertTriangle className="h-3 w-3" />
           <AlertTitle className="text-xs">Unresolved anchors</AlertTitle>
           <AlertDescription className="text-[11px]">
-            These names do not match any active library entry and will be
-            ignored at generation time: {unresolved.join(", ")}. Fix the
-            spelling below or add the missing asset under /library.
+            These names do not match any library global or recipe reference
+            with stored media on this video and will be ignored at generation
+            time: {unresolved.join(", ")}. Fix the spelling, generate the
+            frame first, or add the asset under /library.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -293,7 +297,7 @@ function ConditioningPanel({
           defaultValue={defaultValue}
           id={`conditioning-${reference.id}`}
           name="conditioningCanonicalNames"
-          placeholder="KitchenIslandDefault, SquareBakingDish, Character-sheet"
+          placeholder="KitchenIslandDefault, RawCroissantCrescentsFrame"
           rows={2}
         />
         <Button size="sm" type="submit" variant="outline">

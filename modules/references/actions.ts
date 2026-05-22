@@ -296,9 +296,9 @@ export async function generateAllMissingReferencesAction(formData: FormData) {
 }
 
 /**
- * Update the list of `asset_library` canonical names used as visual anchors
- * when (re)generating this reference. Stored verbatim; resolution against
- * the live library happens at generation time.
+ * Update conditioning canonical names used as visual anchors when
+ * (re)generating this reference. Stored verbatim; resolution against the
+ * live library and this video's other reference frames happens at generation time.
  *
  * The form posts the names as a single newline- or comma-separated string
  * so the textarea stays small and friendly. We normalize to a unique,

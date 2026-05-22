@@ -4,6 +4,7 @@ import { throwIfSupabaseError } from "@/shared/supabase/errors";
 
 import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
 
+import { normalizeReferenceName } from "../reference-matching";
 import type {
   ReferenceAsset,
   ReferenceAssetKind,
@@ -81,6 +82,96 @@ export async function getReferenceAssetByCanonicalNameForVideo(
     "getReferenceAssetByCanonicalNameForVideo failed",
   );
   return data ? mapReferenceAsset(data) : null;
+}
+
+/**
+ * Index a recipe-specific reference under its canonical name and a
+ * normalized form so conditioning resolution survives small casing drift.
+ */
+export function indexRecipeReferenceEntry(
+  result: Map<string, ReferenceAsset>,
+  entry: ReferenceAsset,
+): void {
+  const keys = new Set<string>([
+    entry.canonicalName,
+    normalizeReferenceName(entry.canonicalName),
+  ]);
+
+  for (const key of keys) {
+    if (key.length > 0) {
+      result.set(key, entry);
+    }
+  }
+}
+
+/**
+ * Look up recipe-specific `reference_assets` for a video by canonical name.
+ * Returns a Map keyed by every indexed name form (canonical + normalized).
+ */
+export async function findReferenceAssetsByCanonicalNamesForVideo(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  canonicalNames: string[],
+): Promise<Map<string, ReferenceAsset>> {
+  if (canonicalNames.length === 0) {
+    return new Map();
+  }
+
+  const deduped = Array.from(new Set(canonicalNames));
+  const { data, error } = await supabase
+    .from("reference_assets")
+    .select("*")
+    .eq("video_id", videoId)
+    .in("canonical_name", deduped);
+
+  throwIfSupabaseError(
+    error,
+    "findReferenceAssetsByCanonicalNamesForVideo failed",
+  );
+
+  const byCanonical = new Map(
+    (data ?? []).map((row) => [row.canonical_name, mapReferenceAsset(row)]),
+  );
+
+  const normalizedWanted = new Set(
+    deduped.map((name) => normalizeReferenceName(name)),
+  );
+
+  const result = new Map<string, ReferenceAsset>();
+  for (const row of data ?? []) {
+    indexRecipeReferenceEntry(result, mapReferenceAsset(row));
+  }
+
+  const missingNormalized = deduped.filter(
+    (name) =>
+      !byCanonical.has(name) &&
+      normalizedWanted.has(normalizeReferenceName(name)),
+  );
+
+  if (missingNormalized.length === 0) {
+    return result;
+  }
+
+  const { data: allRows, error: allError } = await supabase
+    .from("reference_assets")
+    .select("*")
+    .eq("video_id", videoId);
+
+  throwIfSupabaseError(
+    allError,
+    "findReferenceAssetsByCanonicalNamesForVideo fallback failed",
+  );
+
+  for (const row of allRows ?? []) {
+    const entry = mapReferenceAsset(row);
+    const normalized = normalizeReferenceName(entry.canonicalName);
+    if (!normalizedWanted.has(normalized)) {
+      continue;
+    }
+    indexRecipeReferenceEntry(result, entry);
+  }
+
+  return result;
 }
 
 export async function insertReferenceAsset(
