@@ -4,6 +4,7 @@ import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.constants";
 import { tryCreateMediaAssetPreviewSignedUrl } from "@/modules/media-assets/services/media-asset-preview-url";
 import { tryCreateLibraryStorageSignedUrl } from "@/modules/media-assets/services/create-library-storage-signed-url";
+import { tryCreateStorageSignedUrl } from "@/modules/media-assets/services/storage-signed-url";
 import { listSegmentsByVideoId } from "@/modules/storyboard/repositories/segment.repository";
 import { throwIfSupabaseError } from "@/shared/supabase/errors";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
@@ -20,7 +21,11 @@ import type {
   ReferenceImageVariantItem,
   ReferenceReviewData,
 } from "../reference.types";
-import { listReferenceAssetsForVideo } from "../repositories/reference.repository";
+import {
+  findReferenceAssetsByCanonicalNamesForVideo,
+  listReferenceAssetsForVideo,
+} from "../repositories/reference.repository";
+import { normalizeReferenceName } from "../reference-matching";
 import { listSegmentReferencesForVideo } from "../repositories/segment-references.repository";
 import {
   findAssetLibraryByCanonicalNames,
@@ -312,6 +317,7 @@ async function buildRecipeReviewItem(input: {
     input.supabase,
     input.reference,
     input.conditioningIndex,
+    { excludeReferenceId: input.reference.id },
   );
 
   const imageVariants = await buildReferenceImageVariants({
@@ -364,7 +370,12 @@ interface ConditioningIndex {
    * a library query per card.
    */
   libraryByName: Map<string, AssetLibraryEntry>;
-  /** Storage info per resolved library entry, keyed by `mediaAssetId`. */
+  /**
+   * Recipe-specific references on this video, keyed by canonical / normalized
+   * name. Lets earlier generated frames preview as conditioning anchors.
+   */
+  recipeByName: Map<string, ReferenceAsset>;
+  /** Storage info per resolved media asset, keyed by `mediaAssetId`. */
   mediaById: Map<string, { storageBucket: string | null; storagePath: string | null }>;
 }
 
@@ -384,20 +395,34 @@ async function resolveConditioningIndex(
     ),
   );
 
+  const videoId = recipeReferences[0]?.videoId ?? null;
+
   if (names.length === 0) {
     return {
       libraryByName: new Map(),
+      recipeByName: new Map(),
       mediaById: new Map(),
     };
   }
 
   const libraryByName = await findAssetLibraryByCanonicalNames(supabase, names);
+  const recipeByName =
+    videoId != null
+      ? await findReferenceAssetsByCanonicalNamesForVideo(
+          supabase,
+          videoId,
+          names,
+        )
+      : new Map<string, ReferenceAsset>();
 
-  const mediaAssetIds = unique(
-    Array.from(new Set(libraryByName.values()))
+  const mediaAssetIds = unique([
+    ...Array.from(new Set(libraryByName.values()))
       .map((entry) => entry.mediaAssetId)
       .filter((id): id is string => Boolean(id)),
-  );
+    ...Array.from(new Set(recipeByName.values()))
+      .map((entry) => entry.mediaAssetId)
+      .filter((id): id is string => Boolean(id)),
+  ]);
 
   const mediaById = new Map<
     string,
@@ -419,13 +444,14 @@ async function resolveConditioningIndex(
     }
   }
 
-  return { libraryByName, mediaById };
+  return { libraryByName, recipeByName, mediaById };
 }
 
 async function resolveReferenceConditioning(
   supabase: SupabaseDataClient,
   reference: ReferenceAsset,
   index: ConditioningIndex,
+  options: { excludeReferenceId?: string } = {},
 ): Promise<{
   anchors: ConditioningAnchorPreview[];
   unresolved: string[];
@@ -436,7 +462,8 @@ async function resolveReferenceConditioning(
     return { anchors: [], unresolved: [], excluded: [] };
   }
 
-  const seenEntryIds = new Set<string>();
+  const seenLibraryEntryIds = new Set<string>();
+  const seenRecipeReferenceIds = new Set<string>();
   const anchors: ConditioningAnchorPreview[] = [];
   const unresolved: string[] = [];
   const excluded: Array<{ canonicalName: string; category: string }> = [];
@@ -446,44 +473,90 @@ async function resolveReferenceConditioning(
     if (trimmed.length === 0) {
       continue;
     }
-    const entry = index.libraryByName.get(trimmed);
-    if (!entry) {
-      unresolved.push(trimmed);
-      continue;
-    }
-    if (seenEntryIds.has(entry.id)) {
-      continue;
-    }
-    seenEntryIds.add(entry.id);
 
-    // Mirror the resolver's category policy so the UI shows the operator
-    // exactly which anchors will be sent to GPT-Image 2 vs which were
-    // silently dropped on purpose.
-    if (isConditioningExcludedCategory(entry.category)) {
-      excluded.push({
-        canonicalName: entry.canonicalName,
-        category: entry.category,
+    const libraryEntry =
+      index.libraryByName.get(trimmed) ??
+      index.libraryByName.get(normalizeReferenceName(trimmed));
+
+    if (libraryEntry) {
+      if (seenLibraryEntryIds.has(libraryEntry.id)) {
+        continue;
+      }
+      seenLibraryEntryIds.add(libraryEntry.id);
+
+      if (isConditioningExcludedCategory(libraryEntry.category)) {
+        excluded.push({
+          canonicalName: libraryEntry.canonicalName,
+          category: libraryEntry.category,
+        });
+        continue;
+      }
+
+      const storage = libraryEntry.mediaAssetId
+        ? index.mediaById.get(libraryEntry.mediaAssetId)
+        : null;
+      const previewUrl =
+        storage?.storageBucket && storage.storagePath
+          ? await tryCreateLibraryStorageSignedUrl(supabase, {
+              bucket: storage.storageBucket as MediaStorageBucket,
+              path: storage.storagePath,
+              libraryCanonicalName: libraryEntry.canonicalName,
+              expiresInSeconds: 60 * 15,
+            })
+          : null;
+
+      anchors.push({
+        canonicalName: libraryEntry.canonicalName,
+        tag: libraryEntry.aliases[0]?.trim() || libraryEntry.canonicalName,
+        category: libraryEntry.category,
+        source: "asset_library",
+        previewUrl,
       });
       continue;
     }
 
-    const storage = entry.mediaAssetId
-      ? index.mediaById.get(entry.mediaAssetId)
-      : null;
+    const recipeEntry =
+      index.recipeByName.get(trimmed) ??
+      index.recipeByName.get(normalizeReferenceName(trimmed));
+
+    if (!recipeEntry) {
+      unresolved.push(trimmed);
+      continue;
+    }
+
+    if (
+      options.excludeReferenceId &&
+      recipeEntry.id === options.excludeReferenceId
+    ) {
+      unresolved.push(trimmed);
+      continue;
+    }
+
+    if (seenRecipeReferenceIds.has(recipeEntry.id)) {
+      continue;
+    }
+    seenRecipeReferenceIds.add(recipeEntry.id);
+
+    if (!recipeEntry.mediaAssetId) {
+      unresolved.push(trimmed);
+      continue;
+    }
+
+    const storage = index.mediaById.get(recipeEntry.mediaAssetId);
     const previewUrl =
       storage?.storageBucket && storage.storagePath
-        ? await tryCreateLibraryStorageSignedUrl(supabase, {
+        ? await tryCreateStorageSignedUrl(supabase, {
             bucket: storage.storageBucket as MediaStorageBucket,
             path: storage.storagePath,
-            libraryCanonicalName: entry.canonicalName,
             expiresInSeconds: 60 * 15,
           })
         : null;
 
     anchors.push({
-      canonicalName: entry.canonicalName,
-      tag: entry.aliases[0]?.trim() || entry.canonicalName,
-      category: entry.category,
+      canonicalName: recipeEntry.canonicalName,
+      tag: recipeEntry.canonicalName,
+      category: recipeEntry.type,
+      source: "reference_assets",
       previewUrl,
     });
   }

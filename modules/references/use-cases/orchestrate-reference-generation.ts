@@ -134,6 +134,11 @@ export async function prepareReferenceImageGeneration(
   const resolution = await resolveConditioningAnchors(
     supabase,
     reference.conditioningCanonicalNames ?? [],
+    "recipe_state",
+    {
+      videoId: reference.videoId,
+      excludeReferenceId: reference.id,
+    },
   );
   assertConditioningAnchorsUnderRunwaySizeLimit(
     referenceId,

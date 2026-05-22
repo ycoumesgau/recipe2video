@@ -22,9 +22,19 @@ interface MediaRow {
   mime_type: string | null;
 }
 
+interface RecipeReferenceRow {
+  id: string;
+  video_id: string;
+  canonical_name: string;
+  media_asset_id: string | null;
+  type: string;
+  status: string;
+}
+
 interface FakeData {
   library: LibraryRow[];
   media: MediaRow[];
+  recipeReferences?: RecipeReferenceRow[];
   signedUrls?: Map<string, string>;
 }
 
@@ -106,10 +116,48 @@ function fakeSupabase(data: FakeData): SupabaseDataClient {
     return builder;
   }
 
+  function recipeReferenceBuilder() {
+    let videoId: string | null = null;
+    let canonicalNames: string[] | null = null;
+
+    const builder = {
+      select() {
+        return builder;
+      },
+      eq(column: string, value: unknown) {
+        if (column === "video_id") {
+          videoId = value as string;
+        }
+        return builder;
+      },
+      in(column: string, values: string[]) {
+        if (column === "canonical_name") {
+          canonicalNames = values;
+        }
+        return builder;
+      },
+      then(resolve: (value: { data: RecipeReferenceRow[]; error: null }) => void) {
+        const rows = (data.recipeReferences ?? []).filter((row) => {
+          if (videoId != null && row.video_id !== videoId) {
+            return false;
+          }
+          if (canonicalNames != null && canonicalNames.length > 0) {
+            return canonicalNames.includes(row.canonical_name);
+          }
+          return true;
+        });
+        resolve({ data: rows, error: null });
+      },
+    };
+
+    return builder;
+  }
+
   return {
     from(table: string) {
       if (table === "asset_library") return libraryBuilder();
       if (table === "media_assets") return mediaBuilder();
+      if (table === "reference_assets") return recipeReferenceBuilder();
       throw new Error(`fakeSupabase: unexpected table ${table}`);
     },
     storage: {
@@ -458,4 +506,96 @@ test("resolveConditioningAnchors trims whitespace before resolution", async () =
 
   assert.deepEqual(result.unresolvedNames, []);
   assert.equal(result.anchors.length, 2);
+});
+
+test("resolveConditioningAnchors resolves recipe-specific references when videoId is provided", async () => {
+  const recipeReferences: RecipeReferenceRow[] = [
+    {
+      id: "ref-raw-croissant",
+      video_id: "video-croissant",
+      canonical_name: "RawCroissantCrescentsFrame",
+      media_asset_id: "media-raw-croissant",
+      type: "recipe_state",
+      status: "approved",
+    },
+  ];
+  const mediaWithRecipe: MediaRow[] = [
+    ...media,
+    {
+      id: "media-raw-croissant",
+      storage_bucket: "reference-images",
+      storage_path: "video-croissant/ref-raw-croissant/variant.png",
+      file_size_bytes: 1 * 1024 * 1024,
+      mime_type: "image/png",
+    },
+  ];
+
+  const supabase = fakeSupabase({
+    library,
+    media: mediaWithRecipe,
+    recipeReferences,
+  });
+
+  const result = await resolveConditioningAnchors(
+    supabase,
+    ["KitchenIslandDefault", "RawCroissantCrescentsFrame"],
+    "recipe_state",
+    { videoId: "video-croissant", excludeReferenceId: "ref-baked" },
+  );
+
+  assert.deepEqual(result.unresolvedNames, []);
+  assert.equal(result.anchors.length, 2);
+  const recipeAnchor = result.anchors.find(
+    (anchor) => anchor.source === "reference_assets",
+  );
+  assert.equal(recipeAnchor?.canonicalName, "RawCroissantCrescentsFrame");
+  assert.ok(
+    recipeAnchor?.uri.includes("video-croissant/ref-raw-croissant/variant.png"),
+  );
+});
+
+test("resolveConditioningAnchors excludes self-reference and recipe refs without media", async () => {
+  const recipeReferences: RecipeReferenceRow[] = [
+    {
+      id: "ref-baked",
+      video_id: "video-croissant",
+      canonical_name: "BakedCroissantGoldenFrame",
+      media_asset_id: null,
+      type: "recipe_state",
+      status: "planned",
+    },
+    {
+      id: "ref-raw",
+      video_id: "video-croissant",
+      canonical_name: "RawCroissantCrescentsFrame",
+      media_asset_id: "media-raw",
+      type: "recipe_state",
+      status: "approved",
+    },
+  ];
+
+  const supabase = fakeSupabase({
+    library: [],
+    media: [
+      {
+        id: "media-raw",
+        storage_bucket: "reference-images",
+        storage_path: "video-croissant/raw.png",
+        file_size_bytes: 512 * 1024,
+        mime_type: "image/png",
+      },
+    ],
+    recipeReferences,
+  });
+
+  const result = await resolveConditioningAnchors(
+    supabase,
+    ["BakedCroissantGoldenFrame", "RawCroissantCrescentsFrame"],
+    "recipe_state",
+    { videoId: "video-croissant", excludeReferenceId: "ref-baked" },
+  );
+
+  assert.deepEqual(result.unresolvedNames, ["BakedCroissantGoldenFrame"]);
+  assert.equal(result.anchors.length, 1);
+  assert.equal(result.anchors[0]?.canonicalName, "RawCroissantCrescentsFrame");
 });

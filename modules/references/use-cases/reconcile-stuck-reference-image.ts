@@ -134,6 +134,11 @@ export async function reconcileStuckReferenceImage(
   const resolution = await resolveConditioningAnchors(
     input.supabase,
     reference.conditioningCanonicalNames ?? [],
+    "recipe_state",
+    {
+      videoId: reference.videoId ?? undefined,
+      excludeReferenceId: reference.id,
+    },
   );
   const { promptText } = buildReferenceImagePrompt({
     storedPrompt: reference.prompt ?? "",

@@ -45,12 +45,12 @@ export interface ReferenceAsset {
   prompt?: string | null;
   status: ReferenceStatus;
   /**
-   * `asset_library` canonical_name or alias values to use as visual anchors
-   * (`referenceImages[]`) when generating this recipe-specific reference
-   * through `POST /v1/text_to_image`. Empty for library globals (their UI
-   * card is read-only) and for recipe-specific entries whose agent plan did
-   * not declare any conditioning. Resolved against the live library at
-   * generation time so the agent's stored plan stays portable.
+   * Canonical names to use as visual anchors (`referenceImages[]`) when
+   * generating this recipe-specific reference through `POST /v1/text_to_image`.
+   * Each name resolves against the global `asset_library` first, then against
+   * other `reference_assets` on the same video that already have stored media.
+   * Empty for library globals (read-only cards) and when no conditioning is
+   * declared.
    */
   conditioningCanonicalNames?: string[];
   createdAt: string;
@@ -85,11 +85,9 @@ export interface ReferenceAssetReviewItem {
    */
   isLibraryGlobal?: boolean;
   /**
-   * Library globals that will be passed to GPT-Image 2 as `referenceImages`
-   * the next time this reference is generated. Resolved best-effort from
-   * `reference.conditioningCanonicalNames`: unknown names appear in
-   * `conditioningUnresolved` so the UI can warn the operator that an
-   * anchor was dropped silently. Empty for library globals.
+   * Library globals and recipe-specific frames that will be passed to
+   * GPT-Image 2 as `referenceImages` the next time this reference is generated.
+   * Unknown names appear in `conditioningUnresolved`. Empty for library globals.
    */
   conditioningAnchors?: ConditioningAnchorPreview[];
   conditioningUnresolved?: string[];
@@ -108,15 +106,17 @@ export interface ReferenceAssetReviewItem {
 }
 
 export interface ConditioningAnchorPreview {
-  /** Canonical name of the matched library entry (snake_case storage key). */
+  /** Canonical name of the matched anchor. */
   canonicalName: string;
   /** Friendly @-handle the prompt mentions (e.g. `KitchenIslandDefault`). */
   tag: string;
   /**
-   * Library category (`kitchen`, `character`, `utensil`, …) for grouping in
-   * the UI without re-querying the library.
+   * Library category or recipe reference `type` (`recipe_state`, …) for the
+   * preview card subtitle.
    */
   category: string;
+  /** Global library entry vs another frame generated on this video. */
+  source: "asset_library" | "reference_assets";
   /**
    * Short-lived signed URL for the anchor preview. May be null when the
    * library entry has no stored media yet — the UI renders a placeholder

@@ -17,8 +17,11 @@ const dumplingPrompt = [
 const anchor = (tag: string): ConditioningAnchor => ({
   canonicalName: tag.toLowerCase(),
   requestedName: tag,
+  source: "asset_library",
   tag,
   uri: `https://example.invalid/${tag}.png`,
+  fileSizeBytes: 1024,
+  mimeType: "image/png",
 });
 
 test("stripEditorialMetadata removes Role / Priority / Used in segments lines", () => {
