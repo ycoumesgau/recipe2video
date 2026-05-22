@@ -33,6 +33,7 @@ import {
 } from "./use-cases/manage-reference-review";
 import { selectReferenceImageVariant } from "./use-cases/select-reference-image-variant";
 import { extractSegmentFrameToReferenceAsset } from "./use-cases/extract-segment-frame";
+import { substituteReferenceAsset } from "./use-cases/substitute-reference-asset";
 
 /**
  * Statuses that mean "this recipe-specific reference still needs (or could
@@ -119,6 +120,32 @@ export async function selectReferenceImageVariantAction(formData: FormData) {
 
     revalidateReferencePath(videoId);
     redirectWithNotice(videoId, "success", "Reference image variant selected.");
+  } catch (error) {
+    if (isNextRedirectError(error)) {
+      throw error;
+    }
+
+    redirectWithNotice(videoId, "error", getActionErrorMessage(error));
+  }
+}
+
+export async function substituteReferenceAction(formData: FormData) {
+  const videoId = requireString(formData, "videoId");
+
+  try {
+    await assertCostlyActionAllowed();
+    const result = await substituteReferenceAsset(createSupabaseAdminClient(), {
+      videoId,
+      sourceReferenceId: requireString(formData, "referenceId"),
+      targetPickerKey: requireString(formData, "targetPickerKey"),
+    });
+
+    revalidateReferencePath(videoId);
+    redirectWithNotice(
+      videoId,
+      "success",
+      `Replaced '${result.sourceCanonicalName}' with '${result.targetLabel}' across ${result.segmentsUpdated} segment${result.segmentsUpdated === 1 ? "" : "s"}.`,
+    );
   } catch (error) {
     if (isNextRedirectError(error)) {
       throw error;

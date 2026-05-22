@@ -327,6 +327,25 @@ export async function updateSegmentPrompt(
   return mapSeedanceSegment(data);
 }
 
+export async function updateSegmentPrompts(
+  supabase: SupabaseDataClient,
+  segmentId: string,
+  input: { prompt: string; promptInitial: string },
+): Promise<SeedanceSegment> {
+  const { data, error } = await supabase
+    .from("segments")
+    .update({
+      prompt: input.prompt,
+      prompt_initial: input.promptInitial,
+    })
+    .eq("id", segmentId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateSegmentPrompts failed");
+  return mapSeedanceSegment(data);
+}
+
 /**
  * Rewrite the segment's prompt + reference list + arc + duration + status
  * in a single update. Used by the "Apply standard outro" backfill flow

@@ -134,10 +134,22 @@ export interface SegmentReferenceReadiness {
   missingRunwayUploads: string[];
 }
 
+export interface ReferenceSubstitutePickerOption {
+  pickerKey: string;
+  libraryAssetId: string | null;
+  recipeReferenceId: string | null;
+  canonicalName: string;
+  label: string;
+  source: "asset_library" | "reference_assets";
+  isLibraryGlobal: boolean;
+}
+
 export interface ReferenceReviewData {
   globalReferences: ReferenceAssetReviewItem[];
   recipeReferences: ReferenceAssetReviewItem[];
   rejectedReferences: ReferenceAssetReviewItem[];
+  /** Library globals + recipe-specific assets available for substitution. */
+  substitutePickerOptions: ReferenceSubstitutePickerOption[];
   /**
    * References that are still `planned`, `generating`, `failed`, or that
    * do not yet have a `runwayUri`. Surfaces the work the user still has to

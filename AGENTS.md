@@ -15,6 +15,33 @@ Recipe2Video is a Next.js 16 (App Router) application with TypeScript, Tailwind 
 | Tests | `npm test` |
 | Build | `npm run build` (runs Next.js build then bundles Remotion into `remotion-export/` for cloud assembly export) |
 
+### Pre-PR quality gate (mandatory for Cloud Agents)
+
+**Do not open or update a pull request until all three checks pass locally.** Vercel preview builds run the same TypeScript step as `npm run build`; failing here wastes a deploy cycle.
+
+Run in order from the repo root:
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+| Check | What it catches |
+|-------|-----------------|
+| `npm run lint` | ESLint issues (including React hooks rules) |
+| `npm test` | Regressions in `modules/**/*.test.ts` |
+| `npm run build` | Next.js compile + **TypeScript** (`tsc` via `next build`) — this is what Vercel fails on most often |
+
+**Workflow:**
+
+1. Implement and commit on a `cursor/<name>-<suffix>` branch.
+2. Run the three commands above; fix every error (warnings in unrelated files may already exist — still fix any error in files you touched).
+3. Commit fixes, push, then create or update the PR.
+4. Optionally confirm the Vercel preview: MCP server **Vercel** → `list_deployments` (project `recipe2video`, team Licorn) → `get_deployment_build_logs` on the preview URL if the GitHub check is red. Prefer local `npm run build` first; it is faster and matches the Vercel failure mode.
+
+If `npm run build` fails with a type error, fix imports/types before pushing — do not rely on the PR build to discover them.
+
 ### Environment variables
 
 A `.env.local` file is required for the dev server to start. Copy `.env.example` and fill in values. With placeholder values the server starts but auth-protected routes redirect to `/login`. The app gracefully handles missing external services (Supabase, Mux, etc.) via try/catch fallbacks in layout data loaders.

@@ -93,6 +93,7 @@ export function ReferenceReviewWorkflow({
               description="References that still need to be approved, generated, or uploaded to Runway before the next Seedance generation."
               emptyCopy="No outstanding references."
               items={data.missingReferences}
+              substitutePickerOptions={data.substitutePickerOptions}
               title="Missing references"
               titleVariant="warning"
               videoId={videoId}
@@ -101,6 +102,7 @@ export function ReferenceReviewWorkflow({
           <ReferenceSection
             emptyCopy="Upload recipe-specific raw, baked, filled, cut, glazed, or final states for this project."
             items={data.recipeReferences}
+            substitutePickerOptions={data.substitutePickerOptions}
             title="Recipe-specific references"
             videoId={videoId}
           />
@@ -113,6 +115,7 @@ export function ReferenceReviewWorkflow({
           <ReferenceSection
             emptyCopy="Rejected references remain visible for audit and can be planned again."
             items={data.rejectedReferences}
+            substitutePickerOptions={data.substitutePickerOptions}
             title="Rejected references"
             videoId={videoId}
           />
@@ -306,6 +309,7 @@ function ReferenceSection({
   description,
   emptyCopy,
   items,
+  substitutePickerOptions,
   title,
   titleVariant,
   videoId,
@@ -313,6 +317,7 @@ function ReferenceSection({
   description?: string;
   emptyCopy: string;
   items: ReferenceAssetReviewItem[];
+  substitutePickerOptions?: ReferenceReviewData["substitutePickerOptions"];
   title: string;
   titleVariant?: "warning";
   videoId: string;
@@ -337,7 +342,11 @@ function ReferenceSection({
             {emptyCopy}
           </div>
         ) : (
-          <ReferenceSectionGrid items={items} videoId={videoId} />
+          <ReferenceSectionGrid
+            items={items}
+            substitutePickerOptions={substitutePickerOptions}
+            videoId={videoId}
+          />
         )}
       </CardContent>
     </Card>

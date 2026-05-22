@@ -736,6 +736,23 @@ export async function insertExtractedFrameReferenceAsset(
  * generation time, so the operator can paste either canonical names or
  * aliases.
  */
+/**
+ * Remove a recipe-specific reference row. `segment_references` rows that
+ * pointed at it are deleted via ON DELETE CASCADE — callers must rewire
+ * links before invoking this.
+ */
+export async function deleteReferenceAsset(
+  supabase: SupabaseDataClient,
+  referenceId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("reference_assets")
+    .delete()
+    .eq("id", referenceId);
+
+  throwIfSupabaseError(error, "deleteReferenceAsset failed");
+}
+
 export async function updateReferenceAssetConditioning(
   supabase: SupabaseDataClient,
   input: {
