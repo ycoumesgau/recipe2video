@@ -37,6 +37,11 @@ import {
 } from "@/modules/assembly/timeline-state";
 
 import { AudioClipWaveform } from "./audio-clip-waveform";
+import {
+  segmentVariantClipClasses,
+  segmentVariantClipShellClass,
+  segmentVariantSelectionRingClass,
+} from "./segment-clip-appearance";
 
 /**
  * MIME-style key used by the segment bin (HTML5 drag-and-drop) to ferry the
@@ -1418,12 +1423,19 @@ function SegmentClipBox({
 }) {
   const timelineDuration = getPlacementTimelineDurationSeconds(segment);
   const speedPercent = Math.round((segment.playbackRate ?? 1) * 100);
+  const appearance = segmentVariantClipClasses(segment.isActiveVariant);
   return (
     <div
       className={cn(
-        "absolute top-1 flex h-[calc(100%-8px)] cursor-grab select-none items-stretch rounded-md border border-blue-500/40 bg-blue-500/30 transition-shadow",
-        isSelected &&
-          "border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.55)]",
+        "absolute top-1 flex h-[calc(100%-8px)] cursor-grab select-none items-stretch rounded-md border transition-shadow",
+        segmentVariantClipShellClass(
+          segment.isActiveVariant,
+          !segment.isActiveVariant ? "opacity-90" : undefined,
+        ),
+        segmentVariantSelectionRingClass(
+          segment.isActiveVariant,
+          isSelected,
+        ),
         isBeingReordered &&
           "z-30 opacity-80 shadow-[0_0_0_2px_rgba(34,197,94,0.55),0_8px_16px_rgba(0,0,0,0.25)]",
       )}
@@ -1449,11 +1461,18 @@ function SegmentClipBox({
       />
       <div className="flex min-w-0 flex-1 flex-col justify-between px-2 py-1 text-[11px] text-foreground">
         {segment.variantCountAtPosition > 1 ? (
-          <div className="truncate text-[10px] font-medium uppercase tracking-wide text-foreground/80">
+          <div
+            className={cn(
+              "truncate text-[10px] font-medium uppercase tracking-wide",
+              appearance.variantLabel,
+            )}
+          >
             {segment.variantLabel}
           </div>
         ) : null}
-        <div className="truncate font-medium">{segment.title}</div>
+        <div className={cn("truncate font-medium", appearance.title)}>
+          {segment.title}
+        </div>
         <div className="truncate tabular-nums text-foreground/70">
           {timelineDuration.toFixed(1)}s · {speedPercent}% · in{" "}
           {segment.inSeconds.toFixed(1)}s · out {segment.outSeconds.toFixed(1)}s

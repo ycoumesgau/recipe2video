@@ -7,12 +7,20 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { AssemblySegmentClip } from "@/modules/assembly/assembly.types";
 import { groupCatalogueByStoryboardPosition } from "@/modules/assembly/segment-variant-catalogue";
+import {
+  segmentVariantClipClasses,
+  segmentVariantClipShellClass,
+} from "@/modules/assembly/ui/segment-clip-appearance";
 import { BIN_DRAG_MIME } from "@/modules/assembly/ui/timeline-editor";
+
+/** Minimum height per variant row when the bin stacks several takes. */
+const VARIANT_ROW_MIN_PX = 48;
+const BIN_VERTICAL_PADDING_PX = 16;
 
 /**
  * Horizontal "media bin" of available Seedance segments. Each column is a
  * storyboard slot (`S1`, `S2`, …); when several generations exist for that
- * slot, variant cards stack vertically. The accepted variant is emphasised.
+ * slot, variant cards stack vertically and share the column height evenly.
  */
 export function SegmentBin({
   availableSegments,
@@ -43,33 +51,36 @@ export function SegmentBin({
     (max, group) => Math.max(max, group.variants.length),
     1,
   );
-  const columnMinHeight = Math.max(56, maxVariants * 52);
+  const binRowHeight =
+    maxVariants * VARIANT_ROW_MIN_PX +
+    Math.max(0, maxVariants - 1) * 4 +
+    BIN_VERTICAL_PADDING_PX;
 
   return (
     <div
       className={cn(
-        "flex items-end gap-2 overflow-x-auto rounded-md border bg-muted/20 p-2",
+        "flex items-stretch gap-2 overflow-x-auto rounded-md border bg-muted/20 p-2",
         className,
       )}
       role="list"
       aria-label="Segment bin"
+      style={{ minHeight: binRowHeight }}
     >
       <span className="shrink-0 self-center px-1 text-[10px] uppercase tracking-wider text-muted-foreground">
         Bin
       </span>
       {groups.map((group) => (
         <div
-          className="flex shrink-0 flex-col justify-end gap-1"
+          className="flex min-h-0 shrink-0 flex-col gap-1"
           key={group.storyboardPosition}
           role="listitem"
-          style={{ minHeight: columnMinHeight }}
+          style={{ minHeight: binRowHeight - BIN_VERTICAL_PADDING_PX }}
         >
           {group.variants.map((segment) => (
             <BinCard
               key={segment.mediaAssetId}
               onAppend={onAppend}
               segment={segment}
-              stretch={group.variants.length === 1}
             />
           ))}
         </div>
@@ -81,27 +92,24 @@ export function SegmentBin({
 function BinCard({
   onAppend,
   segment,
-  stretch,
 }: {
   onAppend: (mediaAssetId: string) => void;
   segment: AssemblySegmentClip;
-  /** Single-variant columns grow to fill the bin row height. */
-  stretch: boolean;
 }) {
   const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
     event.dataTransfer.setData(BIN_DRAG_MIME, segment.mediaAssetId);
     event.dataTransfer.effectAllowed = "copy";
   };
   const showVariantBadge = segment.variantCountAtPosition > 1;
+  const appearance = segmentVariantClipClasses(segment.isActiveVariant);
+
   return (
     <div
       aria-label={`Drag ${segment.title} onto the timeline`}
       className={cn(
-        "group/bin flex cursor-grab items-center gap-2 rounded-md border px-2 py-1 active:cursor-grabbing",
-        segment.isActiveVariant
-          ? "border-blue-600/50 bg-blue-600/25"
-          : "border-blue-500/25 bg-blue-500/10 opacity-90",
-        stretch && "min-h-[52px] flex-1",
+        "group/bin flex min-h-[48px] flex-1 cursor-grab items-center gap-2 rounded-md border px-2 py-1 active:cursor-grabbing",
+        segmentVariantClipShellClass(segment.isActiveVariant),
+        !segment.isActiveVariant && "opacity-90",
       )}
       draggable
       onDragStart={handleDragStart}
@@ -109,32 +117,23 @@ function BinCard({
       <div
         className={cn(
           "flex h-8 w-8 shrink-0 items-center justify-center rounded text-[10px] font-semibold uppercase tracking-wider",
-          segment.isActiveVariant
-            ? "bg-blue-600/40 text-foreground"
-            : "bg-blue-500/20 text-foreground/80",
+          appearance.badge,
         )}
       >
         S{segment.storyboardPosition}
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-center">
         {showVariantBadge ? (
           <div
             className={cn(
               "truncate text-[10px] font-medium uppercase tracking-wide",
-              segment.isActiveVariant
-                ? "text-foreground"
-                : "text-foreground/65",
+              appearance.variantLabel,
             )}
           >
             {segment.variantLabel}
           </div>
         ) : null}
-        <div
-          className={cn(
-            "truncate text-[11px] font-medium",
-            segment.isActiveVariant ? "text-foreground" : "text-foreground/75",
-          )}
-        >
+        <div className={cn("truncate text-[11px] font-medium", appearance.title)}>
           {segment.title}
         </div>
         <div className="truncate text-[10px] tabular-nums text-foreground/70">
@@ -143,7 +142,7 @@ function BinCard({
       </div>
       <Button
         aria-label={`Append ${segment.title} to the end of the timeline`}
-        className="opacity-70 transition-opacity group-hover/bin:opacity-100"
+        className="shrink-0 opacity-70 transition-opacity group-hover/bin:opacity-100"
         onMouseDown={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
