@@ -51,6 +51,11 @@ export interface SunoAudioUploadPrepareState {
   storagePath?: string;
 }
 
+export interface SunoAudioUploadCompleteState {
+  status: "success" | "error";
+  message: string;
+}
+
 export async function prepareSunoAudioUploadAction(input: {
   videoId: string;
   fileName: string;
@@ -99,7 +104,7 @@ export async function completeSunoAudioUploadAction(input: {
   fileName: string;
   fileSize: number;
   mimeType: string;
-}) {
+}): Promise<SunoAudioUploadCompleteState> {
   const videoId = input.videoId.trim();
 
   try {
@@ -118,13 +123,15 @@ export async function completeSunoAudioUploadAction(input: {
     });
 
     revalidateAssemblyPaths(videoId);
-    redirectWithNotice(videoId, "success", "Suno audio uploaded and linked.");
+    return {
+      status: "success",
+      message: "Suno audio uploaded and linked.",
+    };
   } catch (error) {
-    if (isNextRedirectError(error)) {
-      throw error;
-    }
-
-    redirectWithNotice(videoId, "error", getSunoActionErrorMessage(error));
+    return {
+      status: "error",
+      message: getSunoActionErrorMessage(error),
+    };
   }
 }
 
