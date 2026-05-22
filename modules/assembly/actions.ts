@@ -337,23 +337,27 @@ export async function requestAssemblyRenderAction(
     const { placements, timelineState, audioMediaAssetId } =
       parseAssemblyFormPayload(formData, assemblyData.availableSegments);
 
+    const catalogueMeta = assemblyData.availableSegments.map((segment) => ({
+      segmentId: segment.segmentId,
+      mediaAssetId: segment.mediaAssetId,
+      generationId: segment.generationId,
+      title: segment.title,
+      storyboardPosition: segment.storyboardPosition,
+      variantIndex: segment.variantIndex,
+      variantLabel: segment.variantLabel,
+      variantCountAtPosition: segment.variantCountAtPosition,
+      isActiveVariant: segment.isActiveVariant,
+      durationSeconds: segment.durationSeconds,
+      sourceUrl: segment.sourceUrl,
+      storageBucket: segment.storageBucket,
+      storagePath: segment.storagePath,
+    }));
     const orderedClips = buildClipsFromPlacements(
       placements,
       new Map(
-        assemblyData.availableSegments.map((segment) => [
-          segment.segmentId,
-          {
-            segmentId: segment.segmentId,
-            mediaAssetId: segment.mediaAssetId,
-            generationId: segment.generationId,
-            title: segment.title,
-            durationSeconds: segment.durationSeconds,
-            sourceUrl: segment.sourceUrl,
-            storageBucket: segment.storageBucket,
-            storagePath: segment.storagePath,
-          },
-        ]),
+        catalogueMeta.map((segment) => [segment.segmentId, segment]),
       ),
+      new Map(catalogueMeta.map((segment) => [segment.mediaAssetId, segment])),
     );
 
     if (orderedClips.length === 0) {
@@ -446,7 +450,11 @@ function getSunoActionErrorMessage(error: unknown) {
 
 function parseAssemblyFormPayload(
   formData: FormData,
-  availableSegments: Array<{ segmentId: string; durationSeconds: number }>,
+  availableSegments: Array<{
+    segmentId: string;
+    mediaAssetId: string;
+    durationSeconds: number;
+  }>,
 ) {
   const placements = parsePlacementsPayload(
     formData.get("placements"),
@@ -460,14 +468,17 @@ function parseAssemblyFormPayload(
 
 function parsePlacementsPayload(
   value: FormDataEntryValue | null,
-  availableSegments: Array<{ segmentId: string; durationSeconds: number }>,
+  availableSegments: Array<{
+    segmentId: string;
+    mediaAssetId: string;
+    durationSeconds: number;
+  }>,
 ): SegmentPlacement[] {
-  const durations = new Map(
-    availableSegments.map((segment) => [
-      segment.segmentId,
-      segment.durationSeconds,
-    ]),
-  );
+  const durations = new Map<string, number>();
+  for (const segment of availableSegments) {
+    durations.set(segment.segmentId, segment.durationSeconds);
+    durations.set(segment.mediaAssetId, segment.durationSeconds);
+  }
   if (typeof value !== "string") {
     return [];
   }

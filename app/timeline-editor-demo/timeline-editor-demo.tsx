@@ -37,6 +37,11 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     segmentId: "demo-seg-1",
     mediaAssetId: "demo-asset-1",
     title: "S1. Hook",
+    storyboardPosition: 1,
+    variantIndex: 1,
+    variantLabel: "Variant 1",
+    variantCountAtPosition: 1,
+    isActiveVariant: true,
     position: 0,
     durationSeconds: 8,
     inSeconds: 0,
@@ -51,7 +56,12 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     placementId: "demo-place-2",
     segmentId: "demo-seg-2",
     mediaAssetId: "demo-asset-2",
-    title: "S2. Beat",
+    title: "S2. Beat · Variant 1",
+    storyboardPosition: 2,
+    variantIndex: 1,
+    variantLabel: "Variant 1",
+    variantCountAtPosition: 2,
+    isActiveVariant: true,
     position: 1,
     durationSeconds: 8,
     inSeconds: 0,
@@ -67,6 +77,11 @@ const INITIAL_SEGMENTS: AssemblySegmentClip[] = [
     segmentId: "demo-seg-3",
     mediaAssetId: "demo-asset-3",
     title: "S3. Payoff",
+    storyboardPosition: 3,
+    variantIndex: 1,
+    variantLabel: "Variant 1",
+    variantCountAtPosition: 1,
+    isActiveVariant: true,
     position: 2,
     durationSeconds: 8,
     inSeconds: 0,
@@ -112,9 +127,29 @@ const DEMO_PEAKS = generateSyntheticPeaks(1024);
  * page this comes from `getAssemblyPageData`, here we expose the same three
  * demo clips so a card from the bin can be dropped onto the video lane.
  */
-const DEMO_AVAILABLE_SEGMENTS: AssemblySegmentClip[] = INITIAL_SEGMENTS.map(
-  (segment) => ({ ...segment }),
-);
+const DEMO_AVAILABLE_SEGMENTS: AssemblySegmentClip[] = [
+  ...INITIAL_SEGMENTS.map((segment) => ({ ...segment })),
+  {
+    placementId: "demo-bin-s2-v2",
+    segmentId: "demo-seg-2",
+    mediaAssetId: "demo-asset-2-alt",
+    title: "S2. Beat · Variant 2",
+    storyboardPosition: 2,
+    variantIndex: 2,
+    variantLabel: "Variant 2",
+    variantCountAtPosition: 2,
+    isActiveVariant: false,
+    position: 0,
+    durationSeconds: 6,
+    inSeconds: 0,
+    outSeconds: 6,
+    volume: 1,
+    playbackRate: 1,
+    sourceUrl: "demo://beat-alt",
+    storageBucket: "demo",
+    storagePath: "demo/2-alt.mp4",
+  },
+];
 
 export function TimelineEditorDemo() {
   const [segments, setSegments] =
@@ -127,9 +162,9 @@ export function TimelineEditorDemo() {
     [],
   );
   const handleAddSegmentFromBin = useCallback(
-    (segmentId: string, insertIndex: number) => {
+    (mediaAssetId: string, insertIndex: number) => {
       const catalogueEntry = DEMO_AVAILABLE_SEGMENTS.find(
-        (segment) => segment.segmentId === segmentId,
+        (segment) => segment.mediaAssetId === mediaAssetId,
       );
       if (!catalogueEntry) {
         return;
@@ -155,13 +190,13 @@ export function TimelineEditorDemo() {
     [],
   );
   const handleSegmentDroppedFromBin = useCallback(
-    ({ segmentId, insertIndex }: { segmentId: string; insertIndex: number }) =>
-      handleAddSegmentFromBin(segmentId, insertIndex),
+    ({ mediaAssetId, insertIndex }: { mediaAssetId: string; insertIndex: number }) =>
+      handleAddSegmentFromBin(mediaAssetId, insertIndex),
     [handleAddSegmentFromBin],
   );
   const handleAppendSegmentFromBin = useCallback(
-    (segmentId: string) =>
-      handleAddSegmentFromBin(segmentId, Number.MAX_SAFE_INTEGER),
+    (mediaAssetId: string) =>
+      handleAddSegmentFromBin(mediaAssetId, Number.MAX_SAFE_INTEGER),
     [handleAddSegmentFromBin],
   );
 

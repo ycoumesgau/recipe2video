@@ -255,6 +255,7 @@ export function AssemblyWorkspace({
           segments.map((segment) => ({
             placementId: segment.placementId,
             segmentId: segment.segmentId,
+            mediaAssetId: segment.mediaAssetId,
             inSeconds: segment.inSeconds,
             outSeconds: segment.outSeconds,
             volume: segment.volume ?? 1,
@@ -287,9 +288,9 @@ export function AssemblyWorkspace({
    * onto the video lane and the bin card's "+" append button.
    */
   const handleAddSegmentFromBin = useCallback(
-    (segmentId: string, insertIndex: number) => {
+    (mediaAssetId: string, insertIndex: number) => {
       const catalogueEntry = availableSegments.find(
-        (segment) => segment.segmentId === segmentId,
+        (segment) => segment.mediaAssetId === mediaAssetId,
       );
       if (!catalogueEntry) {
         return;
@@ -315,12 +316,13 @@ export function AssemblyWorkspace({
     [availableSegments],
   );
   const handleSegmentDroppedFromBin = useCallback(
-    ({ segmentId, insertIndex }: { segmentId: string; insertIndex: number }) =>
-      handleAddSegmentFromBin(segmentId, insertIndex),
+    ({ mediaAssetId, insertIndex }: { mediaAssetId: string; insertIndex: number }) =>
+      handleAddSegmentFromBin(mediaAssetId, insertIndex),
     [handleAddSegmentFromBin],
   );
   const handleAppendSegmentFromBin = useCallback(
-    (segmentId: string) => handleAddSegmentFromBin(segmentId, segments.length),
+    (mediaAssetId: string) =>
+      handleAddSegmentFromBin(mediaAssetId, segments.length),
     [handleAddSegmentFromBin, segments.length],
   );
 

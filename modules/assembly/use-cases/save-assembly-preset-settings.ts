@@ -41,23 +41,27 @@ export interface SaveAssemblyPresetSettingsResult {
 export async function saveAssemblyPresetSettings(
   input: SaveAssemblyPresetSettingsInput,
 ): Promise<SaveAssemblyPresetSettingsResult> {
+  const catalogueMeta = input.assemblyData.availableSegments.map((segment) => ({
+    segmentId: segment.segmentId,
+    mediaAssetId: segment.mediaAssetId,
+    generationId: segment.generationId,
+    title: segment.title,
+    storyboardPosition: segment.storyboardPosition,
+    variantIndex: segment.variantIndex,
+    variantLabel: segment.variantLabel,
+    variantCountAtPosition: segment.variantCountAtPosition,
+    isActiveVariant: segment.isActiveVariant,
+    durationSeconds: segment.durationSeconds,
+    sourceUrl: segment.sourceUrl,
+    storageBucket: segment.storageBucket,
+    storagePath: segment.storagePath,
+  }));
   const orderedClips = buildClipsFromPlacements(
     input.placements,
     new Map(
-      input.assemblyData.availableSegments.map((segment) => [
-        segment.segmentId,
-        {
-          segmentId: segment.segmentId,
-          mediaAssetId: segment.mediaAssetId,
-          generationId: segment.generationId,
-          title: segment.title,
-          durationSeconds: segment.durationSeconds,
-          sourceUrl: segment.sourceUrl,
-          storageBucket: segment.storageBucket,
-          storagePath: segment.storagePath,
-        },
-      ]),
+      catalogueMeta.map((segment) => [segment.segmentId, segment]),
     ),
+    new Map(catalogueMeta.map((segment) => [segment.mediaAssetId, segment])),
   );
 
   if (orderedClips.length === 0) {

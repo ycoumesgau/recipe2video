@@ -36,6 +36,11 @@ const buildSegmentMeta = (
   mediaAssetId: overrides.mediaAssetId ?? "asset_1",
   generationId: null,
   title: overrides.title ?? "Segment",
+  storyboardPosition: overrides.storyboardPosition ?? 1,
+  variantIndex: overrides.variantIndex ?? 1,
+  variantLabel: overrides.variantLabel ?? "Variant 1",
+  variantCountAtPosition: overrides.variantCountAtPosition ?? 1,
+  isActiveVariant: overrides.isActiveVariant ?? true,
   durationSeconds: overrides.durationSeconds ?? 5,
   sourceUrl: "https://example.com/clip.mp4",
   storageBucket: "accepted_clips",
@@ -588,6 +593,40 @@ test("buildClipsFromPlacements drops placements whose segment metadata is missin
   );
   assert.equal(clips.length, 1);
   assert.equal(clips[0]?.placementId, "p_1");
+});
+
+test("buildClipsFromPlacements prefers mediaAssetId over segmentId when both are set", () => {
+  const bySegment = new Map([
+    ["seg_a", buildSegmentMeta({ segmentId: "seg_a", title: "Legacy", mediaAssetId: "asset_legacy" })],
+  ]);
+  const byMedia = new Map([
+    [
+      "asset_alt",
+      buildSegmentMeta({
+        segmentId: "seg_a",
+        title: "Alt take",
+        mediaAssetId: "asset_alt",
+      }),
+    ],
+  ]);
+  const [clip] = buildClipsFromPlacements(
+    [
+      {
+        placementId: "p_alt",
+        segmentId: "seg_a",
+        mediaAssetId: "asset_alt",
+        inSeconds: 0,
+        outSeconds: 5,
+        volume: 1,
+        playbackRate: 1,
+      },
+    ],
+    bySegment,
+    byMedia,
+  );
+  assert.ok(clip);
+  assert.equal(clip.title, "Alt take");
+  assert.equal(clip.mediaAssetId, "asset_alt");
 });
 
 test("buildClipsFromPlacements clamps trims that overflow the source", () => {
