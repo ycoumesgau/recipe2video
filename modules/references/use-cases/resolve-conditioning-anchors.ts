@@ -19,10 +19,8 @@ import { tryCreateStorageSignedUrl } from "@/modules/media-assets/services/stora
 import { normalizeReferenceName } from "../reference-matching";
 
 import { findAssetLibraryByCanonicalNames } from "../repositories/asset-library.repository";
-import {
-  findReferenceAssetsByCanonicalNamesForVideo,
-  type ReferenceAsset,
-} from "../repositories/reference.repository";
+import { findReferenceAssetsByCanonicalNamesForVideo } from "../repositories/reference.repository";
+import type { ReferenceAsset } from "../reference.types";
 import {
   isConditioningExcludedCategory,
   type ConditioningContext,
