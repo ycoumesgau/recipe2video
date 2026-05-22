@@ -29,16 +29,20 @@ import type {
 } from "../reference.types";
 import { ARTIFACT_STATUS_BADGE_VARIANT } from "@/modules/shared/ui/artifact-image-card";
 
+import type { ReferenceSubstitutePickerOption } from "../reference.types";
 import { ReferenceCardActions } from "./reference-card-actions";
 import { ReferenceCardPreview } from "./reference-card-preview";
+import { ReferenceSubstituteForm } from "./reference-substitute-form";
 
 export function ReferenceCard({
   item,
   onExpandPreview,
+  substitutePickerOptions = [],
   videoId,
 }: {
   item: ReferenceAssetReviewItem;
   onExpandPreview?: () => void;
+  substitutePickerOptions?: ReferenceSubstitutePickerOption[];
   videoId: string;
 }) {
   const { mediaAsset, reference } = item;
@@ -164,7 +168,14 @@ export function ReferenceCard({
         )}
 
         {isReadOnly ? null : (
-          <ReferenceCardActions item={item} videoId={videoId} />
+          <>
+            <ReferenceSubstituteForm
+              pickerOptions={substitutePickerOptions}
+              referenceId={reference.id}
+              videoId={videoId}
+            />
+            <ReferenceCardActions item={item} videoId={videoId} />
+          </>
         )}
       </CardContent>
     </Card>

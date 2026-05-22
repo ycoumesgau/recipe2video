@@ -32,6 +32,7 @@ import {
   type AssetLibraryEntry,
 } from "../repositories/asset-library.repository";
 import { isConditioningExcludedCategory } from "./conditioning-category-policy";
+import { buildReferenceSubstitutePickerOptions } from "./build-reference-substitute-options";
 import { buildSegmentReadiness } from "./reference-readiness";
 
 type MediaAssetRow = Database["public"]["Tables"]["media_assets"]["Row"];
@@ -58,11 +59,13 @@ export async function getReferenceReviewData(
   supabase: SupabaseDataClient,
   videoId: string,
 ): Promise<ReferenceReviewData> {
-  const [recipeReferences, segments, segmentReferenceLinks] = await Promise.all([
-    listReferenceAssetsForVideo(supabase, videoId),
-    listSegmentsByVideoId(supabase, videoId),
-    listSegmentReferencesForVideo(supabase, videoId),
-  ]);
+  const [recipeReferences, segments, segmentReferenceLinks, substitutePickerOptions] =
+    await Promise.all([
+      listReferenceAssetsForVideo(supabase, videoId),
+      listSegmentsByVideoId(supabase, videoId),
+      listSegmentReferencesForVideo(supabase, videoId),
+      buildReferenceSubstitutePickerOptions(supabase, videoId),
+    ]);
 
   const libraryAssetIds = unique(
     segmentReferenceLinks
@@ -132,6 +135,7 @@ export async function getReferenceReviewData(
       (item) => item.reference.status === "rejected",
     ),
     missingReferences: [...globalItems, ...recipeItems].filter(isMissingReference),
+    substitutePickerOptions,
     segmentReadiness: buildSegmentReadiness(
       // The readiness check still works against ReferenceAsset shapes. Globals
       // are presented as approved-by-construction references so the check

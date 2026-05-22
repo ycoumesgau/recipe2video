@@ -2,7 +2,10 @@
 
 import { useCallback, useMemo, useState } from "react";
 
-import type { ReferenceAssetReviewItem } from "../reference.types";
+import type {
+  ReferenceAssetReviewItem,
+  ReferenceSubstitutePickerOption,
+} from "../reference.types";
 import { ReferenceCard } from "./reference-card";
 import {
   ReferenceImageLightbox,
@@ -35,9 +38,11 @@ function buildSlides(items: ReferenceAssetReviewItem[]): ReferenceLightboxSlide[
 
 export function ReferenceSectionGrid({
   items,
+  substitutePickerOptions = [],
   videoId,
 }: {
   items: ReferenceAssetReviewItem[];
+  substitutePickerOptions?: ReferenceSubstitutePickerOption[];
   videoId: string;
 }) {
   const slides = useMemo(() => buildSlides(items), [items]);
@@ -66,6 +71,7 @@ export function ReferenceSectionGrid({
             onExpandPreview={
               item.previewUrl ? () => openAt(item.reference.id) : undefined
             }
+            substitutePickerOptions={substitutePickerOptions}
             videoId={videoId}
           />
         ))}
