@@ -27,6 +27,13 @@ export interface SegmentPlacement {
   placementId: string;
   /** Foreign key to `seedance_segments.id`. May appear in several placements. */
   segmentId: string;
+  /**
+   * Which playable take (`media_assets.id`) this placement uses. When several
+   * generations exist for the same storyboard slot, this disambiguates the
+   * variant. Older rows omit this field and resolve via {@link segmentId}
+   * only.
+   */
+  mediaAssetId?: string;
   /** Trim window inside the source media, in seconds. */
   inSeconds: number;
   outSeconds: number;
@@ -59,6 +66,16 @@ export interface AssemblySegmentClip {
   mediaAssetId: string;
   generationId?: string | null;
   title: string;
+  /** 1-based storyboard slot (`S{n}`), stable across agent conversations. */
+  storyboardPosition: number;
+  /** 1-based index among variants at {@link storyboardPosition}. */
+  variantIndex: number;
+  /** e.g. `Variant 1` — shown when {@link variantCountAtPosition} > 1. */
+  variantLabel: string;
+  /** How many playable variants exist for this storyboard slot. */
+  variantCountAtPosition: number;
+  /** Accepted / selected take for this slot (drives bin emphasis). */
+  isActiveVariant: boolean;
   position: number;
   /**
    * Original duration of the source media (read-only, drives trim bounds).

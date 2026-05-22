@@ -242,24 +242,27 @@ export function readPlacementsState(
  * Placements whose segmentId is missing from the catalogue are dropped — this
  * is also where signed-URL expiry / missing media_asset shows up at runtime.
  */
+type SegmentCatalogueMeta = Omit<
+  AssemblySegmentClip,
+  | "placementId"
+  | "position"
+  | "inSeconds"
+  | "outSeconds"
+  | "volume"
+  | "playbackRate"
+>;
+
 export function buildClipsFromPlacements(
   placements: SegmentPlacement[],
-  availableBySegmentId: Map<
-    string,
-      Omit<
-      AssemblySegmentClip,
-      | "placementId"
-      | "position"
-      | "inSeconds"
-      | "outSeconds"
-      | "volume"
-      | "playbackRate"
-    >
-  >,
+  availableBySegmentId: Map<string, SegmentCatalogueMeta>,
+  availableByMediaAssetId?: Map<string, SegmentCatalogueMeta>,
 ): AssemblySegmentClip[] {
   const clips: AssemblySegmentClip[] = [];
   placements.forEach((placement, index) => {
-    const meta = availableBySegmentId.get(placement.segmentId);
+    const meta =
+      (placement.mediaAssetId
+        ? availableByMediaAssetId?.get(placement.mediaAssetId)
+        : undefined) ?? availableBySegmentId.get(placement.segmentId);
     if (!meta) {
       return;
     }
@@ -289,11 +292,16 @@ export function buildClipsFromPlacements(
  * declared order, covering the full source duration.
  */
 export function defaultPlacementsForSegments(
-  acceptedSegments: Array<{ segmentId: string; durationSeconds: number }>,
+  acceptedSegments: Array<{
+    segmentId: string;
+    mediaAssetId?: string;
+    durationSeconds: number;
+  }>,
 ): SegmentPlacement[] {
   return acceptedSegments.map((segment, index) => ({
     placementId: createPlacementId(segment.segmentId, index),
     segmentId: segment.segmentId,
+    mediaAssetId: segment.mediaAssetId,
     inSeconds: 0,
     outSeconds: Math.max(segment.durationSeconds, MIN_TRIM_WINDOW),
     volume: 1,
@@ -559,6 +567,9 @@ export function serializePlacements(placements: SegmentPlacement[]) {
     placements: placements.map((placement) => ({
       placementId: placement.placementId,
       segmentId: placement.segmentId,
+      ...(placement.mediaAssetId
+        ? { mediaAssetId: placement.mediaAssetId }
+        : {}),
       inSeconds: placement.inSeconds,
       outSeconds: placement.outSeconds,
       volume: placement.volume,
@@ -582,7 +593,14 @@ function buildPlacementFromRecord(
   if (!segmentId) {
     return [];
   }
-  const duration = availableSegmentDurations.get(segmentId);
+  const mediaAssetId =
+    typeof raw.mediaAssetId === "string" && raw.mediaAssetId.length > 0
+      ? raw.mediaAssetId
+      : undefined;
+  const duration =
+    (mediaAssetId
+      ? availableSegmentDurations.get(mediaAssetId)
+      : undefined) ?? availableSegmentDurations.get(segmentId);
   if (duration === undefined) {
     return [];
   }
@@ -604,6 +622,7 @@ function buildPlacementFromRecord(
           ? raw.placementId
           : createPlacementId(segmentId, index),
       segmentId,
+      mediaAssetId,
       inSeconds,
       outSeconds,
       volume: clamp(readNumber(raw.volume, 1), 0, 2),

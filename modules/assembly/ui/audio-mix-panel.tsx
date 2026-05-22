@@ -92,7 +92,14 @@ function ClipMixRow({
   return (
     <div className="rounded-md border bg-muted/10 p-2 text-xs">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="truncate font-medium">{segment.title}</span>
+        <div className="min-w-0">
+          {segment.variantCountAtPosition > 1 ? (
+            <div className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {segment.variantLabel}
+            </div>
+          ) : null}
+          <span className="truncate font-medium">{segment.title}</span>
+        </div>
         <span className="shrink-0 tabular-nums text-muted-foreground">
           {timelineSeconds.toFixed(1)}s
         </span>

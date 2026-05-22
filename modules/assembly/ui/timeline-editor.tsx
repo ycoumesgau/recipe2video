@@ -40,11 +40,11 @@ import { AudioClipWaveform } from "./audio-clip-waveform";
 
 /**
  * MIME-style key used by the segment bin (HTML5 drag-and-drop) to ferry the
- * dragged segmentId from a bin card to the video track's drop target. We
- * intentionally use a non-`text/plain` key so a stray drag of selected text
- * can never be misinterpreted as a bin drop.
+ * dragged {@link AssemblySegmentClip.mediaAssetId} from a bin card to the
+ * video track's drop target. We intentionally use a non-`text/plain` key so
+ * a stray drag of selected text can never be misinterpreted as a bin drop.
  */
-export const BIN_DRAG_MIME = "application/x-recipe2video-segment";
+export const BIN_DRAG_MIME = "application/x-recipe2video-segment-asset";
 
 /**
  * Optional pre-computed waveform peaks keyed by audio mediaAssetId. Used by
@@ -207,11 +207,11 @@ export interface TimelineEditorProps {
    * Fired when a segment card from the bin is dropped onto the video track.
    * The editor itself does not own the segment catalogue, so it cannot
    * materialise the new placement on its own — the parent looks up the
-   * `segmentId` in `availableSegments` and pushes a new clip into
+   * `mediaAssetId` in `availableSegments` and pushes a new clip into
    * `segments` at the requested index.
    */
   onSegmentDroppedFromBin?: (input: {
-    segmentId: string;
+    mediaAssetId: string;
     insertIndex: number;
   }) => void;
   /**
@@ -982,9 +982,9 @@ export function TimelineEditor({
   );
   const handleVideoLaneDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      const segmentId = event.dataTransfer.getData(BIN_DRAG_MIME);
+      const mediaAssetId = event.dataTransfer.getData(BIN_DRAG_MIME);
       setBinDropIndicatorPx(null);
-      if (!segmentId || !onSegmentDroppedFromBin) {
+      if (!mediaAssetId || !onSegmentDroppedFromBin) {
         return;
       }
       event.preventDefault();
@@ -996,7 +996,7 @@ export function TimelineEditor({
       const dropX = event.clientX - rect.left;
       const dropSeconds = Math.max(dropX / pxPerSecond, 0);
       const insertIndex = computeDropInsertIndex(segmentLayout, dropSeconds);
-      onSegmentDroppedFromBin({ segmentId, insertIndex });
+      onSegmentDroppedFromBin({ mediaAssetId, insertIndex });
     },
     [onSegmentDroppedFromBin, pxPerSecond, segmentLayout],
   );
@@ -1448,6 +1448,11 @@ function SegmentClipBox({
         side="left"
       />
       <div className="flex min-w-0 flex-1 flex-col justify-between px-2 py-1 text-[11px] text-foreground">
+        {segment.variantCountAtPosition > 1 ? (
+          <div className="truncate text-[10px] font-medium uppercase tracking-wide text-foreground/80">
+            {segment.variantLabel}
+          </div>
+        ) : null}
         <div className="truncate font-medium">{segment.title}</div>
         <div className="truncate tabular-nums text-foreground/70">
           {timelineDuration.toFixed(1)}s · {speedPercent}% · in{" "}

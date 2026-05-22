@@ -3,6 +3,7 @@ import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.cons
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import { listMediaAssetsByVideoId } from "@/modules/media-assets/repositories/media-asset.repository";
 import { createStorageSignedUrl } from "@/modules/media-assets/services/storage.service";
+import { listGenerationsBySegmentIds } from "@/modules/generation/repositories/generation.repository";
 import { listSegmentsByVideoId } from "@/modules/storyboard/repositories/segment.repository";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
@@ -32,6 +33,10 @@ import {
 } from "../repositories/assembly-presets.repository";
 import { getLatestCompositionByPresetId } from "../repositories/assembly.repository";
 import {
+  buildSegmentVariantCatalogue,
+  type SegmentCatalogueEntry,
+} from "../segment-variant-catalogue";
+import {
   buildClipsFromPlacements,
   defaultPlacementsForSegments,
   ensureLinkedAudioClipOnTimeline,
@@ -46,24 +51,6 @@ export { getDefaultAudioSync, getEmptyTimelineState } from "../timeline-state";
 const ASSEMBLY_SEGMENT_SCOPE = { activeOnly: false } as const;
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
-
-/**
- * Lookup table the editor uses on the available-segments side. The fields
- * mirror {@link AssemblySegmentClip} minus the per-placement fields, so we
- * can hydrate any number of placements from a single segment entry.
- *
- * `volume` is also a per-placement field (mixing decision lives on the
- * timeline, not on the source segment), so it is excluded here too.
- */
-type SegmentCatalogueEntry = Omit<
-  AssemblySegmentClip,
-  | "placementId"
-  | "position"
-  | "inSeconds"
-  | "outSeconds"
-  | "volume"
-  | "playbackRate"
->;
 
 export interface AssemblyFinalExport {
   asset: MediaAsset;
@@ -118,7 +105,11 @@ export async function getAssemblyPageData(
   );
   const conversationNameBySegmentId = await loadConversationNamesBySegmentIds(
     supabase,
-    acceptedSegments.map((segment) => segment.id),
+    segments.map((segment) => segment.id),
+  );
+  const generations = await listGenerationsBySegmentIds(
+    supabase,
+    segments.map((segment) => segment.id),
   );
 
   const activePreset = resolveActivePreset(presets, options.presetId);
@@ -129,20 +120,29 @@ export async function getAssemblyPageData(
   const persistedAudioMediaAssetId =
     activePreset?.audioMediaAssetId ?? composition?.audioMediaAssetId ?? null;
 
-  // Build the catalogue of available segments (one entry per segmentId).
-  const availableEntries = await buildSegmentCatalogue(
-    supabase,
+  const catalogueEntries = buildSegmentVariantCatalogue({
+    allSegments: segments,
     acceptedSegments,
+    generations,
     mediaAssets,
-    SIGNED_URL_TTL_SECONDS,
     conversationNameBySegmentId,
+  });
+  const availableEntries = await hydrateCatalogueSignedUrls(
+    supabase,
+    catalogueEntries,
+    SIGNED_URL_TTL_SECONDS,
   );
   const availableBySegmentId = new Map(
     availableEntries.map((entry) => [entry.segmentId, entry]),
   );
-  const availableDurations = new Map(
-    availableEntries.map((entry) => [entry.segmentId, entry.durationSeconds]),
+  const availableByMediaAssetId = new Map(
+    availableEntries.map((entry) => [entry.mediaAssetId, entry]),
   );
+  const availableDurations = new Map<string, number>();
+  for (const entry of availableEntries) {
+    availableDurations.set(entry.segmentId, entry.durationSeconds);
+    availableDurations.set(entry.mediaAssetId, entry.durationSeconds);
+  }
 
   const missingAcceptedSegments = acceptedSegments.filter(
     (segment) => !availableBySegmentId.has(segment.id),
@@ -159,8 +159,9 @@ export async function getAssemblyPageData(
     persistedPlacements.length > 0
       ? persistedPlacements
       : defaultPlacementsForSegments(
-          availableEntries.map((entry) => ({
+          pickDefaultPlacementSources(availableEntries).map((entry) => ({
             segmentId: entry.segmentId,
+            mediaAssetId: entry.mediaAssetId,
             durationSeconds: entry.durationSeconds,
           })),
         );
@@ -203,6 +204,7 @@ export async function getAssemblyPageData(
   const orderedSegments = buildClipsFromPlacements(
     placements,
     availableBySegmentId,
+    availableByMediaAssetId,
   );
 
   // Surface the catalogue as a list of AssemblySegmentClip[] for any
@@ -212,12 +214,10 @@ export async function getAssemblyPageData(
   const availableSegments: AssemblySegmentClip[] = availableEntries.map(
     (entry, index) => ({
       ...entry,
-      placementId: `bin_${entry.segmentId}_${index}`,
+      placementId: `bin_${entry.mediaAssetId}_${index}`,
       position: index,
       inSeconds: 0,
       outSeconds: entry.durationSeconds,
-      // Bin entries are not on the timeline; the value here is only used as
-      // the default volume for placements materialised from this entry.
       volume: 1,
       playbackRate: 1,
     }),
@@ -307,44 +307,36 @@ async function buildFinalExports(
 
 export { buildRemotionProps } from "../build-remotion-props";
 
-async function buildSegmentCatalogue(
-  supabase: SupabaseDataClient,
-  acceptedSegments: SeedanceSegment[],
-  mediaAssets: MediaAsset[],
-  signedUrlTtlSeconds: number,
-  conversationNameBySegmentId: Map<string, string> = new Map(),
-): Promise<SegmentCatalogueEntry[]> {
-  const entries: SegmentCatalogueEntry[] = [];
-  for (const segment of acceptedSegments) {
-    const mediaAsset = selectSegmentSourceAsset(segment, mediaAssets);
-    if (!mediaAsset?.storageBucket || !mediaAsset.storagePath) {
-      continue;
+function pickDefaultPlacementSources(entries: SegmentCatalogueEntry[]) {
+  const byPosition = new Map<number, SegmentCatalogueEntry>();
+  for (const entry of entries) {
+    const existing = byPosition.get(entry.storyboardPosition);
+    if (!existing || entry.isActiveVariant) {
+      byPosition.set(entry.storyboardPosition, entry);
     }
-    const durationSeconds =
-      mediaAsset.durationSeconds ?? segment.durationTarget ?? 5;
-    const conversationName = conversationNameBySegmentId.get(segment.id);
-    const baseTitle = `S${segment.position}. ${segment.title}`;
-    entries.push({
-      segmentId: segment.id,
-      mediaAssetId: mediaAsset.id,
-      generationId: mediaAsset.generationId,
-      // Match the rest of the app (segment-review, storyboard, etc.) that
-      // formats segment names as "S{position}. {title}" so the user can
-      // tell at a glance which storyboard slot a clip came from. The
-      // `position` we read here is the storyboard position (1-indexed),
-      // not the timeline position which can change with reorders.
-      title: conversationName ? `${baseTitle} · ${conversationName}` : baseTitle,
-      durationSeconds,
-      sourceUrl: await createStorageSignedUrlForAsset(
-        supabase,
-        mediaAsset,
-        signedUrlTtlSeconds,
-      ),
-      storageBucket: mediaAsset.storageBucket,
-      storagePath: mediaAsset.storagePath,
+  }
+  return [...byPosition.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, entry]) => entry);
+}
+
+async function hydrateCatalogueSignedUrls(
+  supabase: SupabaseDataClient,
+  entries: SegmentCatalogueEntry[],
+  signedUrlTtlSeconds: number,
+): Promise<SegmentCatalogueEntry[]> {
+  const hydrated: SegmentCatalogueEntry[] = [];
+  for (const entry of entries) {
+    hydrated.push({
+      ...entry,
+      sourceUrl: await createStorageSignedUrl(supabase, {
+        bucket: entry.storageBucket as MediaStorageBucket,
+        path: entry.storagePath,
+        expiresInSeconds: signedUrlTtlSeconds,
+      }),
     });
   }
-  return entries;
+  return hydrated;
 }
 
 async function buildAudioTrack(
@@ -379,47 +371,6 @@ async function buildAudioTrack(
     ),
     durationSeconds: audioAsset.durationSeconds,
   };
-}
-
-function selectSegmentSourceAsset(
-  segment: SeedanceSegment,
-  mediaAssets: MediaAsset[],
-) {
-  const playable = mediaAssets.filter(
-    (asset) =>
-      asset.storageBucket &&
-      asset.storagePath &&
-      (asset.type === "accepted_clip" || asset.type === "runway_output"),
-  );
-
-  const pickBest = (candidates: MediaAsset[]) =>
-    candidates.find(
-      (asset) =>
-        asset.type === "accepted_clip" &&
-        asset.generationId === segment.selectedGenerationId,
-    ) ??
-    candidates.find((asset) => asset.type === "accepted_clip") ??
-    candidates.find(
-      (asset) =>
-        asset.type === "runway_output" &&
-        asset.generationId === segment.selectedGenerationId,
-    ) ??
-    candidates[0] ??
-    null;
-
-  // Cross-conversation accepts store selectedGenerationId on the review
-  // segment row while media_assets.segment_id stays on the source segment.
-  if (segment.selectedGenerationId) {
-    const byGeneration = playable.filter(
-      (asset) => asset.generationId === segment.selectedGenerationId,
-    );
-    const fromGeneration = pickBest(byGeneration);
-    if (fromGeneration) {
-      return fromGeneration;
-    }
-  }
-
-  return pickBest(playable.filter((asset) => asset.segmentId === segment.id));
 }
 
 async function createStorageSignedUrlForAsset(
@@ -473,22 +424,36 @@ export async function buildRemotionPropsForCompositionRow(
   );
   const conversationNameBySegmentId = await loadConversationNamesBySegmentIds(
     supabase,
-    acceptedSegments.map((segment) => segment.id),
+    segments.map((segment) => segment.id),
+  );
+  const generations = await listGenerationsBySegmentIds(
+    supabase,
+    segments.map((segment) => segment.id),
   );
 
-  const availableEntries = await buildSegmentCatalogue(
-    supabase,
+  const catalogueEntries = buildSegmentVariantCatalogue({
+    allSegments: segments,
     acceptedSegments,
+    generations,
     mediaAssets,
-    ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
     conversationNameBySegmentId,
+  });
+  const availableEntries = await hydrateCatalogueSignedUrls(
+    supabase,
+    catalogueEntries,
+    ASSEMBLY_EXPORT_SIGNED_URL_TTL_SECONDS,
   );
   const availableBySegmentId = new Map(
     availableEntries.map((entry) => [entry.segmentId, entry]),
   );
-  const availableDurations = new Map(
-    availableEntries.map((entry) => [entry.segmentId, entry.durationSeconds]),
+  const availableByMediaAssetId = new Map(
+    availableEntries.map((entry) => [entry.mediaAssetId, entry]),
   );
+  const availableDurations = new Map<string, number>();
+  for (const entry of availableEntries) {
+    availableDurations.set(entry.segmentId, entry.durationSeconds);
+    availableDurations.set(entry.mediaAssetId, entry.durationSeconds);
+  }
 
   const persistedPlacements = readPlacementsState(
     segmentOrderJson,
@@ -538,6 +503,7 @@ export async function buildRemotionPropsForCompositionRow(
   const orderedSegments = buildClipsFromPlacements(
     persistedPlacements,
     availableBySegmentId,
+    availableByMediaAssetId,
   );
   if (orderedSegments.length === 0) {
     const label = preset?.name ?? composition.presetId ?? composition.id;
