@@ -11,12 +11,12 @@ import {
   getAssetLibraryById,
   type AssetLibraryEntry,
 } from "../repositories/asset-library.repository";
+import type { ReferenceAsset } from "../reference.types";
 import {
   deleteReferenceAsset,
   getReferenceAssetById,
   listReferenceAssetsForVideo,
   updateReferenceAssetConditioning,
-  type ReferenceAsset,
 } from "../repositories/reference.repository";
 import {
   listSegmentReferencesForVideo,
