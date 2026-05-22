@@ -58,7 +58,7 @@ export function SunoAudioUploadForm({ videoId }: { videoId: string }) {
           return;
         }
 
-        await completeSunoAudioUploadAction({
+        const completed = await completeSunoAudioUploadAction({
           videoId,
           storagePath: prepared.storagePath,
           fileName: file.name,
@@ -66,6 +66,16 @@ export function SunoAudioUploadForm({ videoId }: { videoId: string }) {
           mimeType: file.type,
         });
 
+        if (completed.status === "error") {
+          setErrorMessage(completed.message);
+          return;
+        }
+
+        router.push(
+          `/videos/${videoId}/music?notice=success&message=${encodeURIComponent(
+            completed.message,
+          )}`,
+        );
         router.refresh();
       } catch (error) {
         setErrorMessage(
