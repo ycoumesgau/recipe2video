@@ -167,13 +167,7 @@ export async function updateVideoProjectRecipeNumberAction(
   videoId: string,
   rawRecipeNumber: string,
 ): Promise<UpdateVideoRecipeNumberResult> {
-  const recipeNumber = parseRecipeNumberInput(rawRecipeNumber);
-  if (recipeNumber == null) {
-    return {
-      ok: false,
-      message: "Enter a whole number between 1 and 999999.",
-    };
-  }
+  const trimmed = rawRecipeNumber.trim();
 
   const profile = await getCurrentProfile();
   if (!profile) {
@@ -188,6 +182,25 @@ export async function updateVideoProjectRecipeNumberAction(
   if (project.createdBy !== profile.id) {
     return { ok: false, message: "You cannot edit this project number." };
   }
+
+  if (!trimmed) {
+    if (project.recipeNumber == null) {
+      return { ok: true };
+    }
+    await updateVideoProjectRecipeNumber(supabase, videoId, null);
+    revalidatePath("/");
+    revalidatePath(`/videos/${videoId}`);
+    return { ok: true };
+  }
+
+  const recipeNumber = parseRecipeNumberInput(trimmed);
+  if (recipeNumber == null) {
+    return {
+      ok: false,
+      message: "Enter a whole number between 1 and 999999, or leave empty.",
+    };
+  }
+
   if (project.recipeNumber === recipeNumber) {
     return { ok: true };
   }

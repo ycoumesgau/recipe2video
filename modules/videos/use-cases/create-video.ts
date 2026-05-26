@@ -19,7 +19,6 @@ import {
 import {
   archiveAllActiveVideoProjects,
   createVideoProject,
-  getNextRecipeNumber,
 } from "@/modules/videos/repositories/video.repository";
 import type {
   RecipeSourceSummary,
@@ -117,12 +116,10 @@ export async function createVideoDraft(
     manualTitle ??
     buildDraftTitle({ recipeUrl, pastedRecipeText, demoRecipeId });
 
-  const recipeNumber = await getNextRecipeNumber(supabase);
   await archiveAllActiveVideoProjects(supabase);
 
   const project = await createVideoProject(supabase, {
     title,
-    recipeNumber,
     slug: buildSlug(title, draftId),
     recipeUrl: recipeUrl ?? null,
     recipeData: {

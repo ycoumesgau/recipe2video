@@ -5,9 +5,12 @@ export function ProjectRecipeNumberLabel({
   recipeNumber,
   className,
 }: {
-  recipeNumber: number;
+  recipeNumber: number | null;
   className?: string;
 }) {
+  if (recipeNumber == null) {
+    return null;
+  }
   return (
     <span
       className={cn(
@@ -28,7 +31,7 @@ export function ProjectTitleWithRecipeNumber({
   numberClassName,
   className,
 }: {
-  recipeNumber: number;
+  recipeNumber: number | null;
   title: string;
   titleClassName?: string;
   numberClassName?: string;

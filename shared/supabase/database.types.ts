@@ -55,7 +55,7 @@ export type Database = {
         Row: {
           id: string;
           title: string;
-          recipe_number: number;
+          recipe_number: number | null;
           slug: string;
           recipe_url: string | null;
           recipe_data: Json | null;
@@ -84,7 +84,7 @@ export type Database = {
         Insert: {
           id?: string;
           title: string;
-          recipe_number: number;
+          recipe_number?: number | null;
           slug: string;
           recipe_url?: string | null;
           recipe_data?: Json | null;
@@ -113,7 +113,7 @@ export type Database = {
         Update: {
           id?: string;
           title?: string;
-          recipe_number?: number;
+          recipe_number?: number | null;
           slug?: string;
           recipe_url?: string | null;
           recipe_data?: Json | null;

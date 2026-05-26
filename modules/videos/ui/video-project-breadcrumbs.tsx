@@ -20,7 +20,7 @@ export function VideoProjectBreadcrumbs({
   videoId,
 }: {
   projectTitle: string;
-  recipeNumber: number;
+  recipeNumber: number | null;
   videoId: string;
 }) {
   const pathname = usePathname();
@@ -45,12 +45,12 @@ export function VideoProjectBreadcrumbs({
               className="max-w-[min(100%,20rem)] truncate"
               href={prefix}
               title={
-                recipeNumber > 0
+                recipeNumber != null
                   ? `${recipeNumber} ${projectTitle}`
                   : projectTitle
               }
             >
-              {recipeNumber > 0 ? (
+              {recipeNumber != null ? (
                 <ProjectTitleWithRecipeNumber
                   recipeNumber={recipeNumber}
                   title={projectTitle}

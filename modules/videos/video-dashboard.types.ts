@@ -8,7 +8,7 @@ export type DashboardSortKey = "updated" | "cost" | "completion" | "status";
 export interface VideoDashboardProject {
   id: string;
   title: string;
-  recipeNumber: number;
+  recipeNumber: number | null;
   recipeSourceKind: RecipeSourceKind;
   recipeSourceLabel: string;
   status: VideoStatus;

@@ -47,7 +47,7 @@ export default async function VideoProjectLayout({
 
 async function loadProjectCrumbForBreadcrumb(videoId: string): Promise<{
   title: string;
-  recipeNumber: number;
+  recipeNumber: number | null;
 }> {
   try {
     const supabase = createSupabaseAdminClient();
@@ -55,13 +55,13 @@ async function loadProjectCrumbForBreadcrumb(videoId: string): Promise<{
     if (project) {
       return {
         title: project.title || "Project",
-        recipeNumber: project.recipeNumber,
+        recipeNumber: project.recipeNumber ?? null,
       };
     }
   } catch {
     /* best-effort breadcrumb label */
   }
-  return { title: "Project", recipeNumber: 0 };
+  return { title: "Project", recipeNumber: null };
 }
 
 async function loadConversationSwitcherProps(videoId: string) {

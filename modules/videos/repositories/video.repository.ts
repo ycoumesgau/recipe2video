@@ -23,11 +23,8 @@ export async function createVideoProject(
   supabase: SupabaseDataClient,
   input: CreateVideoProjectInput,
 ): Promise<VideoProject> {
-  const { data, error } = await supabase
-    .from("videos")
-    .insert({
+  const insertRow: Database["public"]["Tables"]["videos"]["Insert"] = {
       title: input.title,
-      recipe_number: input.recipeNumber,
       slug: input.slug,
       recipe_url: input.recipeUrl ?? null,
       recipe_data: input.recipeData ? toJson(input.recipeData) : null,
@@ -37,7 +34,15 @@ export async function createVideoProject(
       selected_tts_model: input.selectedTtsModel ?? "eleven_multilingual_v2",
       selected_sfx_model: input.selectedSfxModel ?? "eleven_text_to_sound_v2",
       created_by: input.createdBy ?? null,
-    })
+    };
+
+  if (input.recipeNumber != null) {
+    insertRow.recipe_number = input.recipeNumber;
+  }
+
+  const { data, error } = await supabase
+    .from("videos")
+    .insert(insertRow)
     .select("*")
     .single();
 
@@ -200,6 +205,7 @@ export async function getNextRecipeNumber(
     .from("videos")
     .select("recipe_number")
     .is("archived_at", null)
+    .not("recipe_number", "is", null)
     .order("recipe_number", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -217,7 +223,8 @@ export async function isRecipeNumberTaken(
     .from("videos")
     .select("id", { count: "exact", head: true })
     .eq("recipe_number", recipeNumber)
-    .is("archived_at", null);
+    .is("archived_at", null)
+    .not("recipe_number", "is", null);
 
   if (excludeVideoId) {
     query = query.neq("id", excludeVideoId);
@@ -231,7 +238,7 @@ export async function isRecipeNumberTaken(
 export async function updateVideoProjectRecipeNumber(
   supabase: SupabaseDataClient,
   videoId: string,
-  recipeNumber: number,
+  recipeNumber: number | null,
 ): Promise<VideoProject> {
   const { data, error } = await supabase
     .from("videos")
@@ -249,17 +256,9 @@ export async function setVideoProjectArchived(
   videoId: string,
   archived: boolean,
 ): Promise<VideoProject> {
-  const patch: { archived_at: string | null; recipe_number?: number } = {
-    archived_at: archived ? new Date().toISOString() : null,
-  };
-
-  if (!archived) {
-    patch.recipe_number = await getNextRecipeNumber(supabase);
-  }
-
   const { data, error } = await supabase
     .from("videos")
-    .update(patch)
+    .update({ archived_at: archived ? new Date().toISOString() : null })
     .eq("id", videoId)
     .select("*")
     .single();
@@ -326,7 +325,7 @@ export function mapVideoProject(row: VideoRow): VideoProject {
   return {
     id: row.id,
     title: row.title,
-    recipeNumber: row.recipe_number,
+    recipeNumber: row.recipe_number ?? null,
     slug: row.slug,
     recipeUrl: row.recipe_url,
     recipeData: fromJson<RecipeData>(row.recipe_data),
