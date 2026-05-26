@@ -19,7 +19,11 @@ import {
 } from "../recipe-agent.instructions";
 import type { CursorAgentSdkAdapter } from "../recipe-agent.types";
 import { buildRecipeAgentWorkspace } from "../recipe-agent.workspace";
-import { createCursorRecipeAgentService } from "./cursor-agent.service";
+import {
+  buildModelParams,
+  createCursorRecipeAgentService,
+  listModelParamAttempts,
+} from "./cursor-agent.service";
 
 test("resolveRecipeAgentConfig defaults cloud runtime to polling mode", () => {
   const config = resolveRecipeAgentConfig({
@@ -129,6 +133,36 @@ test("buildRecipeAgentGuardianSubagentPrompt stays within Cursor custom subagent
   );
   assert.match(prompt, /Do not call Runway/);
   assert.match(prompt, /\.cursor\/rules\//);
+});
+
+test("buildModelParams includes context for claude-sonnet-4-6 thinking runs", () => {
+  assert.deepEqual(
+    buildModelParams({
+      apiKey: "cursor-test",
+      runtime: "cloud",
+      model: "claude-sonnet-4-6",
+      modelReasoning: "high",
+      repoUrl: "https://github.com/example/repo.git",
+    }),
+    [
+      { id: "thinking", value: "true" },
+      { id: "context", value: "200k" },
+      { id: "effort", value: "high" },
+    ],
+  );
+});
+
+test("listModelParamAttempts falls back to medium effort for Sonnet 4.6", () => {
+  const attempts = listModelParamAttempts({
+    apiKey: "cursor-test",
+    runtime: "cloud",
+    model: "claude-sonnet-4-6",
+    modelReasoning: "high",
+    repoUrl: "https://github.com/example/repo.git",
+  });
+
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[1]?.find((param) => param.id === "effort")?.value, "medium");
 });
 
 test("createRecipeAgent creates a cloud Cursor agent without PR automation", async () => {

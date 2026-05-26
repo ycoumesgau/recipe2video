@@ -267,6 +267,27 @@ export async function startRecipeAgentRunWorkflow(
         error: message,
         completedAt: deps.now(),
       });
+    } else if (session?.agentId) {
+      const failedRun = await deps.createAgentRun({
+        videoId: input.videoId,
+        agentConversationId: conversation.id,
+        cursorAgentId: session.agentId,
+        stage: input.stage,
+        userMessage: seedUserMessage,
+        status: "error",
+        error: message,
+        createdBy: input.requestedByUserId,
+        completedAt: deps.now(),
+      });
+      await attachChatTurn(
+        deps,
+        input.supabase,
+        input,
+        conversation,
+        failedRun,
+        seedUserMessage,
+        () => undefined,
+      ).catch(() => undefined);
     }
 
     await updateConversationAgentStatus(
