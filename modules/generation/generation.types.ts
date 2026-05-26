@@ -42,4 +42,6 @@ export interface UpdateGenerationStatusInput {
   costCredits?: number | null;
   durationSeconds?: number | null;
   completedAt?: string | null;
+  /** Replaces `model_params` when set (e.g. Runway failure details on terminal poll). */
+  modelParams?: Record<string, unknown>;
 }

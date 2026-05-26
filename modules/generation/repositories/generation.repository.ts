@@ -274,6 +274,10 @@ export async function updateGenerationStatus(
     updates.completed_at = input.completedAt;
   }
 
+  if (input.modelParams !== undefined) {
+    updates.model_params = input.modelParams as GenerationRow["model_params"];
+  }
+
   const { data, error } = await supabase
     .from("generations")
     .update(updates)
