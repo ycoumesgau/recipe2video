@@ -209,43 +209,62 @@ export function createCursorRecipeAgentService(
 
     async startMessageWithNewAgent(input) {
       const workspace = buildRecipeAgentWorkspace(input.videoId);
-      const agent = await options.sdk.create(
-        buildAgentOptions({
-          config,
-          name: buildAgentName(input),
-          workspacePath: workspace.workspacePath,
-          videoId: input.videoId,
-          gitBranch: input.gitBranch,
-          includeAssetsManifest: input.includeAssetsManifest,
-        }),
-      );
-      const session = {
-        agentId: agent.agentId,
-        runtime: config.runtime,
-        workspacePath: workspace.workspacePath,
-        model: config.model,
-      };
+      const configuredAttempts = listModelParamAttempts(config);
+      const paramAttempts: Array<ModelSelection["params"] | undefined> =
+        configuredAttempts.length > 0 ? configuredAttempts : [undefined];
+      let lastError: unknown;
 
-      try {
-        const started = await startMessageWithAgent({
-          agent,
-          agentId: session.agentId,
-          videoId: input.videoId,
-          stage: input.stage,
-          message: input.message,
-          cursorImages: input.cursorImages,
+      for (let attemptIndex = 0; attemptIndex < paramAttempts.length; attemptIndex += 1) {
+        const modelParams = paramAttempts[attemptIndex];
+        const agent = await options.sdk.create(
+          buildAgentOptions({
+            config,
+            name: buildAgentName(input),
+            workspacePath: workspace.workspacePath,
+            videoId: input.videoId,
+            gitBranch: input.gitBranch,
+            includeAssetsManifest: input.includeAssetsManifest,
+            modelParams,
+          }),
+        );
+        const session = {
+          agentId: agent.agentId,
+          runtime: config.runtime,
           workspacePath: workspace.workspacePath,
-          includeAssetsManifestBriefing: input.includeAssetsManifest,
-        });
-
-        return {
-          session,
-          runId: started.runId,
-          cursorRunStartedAt: started.cursorRunStartedAt,
+          model: config.model,
         };
-      } finally {
-        await disposeAgent(agent);
+
+        try {
+          const started = await startMessageWithAgent({
+            agent,
+            agentId: session.agentId,
+            videoId: input.videoId,
+            stage: input.stage,
+            message: input.message,
+            cursorImages: input.cursorImages,
+            workspacePath: workspace.workspacePath,
+            includeAssetsManifestBriefing: input.includeAssetsManifest,
+          });
+
+          return {
+            session,
+            runId: started.runId,
+            cursorRunStartedAt: started.cursorRunStartedAt,
+          };
+        } catch (error) {
+          lastError = error;
+          const hasAnotherAttempt = attemptIndex < paramAttempts.length - 1;
+          if (!hasAnotherAttempt || !isCursorInvalidModelError(error)) {
+            throw error;
+          }
+        } finally {
+          await disposeAgent(agent);
+        }
       }
+
+      throw lastError instanceof Error
+        ? lastError
+        : new Error("Failed to start recipe agent with any model configuration.");
     },
 
     async pollRun(input) {
@@ -344,10 +363,11 @@ function buildAgentOptions(input: {
   videoId: string;
   gitBranch: string;
   includeAssetsManifest?: boolean;
+  modelParams?: ModelSelection["params"];
 }): AgentOptions {
   const base = {
     apiKey: input.config.apiKey,
-    model: buildModelSelection(input.config),
+    model: buildModelSelection(input.config, input.modelParams),
     name: input.name,
     agents: {
       "recipe-scene-verifier": {
@@ -428,14 +448,20 @@ function buildResumeOptions(config: RecipeAgentConfig): Partial<AgentOptions> {
   };
 }
 
-function buildModelSelection(config: RecipeAgentConfig): ModelSelection {
+function buildModelSelection(
+  config: RecipeAgentConfig,
+  paramsOverride?: ModelSelection["params"],
+): ModelSelection {
   return {
     id: config.model,
-    params: buildModelParams(config),
+    params: paramsOverride ?? buildModelParams(config),
   };
 }
 
-function buildModelParams(config: RecipeAgentConfig): ModelSelection["params"] {
+/** Exported for unit tests. */
+export function buildModelParams(
+  config: RecipeAgentConfig,
+): ModelSelection["params"] | undefined {
   if (config.model === "composer-2" || config.model === "composer-2.5") {
     // Cost guardrail: Composer models are only allowed in fast mode.
     return [{ id: "fast", value: "true" }];
@@ -446,8 +472,17 @@ function buildModelParams(config: RecipeAgentConfig): ModelSelection["params"] {
     return [
       { id: "context", value: config.modelContext ?? "272k" },
       { id: "reasoning", value: reasoning },
-      { id: "fast", value: "false" },
+      { id: "fast", value: config.modelFast ?? "false" },
     ];
+  }
+
+  if (config.model === "claude-sonnet-4-6" || config.model === "claude-opus-4-7") {
+    const defaultEffort = config.model === "claude-sonnet-4-6" ? "medium" : "high";
+    return buildClaudeContextEffortModelParams({
+      model: config.model,
+      effort: config.modelReasoning ?? defaultEffort,
+      context: config.modelContext,
+    });
   }
 
   if (!config.modelReasoning) {
@@ -466,6 +501,56 @@ function buildModelParams(config: RecipeAgentConfig): ModelSelection["params"] {
   }
 
   return [{ id: "thinking", value: config.modelReasoning }];
+}
+
+function buildClaudeContextEffortModelParams(input: {
+  model: "claude-sonnet-4-6" | "claude-opus-4-7";
+  effort: string;
+  context?: string;
+}): ModelSelection["params"] {
+  const defaultContext = input.model === "claude-opus-4-7" ? "300k" : "200k";
+
+  return [
+    { id: "thinking", value: "true" },
+    { id: "context", value: input.context ?? defaultContext },
+    { id: "effort", value: input.effort },
+  ];
+}
+
+/** Fallback order when Cursor rejects a variant (e.g. effort tier unavailable). */
+export function listModelParamAttempts(
+  config: RecipeAgentConfig,
+): Array<NonNullable<ModelSelection["params"]>> {
+  const primary = buildModelParams(config);
+  if (!primary) {
+    return [];
+  }
+
+  if (config.model !== "claude-sonnet-4-6" && config.model !== "claude-opus-4-7") {
+    return [primary];
+  }
+
+  const effort = primary.find((param) => param.id === "effort")?.value;
+  if (!effort || effort === "medium") {
+    return [primary];
+  }
+
+  return [
+    primary,
+    primary.map((param) =>
+      param.id === "effort" ? { ...param, value: "medium" } : param,
+    ),
+  ];
+}
+
+export function isCursorInvalidModelError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return (
+    message.includes("[invalid_model]") ||
+    message.includes("does not match a known variant") ||
+    message.includes("not available or invalid")
+  );
 }
 
 async function listRecipeArtifacts(input: {
