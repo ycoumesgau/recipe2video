@@ -16,6 +16,7 @@ import { persistAgentMessageAttachments } from "@/modules/media-assets/use-cases
 import type { RecipeAgentStage } from "./recipe-agent.types";
 import { getAgentRunById } from "./repositories/recipe-agent.repository";
 import { syncRecipeAgentArtifactsFromGithubOnly } from "./use-cases/sync-recipe-agent-from-github";
+import { describeAppliedSyncBlocks } from "./use-cases/sync-recipe-agent-artifacts";
 import { switchActiveConversation } from "./use-cases/switch-active-conversation";
 import {
   buildAvailableAssetsManifest,
@@ -172,6 +173,13 @@ export async function syncRecipeAgentArtifactsFromGithubAction(
         syncPlan.errors.length > 3
           ? ` (+${syncPlan.errors.length - 3} more)`
           : "";
+      const applied = describeAppliedSyncBlocks(syncPlan);
+      if (applied.length > 0) {
+        return {
+          kind: "success",
+          message: `Partial Git sync: wrote ${applied.join(", ")}. Some artifacts still invalid: ${preview}${more}`,
+        };
+      }
       return {
         kind: "error",
         message: `Git sync finished but validation failed: ${preview}${more}`,
