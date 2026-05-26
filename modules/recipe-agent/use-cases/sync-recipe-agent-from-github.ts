@@ -44,6 +44,13 @@ export async function fetchRecipeAgentArtifactsFromGithub(input: {
   cursorSessionWorkspacePath?: string | null;
   seedArtifacts?: RecipeAgentArtifact[];
   assistantResultText?: string | undefined;
+  /**
+   * When set, the assistant checkpoint embedded in `assistantResultText` is
+   * ignored so Git sync resolves from branch HEAD. Use for `publication_planning`
+   * where a stale checkpoint in `run.result` would pin an old SHA without
+   * `song-cover-plan.json`.
+   */
+  ignoreAssistantCheckpoint?: boolean;
 }): Promise<{
   artifacts: RecipeAgentArtifact[];
   gitBranch: string | null;
@@ -56,7 +63,9 @@ export async function fetchRecipeAgentArtifactsFromGithub(input: {
     : [];
   let gitBranch: string | null = input.project.agentGitBranch ?? null;
   let gitSha: string | null = input.project.agentGitCommitSha ?? null;
-  const assistantCheckpoint = extractAssistantCheckpoint(input.assistantResultText);
+  const assistantCheckpoint = input.ignoreAssistantCheckpoint
+    ? null
+    : extractAssistantCheckpoint(input.assistantResultText);
   const hasAssistantCheckpoint = !!assistantCheckpoint?.recipe2videoCheckpoint.commitSha;
 
   if (assistantCheckpoint?.recipe2videoCheckpoint.branch) {

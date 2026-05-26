@@ -12,9 +12,10 @@
  *     5e846a3d-92ea-4607-8bfc-91f26b88291e publication_planning \
  *     --conversation-id=9273b471-6343-4eb0-a20a-56309227dd9c
  */
+import { createClient } from "@supabase/supabase-js";
 import { Agent } from "@cursor/sdk";
 
-import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
+import type { Database } from "@/shared/supabase/database.types";
 import { resolveRecipeAgentConfig } from "@/modules/recipe-agent/recipe-agent.config";
 import { createCursorRecipeAgentService } from "@/modules/recipe-agent/services/cursor-agent.service";
 import type { RecipeAgentStage } from "@/modules/recipe-agent/recipe-agent.types";
@@ -37,7 +38,9 @@ function parseArgs(argv: string[]) {
   const positional: string[] = [];
   let conversationId: string | undefined;
   let message: string | undefined;
-  let requestedByUserId = "system";
+  let requestedByUserId =
+    process.env.RECIPE_AGENT_REQUESTED_BY_USER_ID ??
+    "650ba2d7-6bdc-4d3d-a35e-afabd63412f4";
 
   for (const arg of argv) {
     if (arg.startsWith("--conversation-id=")) {
@@ -79,7 +82,22 @@ async function main() {
     process.exit(1);
   }
 
-  const supabase = createSupabaseAdminClient();
+  const supabaseUrl =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
+  const supabaseKey =
+    process.env.SUPABASE_SECRET_KEY ??
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.error(
+      "Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY before running.",
+    );
+    process.exit(1);
+  }
+
+  const supabase = createClient<Database>(supabaseUrl, supabaseKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
   const config = resolveRecipeAgentConfig();
   const eventQueue: RecipeAgentPollingWorkflowEvent[] = [];
 

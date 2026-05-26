@@ -513,6 +513,7 @@ export async function finalizeRecipeAgentRunWorkflow(
     cursorSessionWorkspacePath: result.workspacePath,
     seedArtifacts: result.artifacts,
     assistantResultText: result.result,
+    ignoreAssistantCheckpoint: data.stage === "publication_planning",
   });
   const artifactsToSync = selectArtifactsForStage(data.stage, enriched.artifacts);
   const syncPlan = await deps.syncArtifacts(deps.supabase, {
@@ -521,6 +522,10 @@ export async function finalizeRecipeAgentRunWorkflow(
     syncStoryboardTables: conversation.isActive,
     artifacts: artifactsToSync,
   });
+
+  if (data.stage === "publication_planning" && data.terminalStatus === "finished") {
+    assertPublicationPlanningReadiness({ syncPlan });
+  }
 
   if (data.stage === "recipe_ingest" && data.terminalStatus === "finished") {
     assertRecipeIngestReadiness({
@@ -690,6 +695,16 @@ function mapTerminalStatus(
   }
 
   return "error";
+}
+
+function assertPublicationPlanningReadiness(input: {
+  syncPlan: RecipeAgentArtifactSyncPlan;
+}) {
+  if (!input.syncPlan.songCoverPlan) {
+    throw new Error(
+      "Publication planning finished without syncing song-cover-plan.json. The agent must push a valid song-cover-plan.json checkpoint before the run can complete.",
+    );
+  }
 }
 
 function assertRecipeIngestReadiness(input: {
