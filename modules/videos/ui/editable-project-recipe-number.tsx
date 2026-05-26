@@ -20,13 +20,19 @@ interface EditableProjectRecipeNumberProps {
   videoId: string;
   initialRecipeNumber: number;
   className?: string;
+  /** `page` matches overview title; `compact` fits dashboard cards. */
+  variant?: "page" | "compact";
+  numberClassName?: string;
 }
 
 export function EditableProjectRecipeNumber({
   videoId,
   initialRecipeNumber,
   className,
+  variant = "page",
+  numberClassName,
 }: EditableProjectRecipeNumberProps) {
+  const isCompact = variant === "compact";
   const [recipeNumber, setRecipeNumber] = useState(initialRecipeNumber);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(initialRecipeNumber));
@@ -105,11 +111,20 @@ export function EditableProjectRecipeNumber({
   }
 
   return (
-    <div className={cn("space-y-1", className)}>
+    <div
+      className={cn("space-y-1", className)}
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+      }}
+    >
       <div
         className={cn(
-          "group flex items-center gap-2",
+          "group flex items-center gap-1",
           editing ? "items-stretch" : "",
+          isCompact ? "gap-0.5" : "gap-2",
         )}
       >
         {editing ? (
@@ -117,7 +132,13 @@ export function EditableProjectRecipeNumber({
             ref={inputRef}
             aria-invalid={error ? true : undefined}
             aria-label="Recipe number"
-            className="h-auto w-[4.5rem] border-transparent bg-transparent px-0 py-0 text-right font-medium tabular-nums text-muted-foreground shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            className={cn(
+              "h-auto border-transparent bg-transparent px-0 py-0 font-medium tabular-nums shadow-none focus-visible:ring-0 focus-visible:ring-offset-0",
+              isCompact
+                ? "w-[2.75rem] text-inherit"
+                : "w-[4.5rem] text-right text-muted-foreground",
+              numberClassName,
+            )}
             disabled={isPending}
             inputMode="numeric"
             value={draft}
@@ -145,26 +166,42 @@ export function EditableProjectRecipeNumber({
         ) : (
           <>
             <span
-              className="cursor-text text-right font-medium tabular-nums text-muted-foreground licorn-page-title"
+              className={cn(
+                "cursor-text font-medium tabular-nums",
+                isCompact
+                  ? "text-inherit"
+                  : "text-right text-muted-foreground licorn-page-title",
+                numberClassName,
+              )}
+              title={error ?? undefined}
               onDoubleClick={startEditing}
             >
               {formatRecipeNumberLabel(recipeNumber)}
             </span>
             <Button
-              className="h-8 w-8 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+              className={cn(
+                "shrink-0 opacity-0 transition-opacity group-hover:opacity-100",
+                isCompact ? "h-6 w-6" : "h-8 w-8",
+              )}
               size="icon"
               type="button"
               variant="ghost"
               aria-label="Edit recipe number"
               onClick={startEditing}
             >
-              <Pencil className="h-4 w-4" />
+              <Pencil className={isCompact ? "h-3 w-3" : "h-4 w-4"} />
             </Button>
           </>
         )}
       </div>
       {error ? (
-        <p className="text-sm text-destructive" role="status">
+        <p
+          className={cn(
+            "text-destructive",
+            isCompact ? "max-w-[10rem] text-xs leading-tight" : "text-sm",
+          )}
+          role="status"
+        >
           {error}
         </p>
       ) : null}
