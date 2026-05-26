@@ -16,6 +16,8 @@ import { loadProjectCostDashboardData } from "@/modules/costs/load-cost-dashboar
 import type { CostDashboardData } from "@/modules/costs/cost.types";
 import { readDashboardDataMode } from "@/modules/dashboard/dashboard-data-mode";
 import { countActiveGenerationsForSegments } from "@/modules/generation/repositories/generation.repository";
+import { countGeneratingReferenceAssetsForVideo } from "@/modules/references/repositories/reference.repository";
+import { countGeneratingSongCoverArtifactsForVideo } from "@/modules/song-cover/repositories/song-cover.repository";
 import {
   getRecipeAgentThreadByVideoId,
   listRecipeAgentMessagesByThreadId,
@@ -295,10 +297,20 @@ async function loadProject(videoId: string, requestedConversationId?: string) {
       ),
       loadProjectCostDashboardData(videoId, { useMockFallback }),
     ]);
-    const activeTaskCount = await countActiveGenerationsForSegments(
-      supabase,
-      seedanceSegments.map((segment) => segment.id),
-    );
+    const segmentIds = seedanceSegments.map((segment) => segment.id);
+    const [
+      segmentGenerationCount,
+      referenceGenerationCount,
+      songCoverGenerationCount,
+    ] = await Promise.all([
+      countActiveGenerationsForSegments(supabase, segmentIds),
+      countGeneratingReferenceAssetsForVideo(supabase, videoId),
+      countGeneratingSongCoverArtifactsForVideo(supabase, videoId),
+    ]);
+    const activeTaskCount =
+      segmentGenerationCount +
+      referenceGenerationCount +
+      songCoverGenerationCount;
     const recipeSourcePhotoPreviews =
       project &&
       getRecipeSourceSummaryFromRecipeData(project.recipeData)?.type === "photos"

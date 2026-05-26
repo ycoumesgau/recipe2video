@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Film,
+  Disc3,
   ImageIcon,
   PauseCircle,
   PlayCircle,
@@ -52,9 +53,14 @@ import type { Generation } from "@/modules/generation/generation.types";
 import type { GenerationStatus } from "@/modules/generation/generation-status";
 import { getGenerationQueuePaused } from "@/modules/generation/repositories/queue-state.repository";
 import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
-import { RUNWAY_DEFAULT_REFERENCE_IMAGE_MODEL } from "@/modules/generation/runway.constants";
+import {
+  RUNWAY_DEFAULT_REFERENCE_IMAGE_MODEL,
+  RUNWAY_DEFAULT_VIDEO_MODEL,
+} from "@/modules/generation/runway.constants";
 import type { ReferenceAsset } from "@/modules/references/reference.types";
 import { listGeneratingReferenceAssets } from "@/modules/references/repositories/reference.repository";
+import type { SongCoverArtifact } from "@/modules/song-cover/song-cover.types";
+import { listGeneratingSongCoverArtifacts } from "@/modules/song-cover/repositories/song-cover.repository";
 import { getSegmentById } from "@/modules/storyboard/repositories/segment.repository";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 
@@ -96,8 +102,20 @@ interface ActiveCloudRenderRow {
   updatedAt: string;
 }
 
+interface ActiveSongCoverRow {
+  artifactId: string;
+  videoId: string;
+  videoTitle: string;
+  assetLabel: string;
+  model: string;
+  runwayTaskId: string | null;
+  runwayTaskStatus: RunwayTaskStatusValue | null;
+  runwayProgress: number | null;
+  startedAt: string;
+}
+
 export default async function ActiveGenerationsPage() {
-  const { rows, referenceRows, paused, error, cloudRenders } =
+  const { rows, referenceRows, songCoverRows, paused, error, cloudRenders } =
     await loadActiveGenerations();
 
   return (
@@ -167,6 +185,7 @@ export default async function ActiveGenerationsPage() {
         enabled={
           rows.length > 0 ||
           referenceRows.length > 0 ||
+          songCoverRows.length > 0 ||
           cloudRenders.length > 0
         }
       />
@@ -250,6 +269,82 @@ export default async function ActiveGenerationsPage() {
         </Card>
       ) : null}
 
+      {songCoverRows.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Disc3 className="h-5 w-5" />
+              Cover &amp; Canvas
+            </CardTitle>
+            <CardDescription>
+              Album cover (`gpt_image_2`) and Spotify Canvas (`seedance2`) tasks
+              from the publication tab. Progress mirrors Runway polling on
+              `song_cover_artifacts`.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Asset</TableHead>
+                  <TableHead>Model</TableHead>
+                  <TableHead>Runway</TableHead>
+                  <TableHead>Progress</TableHead>
+                  <TableHead>Started</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {songCoverRows.map((task) => (
+                  <TableRow key={task.artifactId}>
+                    <TableCell className="font-medium">
+                      {task.videoTitle}
+                    </TableCell>
+                    <TableCell>{task.assetLabel}</TableCell>
+                    <TableCell>{task.model}</TableCell>
+                    <TableCell>
+                      {task.runwayTaskStatus ? (
+                        <Badge
+                          variant={
+                            task.runwayTaskStatus === "THROTTLED"
+                              ? "destructive"
+                              : "outline"
+                          }
+                        >
+                          {task.runwayTaskStatus}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="min-w-32">
+                      <Progress
+                        value={progressForReferenceImageRow(
+                          task.runwayProgress,
+                          task.runwayTaskStatus,
+                        )}
+                      />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDateTime(task.startedAt)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/videos/${task.videoId}/cover-and-canvas`}>
+                          Open Cover &amp; Canvas
+                          <ChevronRight className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -267,8 +362,10 @@ export default async function ActiveGenerationsPage() {
               <CheckCircle2 className="h-4 w-4" />
               <AlertTitle>No active tasks</AlertTitle>
               <AlertDescription>
-                Generations triggered from project pages will appear here while
-                Inngest workflows are running.
+                Seedance segment generations triggered from project pages appear
+                here while Inngest workflows are running. Reference images,
+                Cover &amp; Canvas tasks, and cloud assembly renders are listed
+                in the sections above when active.
               </AlertDescription>
             </Alert>
           ) : (
@@ -388,12 +485,13 @@ export default async function ActiveGenerationsPage() {
 async function loadActiveGenerations() {
   try {
     const supabase = createSupabaseAdminClient();
-    const [generations, paused, compositions, generatingRefs] =
+    const [generations, paused, compositions, generatingRefs, generatingSongCovers] =
       await Promise.all([
         listActiveGenerations(supabase, { limit: 50 }),
         getGenerationQueuePaused(supabase),
         listInFlightCompositionRenders(supabase, { limit: 20 }),
         listGeneratingReferenceAssets(supabase, { limit: 50 }),
+        listGeneratingSongCoverArtifacts(supabase, { limit: 50 }),
       ]);
 
     const rows = await Promise.all(
@@ -408,6 +506,12 @@ async function loadActiveGenerations() {
       ),
     );
 
+    const songCoverRows = await Promise.all(
+      generatingSongCovers.map(async (artifact) =>
+        decorateSongCoverTask(supabase, artifact),
+      ),
+    );
+
     const cloudRenders = await Promise.all(
       compositions.map(async (composition) =>
         decorateCloudRender(supabase, composition),
@@ -419,6 +523,9 @@ async function loadActiveGenerations() {
       referenceRows: referenceRows.filter(
         (row): row is ActiveReferenceImageRow => Boolean(row),
       ),
+      songCoverRows: songCoverRows.filter(
+        (row): row is ActiveSongCoverRow => Boolean(row),
+      ),
       paused,
       error: null as string | null,
       cloudRenders,
@@ -427,6 +534,7 @@ async function loadActiveGenerations() {
     return {
       rows: [] as ActiveTaskRow[],
       referenceRows: [] as ActiveReferenceImageRow[],
+      songCoverRows: [] as ActiveSongCoverRow[],
       paused: false,
       error:
         error instanceof Error
@@ -435,6 +543,29 @@ async function loadActiveGenerations() {
       cloudRenders: [] as ActiveCloudRenderRow[],
     };
   }
+}
+
+async function decorateSongCoverTask(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  artifact: SongCoverArtifact,
+): Promise<ActiveSongCoverRow | null> {
+  const video = await getVideoProjectById(supabase, artifact.videoId);
+
+  return {
+    artifactId: artifact.id,
+    videoId: artifact.videoId,
+    videoTitle: video?.title ?? "Untitled project",
+    assetLabel:
+      artifact.kind === "album_cover" ? "Album cover" : "Spotify Canvas",
+    model:
+      artifact.kind === "album_cover"
+        ? RUNWAY_DEFAULT_REFERENCE_IMAGE_MODEL
+        : RUNWAY_DEFAULT_VIDEO_MODEL,
+    runwayTaskId: artifact.runwayTaskId ?? null,
+    runwayTaskStatus: artifact.runwayTaskStatus ?? null,
+    runwayProgress: artifact.runwayProgress ?? null,
+    startedAt: artifact.updatedAt,
+  };
 }
 
 async function decorateReferenceImageTask(
