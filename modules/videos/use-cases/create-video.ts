@@ -117,8 +117,8 @@ export async function createVideoDraft(
     manualTitle ??
     buildDraftTitle({ recipeUrl, pastedRecipeText, demoRecipeId });
 
-  await archiveAllActiveVideoProjects(supabase);
   const recipeNumber = await getNextRecipeNumber(supabase);
+  await archiveAllActiveVideoProjects(supabase);
 
   const project = await createVideoProject(supabase, {
     title,
