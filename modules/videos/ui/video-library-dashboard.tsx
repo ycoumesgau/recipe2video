@@ -72,7 +72,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { ProjectCardArchiveMenu } from "@/modules/videos/ui/project-card-archive-menu";
-import { ProjectTitleWithRecipeNumber } from "@/modules/videos/ui/project-recipe-number-label";
+import { ProjectTitleWithEditableRecipeNumber } from "@/modules/videos/ui/project-title-with-editable-recipe-number";
 
 type StatusFilter = "all" | VideoStatus;
 
@@ -384,11 +384,13 @@ function ProjectCard({
             <div>
               <Badge variant="secondary">{project.recipeSourceLabel}</Badge>
               <p className="mt-2 text-lg font-heading font-bold text-white drop-shadow">
-                <ProjectTitleWithRecipeNumber
+                <ProjectTitleWithEditableRecipeNumber
+                  editable={project.canArchive}
                   numberClassName="text-white/80"
                   recipeNumber={project.recipeNumber}
                   title={project.thumbnailLabel}
                   titleClassName="text-white"
+                  videoId={project.id}
                 />
               </p>
             </div>
@@ -401,9 +403,11 @@ function ProjectCard({
           <div>
             <Badge variant="secondary">{project.recipeSourceLabel}</Badge>
             <p className="mt-2 text-lg font-heading font-bold">
-              <ProjectTitleWithRecipeNumber
+              <ProjectTitleWithEditableRecipeNumber
+                editable={project.canArchive}
                 recipeNumber={project.recipeNumber}
                 title={project.thumbnailLabel}
+                videoId={project.id}
               />
             </p>
           </div>
@@ -429,9 +433,11 @@ function ProjectCard({
           </div>
         </CardAction>
         <CardTitle className="min-w-0 pr-2">
-          <ProjectTitleWithRecipeNumber
+          <ProjectTitleWithEditableRecipeNumber
+            editable={project.canArchive}
             recipeNumber={project.recipeNumber}
             title={project.title}
+            videoId={project.id}
           />
         </CardTitle>
         <CardDescription>
