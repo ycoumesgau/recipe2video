@@ -37,11 +37,18 @@ export const RECIPE_AGENT_OPTIONAL_ARTIFACT_NAMES = [
   "song-cover-plan.json",
 ] as const;
 
+/**
+ * Default wall-clock budget for Cursor SDK recipe agent runs (Inngest polling).
+ * Reference image generation uses {@link REFERENCE_IMAGE_MAX_POLL_DURATION_MS}
+ * in `modules/references/use-cases/reference-image-poll-workflow.ts` instead.
+ */
+export const RECIPE_AGENT_CURSOR_RUN_MAX_DURATION_MS = 30 * 60 * 1000;
+
 /** Wall-clock budget per stage for Cursor agent run polling. */
 export const RECIPE_AGENT_RUN_MAX_DURATION_MS_BY_STAGE = {
-  recipe_ingest: 30 * 60 * 1000,
-  seedance_segmentation: 20 * 60 * 1000,
-  default: 10 * 60 * 1000,
+  recipe_ingest: RECIPE_AGENT_CURSOR_RUN_MAX_DURATION_MS,
+  seedance_segmentation: RECIPE_AGENT_CURSOR_RUN_MAX_DURATION_MS,
+  default: RECIPE_AGENT_CURSOR_RUN_MAX_DURATION_MS,
 } as const;
 
 export const RECIPE_AGENT_POLL_MIN_DELAY_SECONDS = 5;
