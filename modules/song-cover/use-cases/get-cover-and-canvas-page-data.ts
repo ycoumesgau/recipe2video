@@ -13,6 +13,7 @@ import type {
   SongCoverArtifactReview,
   SongCoverArtifactVariant,
 } from "../song-cover.types";
+import { resolveSongCoverReferencePreviews } from "./resolve-song-cover-reference-previews";
 
 const PREVIEW_TTL_SECONDS = 60 * 60;
 
@@ -44,20 +45,8 @@ export async function getCoverAndCanvasPageData(
   );
   const recipeRefNames = new Set(recipeRefs.map((r) => r.canonicalName));
 
-  const albumCover = await buildReview(
-    supabase,
-    albumCoverArtifact,
-    mediaAssets,
-    libraryIndex,
-    recipeRefNames,
-  );
-  const spotifyCanvas = await buildReview(
-    supabase,
-    spotifyCanvasArtifact,
-    mediaAssets,
-    libraryIndex,
-    recipeRefNames,
-  );
+  const albumCover = await buildReview(supabase, videoId, albumCoverArtifact, mediaAssets, libraryIndex, recipeRefNames);
+  const spotifyCanvas = await buildReview(supabase, videoId, spotifyCanvasArtifact, mediaAssets, libraryIndex, recipeRefNames);
 
   return {
     albumCover,
@@ -68,6 +57,7 @@ export async function getCoverAndCanvasPageData(
 
 async function buildReview(
   supabase: SupabaseDataClient,
+  videoId: string,
   artifact: SongCoverArtifact | null,
   mediaAssets: MediaAsset[],
   libraryIndex: Awaited<ReturnType<typeof findAssetLibraryByCanonicalNames>>,
@@ -115,11 +105,24 @@ async function buildReview(
     (name) => !libraryIndex.has(name) && !recipeRefNames.has(name),
   );
 
+  const [imageReferencePreviews, videoReferencePreviews] = await Promise.all([
+    resolveSongCoverReferencePreviews(supabase, {
+      videoId,
+      requestedNames: artifact.imageReferenceCanonicalNames,
+    }),
+    resolveSongCoverReferencePreviews(supabase, {
+      videoId,
+      requestedNames: artifact.videoReferenceCanonicalNames,
+    }),
+  ]);
+
   return {
     artifact,
     mediaAsset: activeMediaAsset,
     previewUrl,
     variants,
+    imageReferencePreviews,
+    videoReferencePreviews,
     unresolvedImageReferences,
     unresolvedVideoReferences,
   };
