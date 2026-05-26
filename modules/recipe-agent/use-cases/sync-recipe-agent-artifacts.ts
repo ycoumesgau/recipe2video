@@ -138,6 +138,11 @@ interface BuildRecipeAgentArtifactSyncPlanInput {
 }
 
 export interface RecipeAgentArtifactSyncPlan {
+  /**
+   * True only when every artifact passed schema validation and no post-sync
+   * warnings were recorded. A `false` value does not mean nothing was written:
+   * see {@link describeAppliedSyncBlocks}.
+   */
   valid: boolean;
   artifactRecords: UpsertAgentArtifactInput[];
   recipePatch: {
@@ -164,6 +169,45 @@ export interface RecipeAgentArtifactSyncPlan {
    */
   songCoverPlan: SongCoverPlan | null;
   errors: string[];
+}
+
+/** Human-readable labels for blocks that `syncRecipeAgentArtifacts` may persist. */
+const SYNC_BLOCK_LABELS: Record<string, string> = {
+  recipe: "recipe data",
+  logicalScenes: "logical scenes",
+  segments: "Seedance segments",
+  references: "reference plan",
+  suno: "Suno prompts",
+  songCover: "Cover & Canvas",
+};
+
+/**
+ * Which downstream tables received payload from valid artifacts in the last
+ * plan. Useful after a partial sync (`valid === false` but some blocks applied).
+ */
+export function describeAppliedSyncBlocks(
+  plan: RecipeAgentArtifactSyncPlan,
+): string[] {
+  const blocks: string[] = [];
+  if (plan.recipePatch) {
+    blocks.push(SYNC_BLOCK_LABELS.recipe);
+  }
+  if (plan.logicalScenes.length > 0) {
+    blocks.push(SYNC_BLOCK_LABELS.logicalScenes);
+  }
+  if (plan.segments.length > 0) {
+    blocks.push(SYNC_BLOCK_LABELS.segments);
+  }
+  if (plan.referencesRaw.length > 0) {
+    blocks.push(SYNC_BLOCK_LABELS.references);
+  }
+  if (plan.sunoPrompt || plan.sunoPromptV2) {
+    blocks.push(SYNC_BLOCK_LABELS.suno);
+  }
+  if (plan.songCoverPlan) {
+    blocks.push(SYNC_BLOCK_LABELS.songCover);
+  }
+  return blocks;
 }
 
 export function buildRecipeAgentArtifactSyncPlan(
@@ -327,13 +371,13 @@ export async function syncRecipeAgentArtifacts(
     await upsertAgentArtifact(supabase, artifactRecord);
   }
 
-  if (!plan.valid) {
-    return plan;
-  }
-
   if (input.syncStoryboardTables === false) {
     return plan;
   }
+
+  // Partial sync: each block below runs only when its source artifact(s) validated.
+  // Invalid artifacts are still stored in `agent_artifacts` with errors; they do
+  // not block siblings (e.g. a bad recipe-analysis.json must not drop song cover).
 
   const writeScope = { agentConversationId: input.agentConversationId };
 
@@ -572,6 +616,8 @@ export async function syncRecipeAgentArtifacts(
       plan.errors.push(`song-cover-plan.json: ${songCoverSync.canvasPromptLoopWarning}`);
     }
   }
+
+  plan.valid = plan.errors.length === 0;
 
   return plan;
 }

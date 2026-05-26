@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildRecipeAgentArtifactSyncPlan,
   createArtifactContentHash,
+  describeAppliedSyncBlocks,
 } from "./sync-recipe-agent-artifacts";
 
 const videoId = "video-1";
@@ -302,6 +303,80 @@ test("buildRecipeAgentArtifactSyncPlan tolerates unknown keys on recipe-analysis
   );
   assert.equal(record?.validationStatus, "valid");
   assert.deepEqual(record?.validationErrors, []);
+});
+
+test("describeAppliedSyncBlocks lists only blocks present in the plan", () => {
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact(
+        "recipe-analysis.json",
+        JSON.stringify({
+          recipe: {
+            title: "Test",
+            sourceType: "text",
+            ingredients: [],
+            steps: [],
+            subRecipes: [],
+            assumptions: [],
+            timing: null,
+            criticalTransformations: [],
+            visualTextureOpportunities: [],
+            possibleHooks: [],
+            promptPolicySources: [],
+          },
+          clarifyingQuestions: [],
+        }),
+      ),
+      artifact("suno-prompt.md", "# Suno"),
+    ],
+  });
+
+  assert.deepEqual(describeAppliedSyncBlocks(plan), [
+    "recipe data",
+    "Suno prompts",
+  ]);
+});
+
+test("buildRecipeAgentArtifactSyncPlan keeps invalid recipe-analysis out of recipe patch but keeps valid siblings", () => {
+  const songCoverPlanJson = JSON.stringify({
+    schemaVersion: 1,
+    albumCover: {
+      prompt:
+        "Square 1:1 album cover. Use @FinalDishVisual as the hero foreground dish on @KitchenIslandDefault with @CharacterSheet for mascot identity.",
+      conditioningReferences: ["FinalDishVisual", "KitchenIslandDefault", "CharacterSheet"],
+    },
+    spotifyCanvas: {
+      prompt:
+        "Vertical 9:16 food-porn loop, 5 seconds. The first frame and the last frame must be visually identical to @FinalDishVisual for a seamless loop.",
+      imageReferences: ["FinalDishVisual", "KitchenIslandDefault"],
+      videoReferences: [],
+      loopAnchorReferenceName: "FinalDishVisual",
+      durationSeconds: 5,
+      mascotAppearanceMode: "discrete_gesture",
+    },
+    qualityChecks: {
+      noTextOnScreen: true,
+      noLogoOrUrl: true,
+      noLipsyncToMusic: true,
+      mascotAppearsAtLeastOnce: true,
+      loopAnchorIsAlsoInImageReferences: true,
+      durationWithinSpotifyWindow: true,
+    },
+  });
+
+  const plan = buildRecipeAgentArtifactSyncPlan({
+    videoId,
+    artifacts: [
+      artifact("recipe-analysis.json", '{"recipe":{}}'),
+      artifact("song-cover-plan.json", songCoverPlanJson),
+    ],
+  });
+
+  assert.equal(plan.valid, false);
+  assert.equal(plan.recipePatch, null);
+  assert.ok(plan.songCoverPlan);
+  assert.deepEqual(describeAppliedSyncBlocks(plan), ["Cover & Canvas"]);
 });
 
 test("buildRecipeAgentArtifactSyncPlan keeps invalid artifacts out of sync plan", () => {
