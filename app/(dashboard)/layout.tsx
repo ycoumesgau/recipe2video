@@ -10,6 +10,7 @@ import { loadRunwayBudgetSnapshot } from "@/modules/costs/load-runway-budget-sna
 import { readDashboardDataMode } from "@/modules/dashboard/dashboard-data-mode";
 import { countActiveGenerations } from "@/modules/generation/repositories/generation.repository";
 import { countGeneratingReferenceAssets } from "@/modules/references/repositories/reference.repository";
+import { countGeneratingSongCoverArtifacts } from "@/modules/song-cover/repositories/song-cover.repository";
 
 export const dynamic = "force-dynamic";
 
@@ -49,13 +50,19 @@ export default async function DashboardLayout({
 async function loadHeaderState() {
   try {
     const supabase = createSupabaseAdminClient();
-    const [snapshot, seedanceActiveCount, referenceImageActiveCount] =
-      await Promise.all([
-        loadRunwayBudgetSnapshot(),
-        countActiveGenerations(supabase),
-        countGeneratingReferenceAssets(supabase),
-      ]);
-    const activeTaskCount = seedanceActiveCount + referenceImageActiveCount;
+    const [
+      snapshot,
+      seedanceActiveCount,
+      referenceImageActiveCount,
+      songCoverActiveCount,
+    ] = await Promise.all([
+      loadRunwayBudgetSnapshot(),
+      countActiveGenerations(supabase),
+      countGeneratingReferenceAssets(supabase),
+      countGeneratingSongCoverArtifacts(supabase),
+    ]);
+    const activeTaskCount =
+      seedanceActiveCount + referenceImageActiveCount + songCoverActiveCount;
 
     return {
       creditsUsed: snapshot.creditsUsed,

@@ -153,6 +153,51 @@ export async function updateSongCoverArtifact(
   return mapSongCoverArtifact(data);
 }
 
+export async function listGeneratingSongCoverArtifacts(
+  supabase: SupabaseDataClient,
+  options: { limit?: number } = {},
+): Promise<SongCoverArtifact[]> {
+  let query = supabase
+    .from("song_cover_artifacts")
+    .select("*")
+    .eq("status", "generating")
+    .order("updated_at", { ascending: false });
+
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+
+  const { data, error } = await query;
+  throwIfSupabaseError(error, "listGeneratingSongCoverArtifacts failed");
+  return (data ?? []).map(mapSongCoverArtifact);
+}
+
+export async function countGeneratingSongCoverArtifactsForVideo(
+  supabase: SupabaseDataClient,
+  videoId: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("song_cover_artifacts")
+    .select("id", { count: "exact", head: true })
+    .eq("video_id", videoId)
+    .eq("status", "generating");
+
+  throwIfSupabaseError(error, "countGeneratingSongCoverArtifactsForVideo failed");
+  return count ?? 0;
+}
+
+export async function countGeneratingSongCoverArtifacts(
+  supabase: SupabaseDataClient,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from("song_cover_artifacts")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "generating");
+
+  throwIfSupabaseError(error, "countGeneratingSongCoverArtifacts failed");
+  return count ?? 0;
+}
+
 function mapSongCoverArtifact(row: SongCoverArtifactRow): SongCoverArtifact {
   return {
     id: row.id,
