@@ -1112,13 +1112,27 @@ test("pollSegmentGenerationWorkflow refunds credits when Runway fails the task",
         id: "task-1",
         status: "FAILED",
         generationStatus: "failed",
-        output: [],
+        failure: "Text prompt did not pass moderation check",
+        failureCode: "INPUT_PREPROCESSING.SAFETY.TEXT",
         isTerminal: true,
       }),
-      updateGenerationStatus: async (input) => ({
-        ...baseGeneration,
-        status: input.status,
-      }),
+      updateGenerationStatus: async (input) => {
+        if (input.modelParams) {
+          assert.equal(
+            input.modelParams.runwayFailure,
+            "Text prompt did not pass moderation check",
+          );
+          assert.equal(
+            input.modelParams.runwayFailureCode,
+            "INPUT_PREPROCESSING.SAFETY.TEXT",
+          );
+        }
+        return {
+          ...baseGeneration,
+          status: input.status,
+          modelParams: input.modelParams ?? baseGeneration.modelParams,
+        };
+      },
       updateSegmentStatus: async (_segmentId, status) => ({
         ...baseSegment,
         status,

@@ -493,6 +493,14 @@ function VariantCard({
           <p className="text-xs text-muted-foreground">
             Runway status: <span className="font-medium">{generation.runwayTaskStatus}</span>
           </p>
+          {typeof generation.modelParams.runwayFailure === "string" ? (
+            <p className="text-xs text-destructive">
+              {generation.modelParams.runwayFailure}
+              {typeof generation.modelParams.runwayFailureCode === "string"
+                ? ` (${generation.modelParams.runwayFailureCode})`
+                : null}
+            </p>
+          ) : null}
           {shouldShowRunwayProgress(generation) &&
           typeof generation.runwayProgress === "number" ? (
             <div className="space-y-1">

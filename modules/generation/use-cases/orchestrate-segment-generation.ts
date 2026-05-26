@@ -368,6 +368,10 @@ export async function pollSegmentGenerationWorkflow(
     runwayTaskStatus: task.status,
     runwayProgress,
     completedAt: task.isTerminal ? deps.now() : undefined,
+    modelParams:
+      task.status === "FAILED" || task.status === "CANCELLED"
+        ? mergeRunwayFailureIntoModelParams(generation.modelParams, task)
+        : undefined,
   });
 
   if (task.status === "SUCCEEDED") {
@@ -835,6 +839,21 @@ function assertSeedance2DurationValid(segment: SeedanceSegment) {
 
 function estimateSeedanceCredits(durationSeconds: number) {
   return Math.ceil(durationSeconds * RUNWAY_SEEDANCE2_CREDITS_PER_SECOND);
+}
+
+function mergeRunwayFailureIntoModelParams(
+  modelParams: Record<string, unknown>,
+  task: RunwayTaskStatus,
+): Record<string, unknown> {
+  if (!task.failure && !task.failureCode) {
+    return modelParams;
+  }
+
+  return {
+    ...modelParams,
+    ...(task.failure ? { runwayFailure: task.failure } : {}),
+    ...(task.failureCode ? { runwayFailureCode: task.failureCode } : {}),
+  };
 }
 
 function computeNextPollDelaySeconds(task: RunwayTaskStatus) {
