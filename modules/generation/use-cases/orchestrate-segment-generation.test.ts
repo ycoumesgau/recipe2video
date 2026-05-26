@@ -229,6 +229,7 @@ const baseSegment: SeedanceSegment = {
 const baseVideo: VideoProject = {
   id: "video-1",
   title: "Paris-Brest",
+  recipeNumber: 1,
   slug: "paris-brest",
   recipeUrl: null,
   recipeData: null,

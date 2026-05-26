@@ -18,8 +18,8 @@ export default async function VideoProjectLayout({
   params: Promise<{ videoId: string }>;
 }>) {
   const { videoId } = await params;
-  const [projectTitle, conversationSwitcherProps] = await Promise.all([
-    loadProjectTitleForBreadcrumb(videoId),
+  const [projectCrumb, conversationSwitcherProps] = await Promise.all([
+    loadProjectCrumbForBreadcrumb(videoId),
     loadConversationSwitcherProps(videoId),
   ]);
 
@@ -36,7 +36,8 @@ export default async function VideoProjectLayout({
           />
         </Suspense>
       }
-      projectTitle={projectTitle}
+      projectTitle={projectCrumb.title}
+      recipeNumber={projectCrumb.recipeNumber}
       videoId={videoId}
     >
       {children}
@@ -44,17 +45,23 @@ export default async function VideoProjectLayout({
   );
 }
 
-async function loadProjectTitleForBreadcrumb(videoId: string): Promise<string> {
+async function loadProjectCrumbForBreadcrumb(videoId: string): Promise<{
+  title: string;
+  recipeNumber: number;
+}> {
   try {
     const supabase = createSupabaseAdminClient();
     const project = await getVideoProjectById(supabase, videoId);
-    if (project?.title) {
-      return project.title;
+    if (project) {
+      return {
+        title: project.title || "Project",
+        recipeNumber: project.recipeNumber,
+      };
     }
   } catch {
     /* best-effort breadcrumb label */
   }
-  return "Project";
+  return { title: "Project", recipeNumber: 0 };
 }
 
 async function loadConversationSwitcherProps(videoId: string) {

@@ -11,9 +11,12 @@ import {
 import { createSupabaseAdminClient } from "@/modules/auth/supabase/admin";
 import {
   getVideoProjectById,
+  isRecipeNumberTaken,
   setVideoProjectArchived,
+  updateVideoProjectRecipeNumber,
   updateVideoProjectTitle,
 } from "@/modules/videos/repositories/video.repository";
+import { parseRecipeNumberInput } from "@/modules/videos/recipe-number";
 import { createVideoDraft } from "@/modules/videos/use-cases/create-video";
 import { MAX_VIDEO_TITLE_LENGTH } from "@/modules/videos/video.constants";
 
@@ -151,6 +154,67 @@ export async function updateVideoProjectTitleAction(
   }
 
   await updateVideoProjectTitle(supabase, videoId, trimmed);
+  revalidatePath("/");
+  revalidatePath(`/videos/${videoId}`);
+  return { ok: true };
+}
+
+export type UpdateVideoRecipeNumberResult =
+  | { ok: true }
+  | { ok: false; message: string };
+
+export async function updateVideoProjectRecipeNumberAction(
+  videoId: string,
+  rawRecipeNumber: string,
+): Promise<UpdateVideoRecipeNumberResult> {
+  const recipeNumber = parseRecipeNumberInput(rawRecipeNumber);
+  if (recipeNumber == null) {
+    return {
+      ok: false,
+      message: "Enter a whole number between 1 and 999999.",
+    };
+  }
+
+  const profile = await getCurrentProfile();
+  if (!profile) {
+    return { ok: false, message: "Authentication is required." };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const project = await getVideoProjectById(supabase, videoId);
+  if (!project) {
+    return { ok: false, message: "Project not found." };
+  }
+  if (project.createdBy !== profile.id) {
+    return { ok: false, message: "You cannot edit this project number." };
+  }
+  if (project.recipeNumber === recipeNumber) {
+    return { ok: true };
+  }
+
+  const taken = await isRecipeNumberTaken(supabase, recipeNumber, videoId);
+  if (taken) {
+    return {
+      ok: false,
+      message: `Recipe number ${recipeNumber} is already used by another project.`,
+    };
+  }
+
+  try {
+    await updateVideoProjectRecipeNumber(supabase, videoId, recipeNumber);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unable to update recipe number.";
+    if (message.includes("videos_recipe_number_key")) {
+      return {
+        ok: false,
+        message: `Recipe number ${recipeNumber} is already used by another project.`,
+      };
+    }
+    return { ok: false, message };
+  }
+
+  revalidatePath("/");
   revalidatePath(`/videos/${videoId}`);
   return { ok: true };
 }

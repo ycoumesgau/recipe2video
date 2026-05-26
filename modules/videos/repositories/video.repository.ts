@@ -27,6 +27,7 @@ export async function createVideoProject(
     .from("videos")
     .insert({
       title: input.title,
+      recipe_number: input.recipeNumber,
       slug: input.slug,
       recipe_url: input.recipeUrl ?? null,
       recipe_data: input.recipeData ? toJson(input.recipeData) : null,
@@ -178,6 +179,69 @@ export async function updateVideoProjectStatus(
   return mapVideoProject(data);
 }
 
+export async function archiveAllActiveVideoProjects(
+  supabase: SupabaseDataClient,
+): Promise<number> {
+  const archivedAt = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("videos")
+    .update({ archived_at: archivedAt })
+    .is("archived_at", null)
+    .select("id");
+
+  throwIfSupabaseError(error, "archiveAllActiveVideoProjects failed");
+  return data?.length ?? 0;
+}
+
+export async function getNextRecipeNumber(
+  supabase: SupabaseDataClient,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("videos")
+    .select("recipe_number")
+    .order("recipe_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  throwIfSupabaseError(error, "getNextRecipeNumber failed");
+  return (data?.recipe_number ?? 0) + 1;
+}
+
+export async function isRecipeNumberTaken(
+  supabase: SupabaseDataClient,
+  recipeNumber: number,
+  excludeVideoId?: string,
+): Promise<boolean> {
+  let query = supabase
+    .from("videos")
+    .select("id", { count: "exact", head: true })
+    .eq("recipe_number", recipeNumber);
+
+  if (excludeVideoId) {
+    query = query.neq("id", excludeVideoId);
+  }
+
+  const { count, error } = await query;
+  throwIfSupabaseError(error, "isRecipeNumberTaken failed");
+  return (count ?? 0) > 0;
+}
+
+export async function updateVideoProjectRecipeNumber(
+  supabase: SupabaseDataClient,
+  videoId: string,
+  recipeNumber: number,
+): Promise<VideoProject> {
+  const { data, error } = await supabase
+    .from("videos")
+    .update({ recipe_number: recipeNumber })
+    .eq("id", videoId)
+    .select("*")
+    .single();
+
+  throwIfSupabaseError(error, "updateVideoProjectRecipeNumber failed");
+  return mapVideoProject(data);
+}
+
 export async function setVideoProjectArchived(
   supabase: SupabaseDataClient,
   videoId: string,
@@ -253,6 +317,7 @@ export function mapVideoProject(row: VideoRow): VideoProject {
   return {
     id: row.id,
     title: row.title,
+    recipeNumber: row.recipe_number,
     slug: row.slug,
     recipeUrl: row.recipe_url,
     recipeData: fromJson<RecipeData>(row.recipe_data),

@@ -72,6 +72,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { ProjectCardArchiveMenu } from "@/modules/videos/ui/project-card-archive-menu";
+import { ProjectTitleWithRecipeNumber } from "@/modules/videos/ui/project-recipe-number-label";
 
 type StatusFilter = "all" | VideoStatus;
 
@@ -383,7 +384,12 @@ function ProjectCard({
             <div>
               <Badge variant="secondary">{project.recipeSourceLabel}</Badge>
               <p className="mt-2 text-lg font-heading font-bold text-white drop-shadow">
-                {project.thumbnailLabel}
+                <ProjectTitleWithRecipeNumber
+                  numberClassName="text-white/80"
+                  recipeNumber={project.recipeNumber}
+                  title={project.thumbnailLabel}
+                  titleClassName="text-white"
+                />
               </p>
             </div>
           </div>
@@ -394,7 +400,12 @@ function ProjectCard({
         >
           <div>
             <Badge variant="secondary">{project.recipeSourceLabel}</Badge>
-            <p className="mt-2 text-lg font-heading font-bold">{project.thumbnailLabel}</p>
+            <p className="mt-2 text-lg font-heading font-bold">
+              <ProjectTitleWithRecipeNumber
+                recipeNumber={project.recipeNumber}
+                title={project.thumbnailLabel}
+              />
+            </p>
           </div>
         </div>
       )}
@@ -417,7 +428,12 @@ function ProjectCard({
             ) : null}
           </div>
         </CardAction>
-        <CardTitle className="min-w-0 pr-2">{project.title}</CardTitle>
+        <CardTitle className="min-w-0 pr-2">
+          <ProjectTitleWithRecipeNumber
+            recipeNumber={project.recipeNumber}
+            title={project.title}
+          />
+        </CardTitle>
         <CardDescription>
           Last updated {formatDateTime(project.updatedAt)} by {project.ownerName}
         </CardDescription>

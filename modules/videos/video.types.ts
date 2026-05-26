@@ -33,6 +33,8 @@ export type Storyboard = Record<string, unknown>;
 export interface VideoProject {
   id: string;
   title: string;
+  /** Incremental recipe index (unique across all projects). */
+  recipeNumber: number;
   slug: string;
   recipeUrl?: string | null;
   recipeData?: RecipeData | null;
@@ -65,6 +67,7 @@ export type VideoProjectArchiveFilter = "active" | "archived" | "all";
 
 export interface CreateVideoProjectInput {
   title: string;
+  recipeNumber: number;
   slug: string;
   recipeUrl?: string | null;
   recipeData?: RecipeData | null;

@@ -37,6 +37,7 @@ import { getVideoProjectById } from "@/modules/videos/repositories/video.reposit
 import { getCursorAgentSelectionDisplay } from "@/modules/videos/production-defaults-from-recipe-data";
 import { getRecipeSourceSummaryFromRecipeData } from "@/modules/videos/recipe-source-from-recipe-data";
 import type { RecipeSourceSummary, VideoProject } from "@/modules/videos/video.types";
+import { EditableProjectRecipeNumber } from "@/modules/videos/ui/editable-project-recipe-number";
 import { EditableProjectTitle } from "@/modules/videos/ui/editable-project-title";
 import { ProjectPipelineProgress } from "@/modules/videos/ui/project-pipeline-progress";
 import {
@@ -102,10 +103,17 @@ export default async function VideoDetailPage({
           )}
         </div>
         {project ? (
-          <EditableProjectTitle
-            initialTitle={project.title}
-            videoId={project.id}
-          />
+          <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+            <EditableProjectRecipeNumber
+              initialRecipeNumber={project.recipeNumber}
+              videoId={project.id}
+            />
+            <EditableProjectTitle
+              className="min-w-0 flex-1"
+              initialTitle={project.title}
+              videoId={project.id}
+            />
+          </div>
         ) : (
           <h2 className="licorn-page-title">
             Project overview
