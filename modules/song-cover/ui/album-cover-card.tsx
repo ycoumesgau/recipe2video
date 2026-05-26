@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CanonicalReferenceThumbnails } from "@/modules/references/ui/canonical-reference-thumbnails";
 import { ArtifactImageCard } from "@/modules/shared/ui/artifact-image-card";
 
 import {
@@ -82,6 +83,7 @@ export function AlbumCoverCard({
           reference declared in <code>reference-plan.json</code>. Character
           anchors are allowed here — the mascot is the hero of the artwork.
         </p>
+        <CanonicalReferenceThumbnails items={review.imageReferencePreviews} />
         <form
           action={updateSongCoverImageReferencesAction}
           className="mt-3 space-y-2"

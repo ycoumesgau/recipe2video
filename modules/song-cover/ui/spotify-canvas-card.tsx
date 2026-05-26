@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CanonicalReferenceThumbnails } from "@/modules/references/ui/canonical-reference-thumbnails";
 import { ArtifactImageCard } from "@/modules/shared/ui/artifact-image-card";
 import {
   SPOTIFY_CANVAS_MAX_DURATION_SECONDS,
@@ -105,6 +106,11 @@ export function SpotifyCanvasCard({
         <summary className="cursor-pointer font-medium">
           Image references ({artifact.imageReferenceCanonicalNames.length} / 9)
         </summary>
+        <p className="mt-2 text-muted-foreground">
+          Up to nine image refs for Seedance. Each @-tag in the prompt must
+          match a name below.
+        </p>
+        <CanonicalReferenceThumbnails items={review.imageReferencePreviews} />
         <form
           action={updateSongCoverImageReferencesAction}
           className="mt-3 space-y-2"
@@ -138,6 +144,7 @@ export function SpotifyCanvasCard({
           Optional. Seedance combined cap is 15s across all video references.
           LicornOutroVideo only makes sense for a true celebration Canvas.
         </p>
+        <CanonicalReferenceThumbnails items={review.videoReferencePreviews} />
         <form
           action={updateSongCoverVideoReferencesAction}
           className="mt-3 space-y-2"

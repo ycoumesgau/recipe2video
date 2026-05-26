@@ -123,6 +123,11 @@ export interface ConditioningAnchorPreview {
    * instead of a broken image.
    */
   previewUrl: string | null;
+  /**
+   * When set, the thumbnail grid renders a muted video preview instead of an
+   * image (Spotify Canvas video references).
+   */
+  kind?: "image" | "video";
 }
 
 export interface SegmentReferenceReadiness {

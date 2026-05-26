@@ -1,5 +1,6 @@
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import type { ReferenceStatus } from "@/modules/references/reference-status";
+import type { ConditioningAnchorPreview } from "@/modules/references/reference.types";
 import type { RunwayTaskStatusValue } from "@/modules/generation/runway.types";
 
 import type { MascotAppearanceMode } from "@/modules/recipe-agent/song-cover-plan.schema";
@@ -76,11 +77,18 @@ export interface SongCoverArtifactVariant {
  * shape used by the References review payload so both pages can reuse
  * the shared artifact-image-card shell without translation layers.
  */
+/** Resolved preview for a canonical name on a song-cover artifact. */
+export type SongCoverReferencePreview = ConditioningAnchorPreview & {
+  kind: "image" | "video";
+};
+
 export interface SongCoverArtifactReview {
   artifact: SongCoverArtifact;
   mediaAsset?: MediaAsset | null;
   previewUrl?: string | null;
   variants: SongCoverArtifactVariant[];
+  imageReferencePreviews: SongCoverReferencePreview[];
+  videoReferencePreviews: SongCoverReferencePreview[];
   /**
    * Canonical names that failed to resolve against `asset_library` or
    * `reference_assets` for this video. Surfaced as warnings in the UI;

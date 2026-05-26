@@ -30,6 +30,7 @@ import type {
 import { ARTIFACT_STATUS_BADGE_VARIANT } from "@/modules/shared/ui/artifact-image-card";
 
 import type { ReferenceSubstitutePickerOption } from "../reference.types";
+import { CanonicalReferenceThumbnails } from "./canonical-reference-thumbnails";
 import { ReferenceCardActions } from "./reference-card-actions";
 import { ReferenceCardPreview } from "./reference-card-preview";
 import { ReferenceSubstituteForm } from "./reference-substitute-form";
@@ -224,38 +225,7 @@ function ConditioningPanel({
       </p>
 
       {anchors.length > 0 ? (
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {anchors.map((anchor) => (
-            <div
-              key={anchor.canonicalName}
-              className="rounded-md border bg-background/40 p-1 text-[10px]"
-            >
-              {anchor.previewUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  alt={anchor.tag}
-                  className="aspect-square w-full rounded object-cover"
-                  src={anchor.previewUrl}
-                />
-              ) : (
-                <div className="flex aspect-square w-full items-center justify-center rounded bg-muted/40">
-                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                </div>
-              )}
-              <p className="mt-1 truncate font-medium" title={anchor.tag}>
-                @{anchor.tag}
-              </p>
-              <p
-                className="truncate text-muted-foreground"
-                title={anchor.category}
-              >
-                {anchor.source === "reference_assets"
-                  ? `recipe · ${anchor.category}`
-                  : anchor.category}
-              </p>
-            </div>
-          ))}
-        </div>
+        <CanonicalReferenceThumbnails items={anchors} />
       ) : (
         <p className="mt-3 rounded-md border border-dashed p-2 text-muted-foreground">
           No anchors declared. GPT-Image 2 will invent the kitchen and pan
