@@ -26,7 +26,7 @@ function supabaseImageRemotePatterns(): NonNullable<
 }
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@cursor/sdk"],
+  serverExternalPackages: ["@cursor/sdk", "sqlite3"],
   images: {
     remotePatterns: supabaseImageRemotePatterns(),
   },
