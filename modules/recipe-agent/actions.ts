@@ -27,6 +27,7 @@ import {
   uniqueConversationName,
   uniqueConversationSlug,
 } from "./use-cases/ensure-agent-conversation";
+import { ensureConversationGitBranchOnGithub } from "./use-cases/resolve-github-source-branch";
 import { buildRecipeAgentWorkspace } from "./recipe-agent.workspace";
 import { slugifyConversationName } from "./agent-conversation.utils";
 import {
@@ -278,9 +279,6 @@ export async function createAgentConversationAction(input: {
       ) ?? null;
 
     const activeConversation = existing.find((entry) => entry.isActive);
-    const manifestSourceBranch =
-      activeConversation?.agentGitBranch ??
-      buildConversationBranchForSlug(input.videoId, "initial");
 
     const softDeleted = await findSoftDeletedAgentConversationByVideoAndName(
       supabase,
@@ -330,6 +328,13 @@ export async function createAgentConversationAction(input: {
     const branch =
       conversation.agentGitBranch ??
       buildConversationBranchForSlug(input.videoId, conversation.slug);
+
+    const manifestSourceBranch = await ensureConversationGitBranchOnGithub({
+      videoId: input.videoId,
+      branch,
+      conversations: existing,
+      preferredSourceBranch: activeConversation?.agentGitBranch,
+    });
 
     if (input.includeAssetsManifest) {
       const manifest = await buildAvailableAssetsManifest(supabase, {
@@ -448,13 +453,17 @@ export async function refreshAssetsManifestAction(
       throw new Error("Conversation has no Git branch configured yet.");
     }
 
+    const allConversations = await listAgentConversationsByVideoId(supabase, videoId);
     const manifest = await buildAvailableAssetsManifest(supabase, {
       videoId,
       fromConversationId: conversation?.id ?? null,
     });
-    const fromBranch =
-      conversation?.agentGitBranch ??
-      buildConversationBranchForSlug(videoId, "initial");
+    const fromBranch = await ensureConversationGitBranchOnGithub({
+      videoId,
+      branch: target.agentGitBranch,
+      conversations: allConversations,
+      preferredSourceBranch: conversation?.agentGitBranch,
+    });
     await commitAvailableAssetsManifest({
       videoId,
       branch: target.agentGitBranch,
