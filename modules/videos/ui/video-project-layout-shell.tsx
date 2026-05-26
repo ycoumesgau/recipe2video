@@ -16,7 +16,7 @@ export function VideoProjectLayoutShell({
   children: React.ReactNode;
   headerAside?: React.ReactNode;
   projectTitle: string;
-  recipeNumber: number;
+  recipeNumber: number | null;
   videoId: string;
 }) {
   return (
