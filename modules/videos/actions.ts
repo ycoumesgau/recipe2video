@@ -205,7 +205,10 @@ export async function updateVideoProjectRecipeNumberAction(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unable to update recipe number.";
-    if (message.includes("videos_recipe_number_key")) {
+    if (
+      message.includes("videos_recipe_number_key") ||
+      message.includes("videos_recipe_number_active_key")
+    ) {
       return {
         ok: false,
         message: `Recipe number ${recipeNumber} is already used by another project.`,

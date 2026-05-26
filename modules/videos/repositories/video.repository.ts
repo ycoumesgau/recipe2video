@@ -199,6 +199,7 @@ export async function getNextRecipeNumber(
   const { data, error } = await supabase
     .from("videos")
     .select("recipe_number")
+    .is("archived_at", null)
     .order("recipe_number", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -215,7 +216,8 @@ export async function isRecipeNumberTaken(
   let query = supabase
     .from("videos")
     .select("id", { count: "exact", head: true })
-    .eq("recipe_number", recipeNumber);
+    .eq("recipe_number", recipeNumber)
+    .is("archived_at", null);
 
   if (excludeVideoId) {
     query = query.neq("id", excludeVideoId);
@@ -247,10 +249,17 @@ export async function setVideoProjectArchived(
   videoId: string,
   archived: boolean,
 ): Promise<VideoProject> {
-  const archivedAt = archived ? new Date().toISOString() : null;
+  const patch: { archived_at: string | null; recipe_number?: number } = {
+    archived_at: archived ? new Date().toISOString() : null,
+  };
+
+  if (!archived) {
+    patch.recipe_number = await getNextRecipeNumber(supabase);
+  }
+
   const { data, error } = await supabase
     .from("videos")
-    .update({ archived_at: archivedAt })
+    .update(patch)
     .eq("id", videoId)
     .select("*")
     .single();
