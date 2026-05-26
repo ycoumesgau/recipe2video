@@ -156,6 +156,7 @@ export function getParisBrestDemoFixture(): ParisBrestDemoFixture {
 const demoProject: VideoProject = {
   id: DEMO_PROJECT_ID,
   title: "Paris-Brest praline cream",
+  recipeNumber: 1,
   slug: "paris-brest-demo",
   recipeUrl: null,
   recipeData: {

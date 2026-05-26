@@ -23,6 +23,7 @@ import {
 const baseProject: VideoProject = {
   id: "video-1",
   title: "Test recipe",
+  recipeNumber: 1,
   status: "draft",
   sourceType: "text",
   recipeUrl: null,

@@ -16,7 +16,11 @@ import {
   MAX_RECIPE_SOURCE_FILE_SIZE_BYTES,
   MAX_VIDEO_TITLE_LENGTH,
 } from "@/modules/videos/video.constants";
-import { createVideoProject } from "@/modules/videos/repositories/video.repository";
+import {
+  archiveAllActiveVideoProjects,
+  createVideoProject,
+  getNextRecipeNumber,
+} from "@/modules/videos/repositories/video.repository";
 import type {
   RecipeSourceSummary,
   VideoProductionDefaults,
@@ -113,8 +117,12 @@ export async function createVideoDraft(
     manualTitle ??
     buildDraftTitle({ recipeUrl, pastedRecipeText, demoRecipeId });
 
+  await archiveAllActiveVideoProjects(supabase);
+  const recipeNumber = await getNextRecipeNumber(supabase);
+
   const project = await createVideoProject(supabase, {
     title,
+    recipeNumber,
     slug: buildSlug(title, draftId),
     recipeUrl: recipeUrl ?? null,
     recipeData: {

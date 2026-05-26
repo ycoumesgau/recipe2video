@@ -16,6 +16,7 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
   {
     id: "paris-brest-demo",
     title: "Paris-Brest praline cream",
+    recipeNumber: 1,
     recipeSourceKind: "demo_fixture",
     recipeSourceLabel: "Demo fixture",
     status: "review",
@@ -36,6 +37,7 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
   {
     id: "tarte-citron-reference-pass",
     title: "Tarte citron meringue texture pass",
+    recipeNumber: 2,
     recipeSourceKind: "url",
     recipeSourceLabel: "Recipe URL",
     status: "references_ready",
@@ -56,6 +58,7 @@ const SEEDED_PROJECTS: VideoDashboardProject[] = [
   {
     id: "cookie-dough-storyboard",
     title: "Cookie dough ASMR hook",
+    recipeNumber: 3,
     recipeSourceKind: "pasted_text",
     recipeSourceLabel: "Pasted text",
     status: "storyboard_ready",
@@ -269,6 +272,7 @@ function mapPersistedProject(
   return {
     id: project.id,
     title: project.title,
+    recipeNumber: project.recipeNumber,
     recipeSourceKind,
     recipeSourceLabel: getRecipeSourceLabel(recipeSourceKind),
     status: project.status,

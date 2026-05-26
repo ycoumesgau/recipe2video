@@ -12,12 +12,15 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { useVideoProjectBreadcrumbContext } from "@/modules/videos/ui/video-project-breadcrumb-context";
+import { ProjectTitleWithRecipeNumber } from "@/modules/videos/ui/project-recipe-number-label";
 
 export function VideoProjectBreadcrumbs({
   projectTitle,
+  recipeNumber,
   videoId,
 }: {
   projectTitle: string;
+  recipeNumber: number;
   videoId: string;
 }) {
   const pathname = usePathname();
@@ -39,11 +42,22 @@ export function VideoProjectBreadcrumbs({
         <BreadcrumbItem>
           <BreadcrumbLink asChild>
             <Link
-              className="max-w-[min(100%,16rem)] truncate"
+              className="max-w-[min(100%,20rem)] truncate"
               href={prefix}
-              title={projectTitle}
+              title={
+                recipeNumber > 0
+                  ? `${recipeNumber} ${projectTitle}`
+                  : projectTitle
+              }
             >
-              {projectTitle}
+              {recipeNumber > 0 ? (
+                <ProjectTitleWithRecipeNumber
+                  recipeNumber={recipeNumber}
+                  title={projectTitle}
+                />
+              ) : (
+                projectTitle
+              )}
             </Link>
           </BreadcrumbLink>
         </BreadcrumbItem>

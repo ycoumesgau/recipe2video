@@ -8,6 +8,7 @@ test("getVideoDashboardData applies card metrics for persisted projects", () => 
   const legacyProject = {
     id: "legacy-video",
     title: "Legacy video",
+    recipeNumber: 4,
     slug: "legacy-video",
     recipeUrl: null,
     recipeData: null,
@@ -54,6 +55,7 @@ test("getVideoDashboardData defaults missing agent status to idle", () => {
   const legacyProject = {
     id: "legacy-video",
     title: "Legacy video",
+    recipeNumber: 4,
     slug: "legacy-video",
     recipeUrl: null,
     recipeData: null,

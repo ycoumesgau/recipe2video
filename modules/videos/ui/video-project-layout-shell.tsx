@@ -10,17 +10,23 @@ export function VideoProjectLayoutShell({
   children,
   headerAside,
   projectTitle,
+  recipeNumber,
   videoId,
 }: {
   children: React.ReactNode;
   headerAside?: React.ReactNode;
   projectTitle: string;
+  recipeNumber: number;
   videoId: string;
 }) {
   return (
     <VideoProjectBreadcrumbProvider>
       <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <VideoProjectBreadcrumbs projectTitle={projectTitle} videoId={videoId} />
+        <VideoProjectBreadcrumbs
+          projectTitle={projectTitle}
+          recipeNumber={recipeNumber}
+          videoId={videoId}
+        />
         {headerAside}
       </div>
       <VideoProjectSubnav videoId={videoId} />

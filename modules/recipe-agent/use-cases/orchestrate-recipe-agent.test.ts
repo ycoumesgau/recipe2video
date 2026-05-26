@@ -638,6 +638,7 @@ test("sendRecipeAgentMessage recovers artifacts from the branch head when manife
 const baseProject: VideoProject = {
   id: "video-1",
   title: "Paris-Brest",
+  recipeNumber: 1,
   slug: "paris-brest",
   recipeUrl: null,
   recipeData: null,
