@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ImageIcon, Plus, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +54,7 @@ function emptyDraftRow(): DraftRow {
     source: "reference_assets",
     hasStorage: false,
     recipeReferenceStatus: null,
+    previewUrl: null,
   };
 }
 
@@ -80,6 +81,7 @@ function applyPickerOption(
     source: option.source,
     hasStorage: false,
     recipeReferenceStatus: null,
+    previewUrl: option.previewUrl,
   };
 }
 
@@ -324,85 +326,94 @@ function SegmentReferenceDraftCard({
         </div>
       </div>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <div className="space-y-2 md:col-span-2">
-          <Label>Asset</Label>
-          <Select
-            onValueChange={(pickerKey) => {
-              const option = pickerOptions.find(
-                (candidate) => candidate.pickerKey === pickerKey,
-              );
-              if (option) {
-                onChange(applyPickerOption(row, option));
-              }
-            }}
-            value={selectedKey ?? undefined}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Choose a library or recipe reference" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectLabel>Library globals</SelectLabel>
-                {libraryOptions.map((option) => (
-                  <SelectItem
-                    disabled={
-                      usedPickerKeys.has(option.pickerKey) &&
-                      option.pickerKey !== selectedKey
-                    }
-                    key={option.pickerKey}
-                    value={option.pickerKey}
-                  >
-                    {option.label}
-                    {option.canonicalName !== option.label
-                      ? ` (${option.canonicalName})`
-                      : ""}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-              <SelectGroup>
-                <SelectLabel>Recipe-specific</SelectLabel>
-                {recipeOptions.map((option) => (
-                  <SelectItem
-                    disabled={
-                      usedPickerKeys.has(option.pickerKey) &&
-                      option.pickerKey !== selectedKey
-                    }
-                    key={option.pickerKey}
-                    value={option.pickerKey}
-                  >
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+      <div className="mt-3 flex gap-3">
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="space-y-2">
+            <Label>Asset</Label>
+            <Select
+              onValueChange={(pickerKey) => {
+                const option = pickerOptions.find(
+                  (candidate) => candidate.pickerKey === pickerKey,
+                );
+                if (option) {
+                  onChange(applyPickerOption(row, option));
+                }
+              }}
+              value={selectedKey ?? undefined}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a library or recipe reference" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Library globals</SelectLabel>
+                  {libraryOptions.map((option) => (
+                    <SelectItem
+                      disabled={
+                        usedPickerKeys.has(option.pickerKey) &&
+                        option.pickerKey !== selectedKey
+                      }
+                      key={option.pickerKey}
+                      value={option.pickerKey}
+                    >
+                      {option.label}
+                      {option.canonicalName !== option.label
+                        ? ` (${option.canonicalName})`
+                        : ""}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Recipe-specific</SelectLabel>
+                  {recipeOptions.map((option) => (
+                    <SelectItem
+                      disabled={
+                        usedPickerKeys.has(option.pickerKey) &&
+                        option.pickerKey !== selectedKey
+                      }
+                      key={option.pickerKey}
+                      value={option.pickerKey}
+                    >
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor={`role-${row.clientKey}`}>Role</Label>
+              <Input
+                id={`role-${row.clientKey}`}
+                onChange={(event) =>
+                  onChange({ ...row, role: event.target.value })
+                }
+                placeholder="e.g. kitchen context, dish anchor"
+                value={row.role}
+              />
+            </div>
+
+            <div className="flex items-end gap-2">
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  checked={row.required}
+                  onChange={(event) =>
+                    onChange({ ...row, required: event.target.checked })
+                  }
+                  type="checkbox"
+                />
+                Required for Seedance
+              </label>
+            </div>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor={`role-${row.clientKey}`}>Role</Label>
-          <Input
-            id={`role-${row.clientKey}`}
-            onChange={(event) =>
-              onChange({ ...row, role: event.target.value })
-            }
-            placeholder="e.g. kitchen context, dish anchor"
-            value={row.role}
-          />
-        </div>
-
-        <div className="flex items-end gap-2">
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              checked={row.required}
-              onChange={(event) =>
-                onChange({ ...row, required: event.target.checked })
-              }
-              type="checkbox"
-            />
-            Required for Seedance
-          </label>
-        </div>
+        <SegmentReferenceThumbnail
+          alt={row.displayLabel || row.canonicalName || "Reference preview"}
+          previewUrl={row.previewUrl}
+        />
       </div>
 
       {row.recipeReferenceId ? (
@@ -420,6 +431,34 @@ function SegmentReferenceDraftCard({
 
       <p className="mt-2 text-xs text-muted-foreground">{status.description}</p>
     </div>
+  );
+}
+
+function SegmentReferenceThumbnail({
+  alt,
+  previewUrl,
+}: {
+  alt: string;
+  previewUrl: string | null | undefined;
+}) {
+  if (!previewUrl) {
+    return (
+      <div
+        aria-hidden
+        className="flex h-28 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed bg-muted/40"
+      >
+        <ImageIcon className="h-7 w-7 text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      alt={alt}
+      className="h-28 w-28 shrink-0 rounded-lg border object-cover"
+      src={previewUrl}
+    />
   );
 }
 

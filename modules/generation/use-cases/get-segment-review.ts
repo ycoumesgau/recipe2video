@@ -2,7 +2,13 @@ import type { SupabaseDataClient } from "@/shared/supabase/client.types";
 import type { SegmentFeedback } from "@/modules/feedback/feedback.types";
 import { listSegmentFeedbacksBySegmentId } from "@/modules/feedback/repositories/feedback.repository";
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
-import { listMediaAssetsByGenerationIds } from "@/modules/media-assets/repositories/media-asset.repository";
+import type { MediaStorageBucket } from "@/modules/media-assets/media-asset.constants";
+import {
+  listMediaAssetsByGenerationIds,
+  listMediaAssetsByIds,
+} from "@/modules/media-assets/repositories/media-asset.repository";
+import { tryCreateLibraryStorageSignedUrl } from "@/modules/media-assets/services/create-library-storage-signed-url";
+import { tryCreateMediaAssetPreviewSignedUrl } from "@/modules/media-assets/services/media-asset-preview-url";
 import { listLogicalScenesByVideoId } from "@/modules/storyboard/repositories/logical-scene.repository";
 import {
   getSegmentById,
@@ -82,6 +88,8 @@ export interface SegmentReferenceEditorRow {
   source: "asset_library" | "reference_assets";
   hasStorage: boolean;
   recipeReferenceStatus: ReferenceStatus | null;
+  /** Signed Supabase Storage URL for dashboard preview (short TTL). */
+  previewUrl: string | null;
 }
 
 export interface SegmentReferencePickerOption {
@@ -92,6 +100,7 @@ export interface SegmentReferencePickerOption {
   label: string;
   source: "asset_library" | "reference_assets";
   isLibraryGlobal: boolean;
+  previewUrl: string | null;
 }
 
 export interface SegmentNavigationPeer {
@@ -382,19 +391,24 @@ async function loadSegmentReferenceEditorBundle(
     listReferenceAssetsForVideo(supabase, input.videoId),
   ]);
 
-  const mediaAssetIds = Array.from(
-    new Set(
-      linkRows
-        .map(
-          (row) =>
-            row.asset_library?.media_asset_id ??
-            row.reference_assets?.media_asset_id ??
-            null,
-        )
-        .filter((id): id is string => Boolean(id)),
+  const mediaAssetIds = uniqueMediaAssetIds([
+    ...linkRows.map(
+      (row) =>
+        row.asset_library?.media_asset_id ??
+        row.reference_assets?.media_asset_id ??
+        null,
     ),
-  );
-  const storageById = await fetchMediaAssetStorageMap(supabase, mediaAssetIds);
+    ...libraryCatalog.map((entry) => entry.mediaAssetId),
+    ...recipeCatalog.map((reference) => reference.mediaAssetId),
+  ]);
+  const [storageById, previewUrlByMediaAssetId] = await Promise.all([
+    fetchMediaAssetStorageMap(supabase, mediaAssetIds),
+    buildSegmentReferencePreviewUrlMap(supabase, {
+      libraryCatalog,
+      recipeCatalog,
+      mediaAssetIds,
+    }),
+  ]);
 
   const rows: SegmentReferenceEditorRow[] = linkRows.map((row) => {
     const isLibrary = Boolean(row.library_asset_id);
@@ -420,6 +434,9 @@ async function loadSegmentReferenceEditorBundle(
         !isLibrary && recipeRef
           ? (recipeRef.status as ReferenceStatus)
           : null,
+      previewUrl: mediaAssetId
+        ? (previewUrlByMediaAssetId.get(mediaAssetId) ?? null)
+        : null,
     };
   });
 
@@ -432,6 +449,9 @@ async function loadSegmentReferenceEditorBundle(
       label: entry.aliases[0] ?? entry.canonicalName,
       source: "asset_library" as const,
       isLibraryGlobal: true,
+      previewUrl: entry.mediaAssetId
+        ? (previewUrlByMediaAssetId.get(entry.mediaAssetId) ?? null)
+        : null,
     })),
     ...recipeCatalog
       .filter((reference) => reference.status !== "rejected")
@@ -443,6 +463,9 @@ async function loadSegmentReferenceEditorBundle(
         label: reference.canonicalName,
         source: "reference_assets" as const,
         isLibraryGlobal: false,
+        previewUrl: reference.mediaAssetId
+          ? (previewUrlByMediaAssetId.get(reference.mediaAssetId) ?? null)
+          : null,
       })),
   ].sort((left, right) => left.label.localeCompare(right.label));
 
@@ -569,6 +592,73 @@ async function resolveSegmentReferenceStatuses(
       runwayProgress,
     };
   });
+}
+
+const SEGMENT_REFERENCE_PREVIEW_TTL_SECONDS = 60 * 15;
+
+function uniqueMediaAssetIds(
+  values: Array<string | null | undefined>,
+): string[] {
+  return Array.from(
+    new Set(values.filter((id): id is string => Boolean(id))),
+  );
+}
+
+/**
+ * Mint short-lived signed URLs for every library/recipe media asset shown in
+ * the segment references editor. Library globals use legacy path fallbacks;
+ * recipe-specific rows use poster-aware preview paths for video assets.
+ */
+async function buildSegmentReferencePreviewUrlMap(
+  supabase: SupabaseDataClient,
+  input: {
+    libraryCatalog: Awaited<ReturnType<typeof listAssetLibrary>>;
+    recipeCatalog: Awaited<ReturnType<typeof listReferenceAssetsForVideo>>;
+    mediaAssetIds: string[];
+  },
+): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  if (input.mediaAssetIds.length === 0) {
+    return result;
+  }
+
+  const libraryCanonicalByMediaAssetId = new Map(
+    input.libraryCatalog.flatMap((entry) =>
+      entry.mediaAssetId
+        ? [[entry.mediaAssetId, entry.canonicalName] as const]
+        : [],
+    ),
+  );
+
+  const mediaAssets = await listMediaAssetsByIds(
+    supabase,
+    input.mediaAssetIds,
+  );
+
+  await Promise.all(
+    mediaAssets.map(async (mediaAsset) => {
+      const libraryCanonicalName = libraryCanonicalByMediaAssetId.get(
+        mediaAsset.id,
+      );
+      const previewUrl =
+        libraryCanonicalName != null
+          ? mediaAsset.storageBucket && mediaAsset.storagePath
+            ? await tryCreateLibraryStorageSignedUrl(supabase, {
+                bucket: mediaAsset.storageBucket as MediaStorageBucket,
+                path: mediaAsset.storagePath,
+                libraryCanonicalName,
+                expiresInSeconds: SEGMENT_REFERENCE_PREVIEW_TTL_SECONDS,
+              })
+            : null
+          : await tryCreateMediaAssetPreviewSignedUrl(supabase, mediaAsset, {
+              expiresInSeconds: SEGMENT_REFERENCE_PREVIEW_TTL_SECONDS,
+            });
+
+      result.set(mediaAsset.id, previewUrl);
+    }),
+  );
+
+  return result;
 }
 
 async function fetchMediaAssetStorageMap(
