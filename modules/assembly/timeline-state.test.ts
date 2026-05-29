@@ -9,6 +9,7 @@ import {
   createDefaultAudioClip,
   defaultPlacementsForSegments,
   ensureLinkedAudioClipOnTimeline,
+  hasExplicitNoMusicTimeline,
   generatePlacementId,
   getEmptyTimelineState,
   getPlacementTimelineDurationSeconds,
@@ -731,15 +732,53 @@ test("createDefaultAudioClip falls back to 30s when duration is missing", () => 
   assert.equal(clip.outSeconds, 30);
 });
 
-test("resolveLinkedAudioMediaAssetId returns persisted id when there are no audio clips", () => {
+test("resolveLinkedAudioMediaAssetId returns null when there are no audio clips", () => {
   assert.equal(
     resolveLinkedAudioMediaAssetId([], "asset_persisted"),
-    "asset_persisted",
+    null,
   );
 });
 
-test("resolveLinkedAudioMediaAssetId returns null when there are no clips and no persisted id", () => {
-  assert.equal(resolveLinkedAudioMediaAssetId([], null), null);
+test("hasExplicitNoMusicTimeline is true for timeline_v2 with empty audioClips", () => {
+  assert.equal(
+    hasExplicitNoMusicTimeline({
+      schema: "timeline_v2",
+      audioClips: [],
+    }),
+    true,
+  );
+});
+
+test("hasExplicitNoMusicTimeline is false when audio_sync is missing or legacy", () => {
+  assert.equal(hasExplicitNoMusicTimeline(null), false);
+  assert.equal(
+    hasExplicitNoMusicTimeline({
+      offsetSeconds: 0,
+      cutFromSeconds: 0,
+      fadeInSeconds: 0,
+      fadeOutSeconds: 0,
+    }),
+    false,
+  );
+});
+
+test("ensureLinkedAudioClipOnTimeline does not seed when preset explicitly has no music", () => {
+  const audioSyncJson = { schema: "timeline_v2", audioClips: [] };
+  const persisted = readTimelineState(audioSyncJson, {
+    audioMediaAssetId: "asset_suno",
+    audioDurationSeconds: 120,
+  });
+  const timelineState = hasExplicitNoMusicTimeline(audioSyncJson)
+    ? { schema: "timeline_v2" as const, audioClips: persisted.audioClips }
+    : ensureLinkedAudioClipOnTimeline(
+        { schema: "timeline_v2", audioClips: persisted.audioClips },
+        {
+          audioMediaAssetId: "asset_suno",
+          audioDurationSeconds: 120,
+        },
+      );
+
+  assert.equal(timelineState.audioClips.length, 0);
 });
 
 test("ensureLinkedAudioClipOnTimeline seeds a default clip when music is linked but timeline is empty", () => {

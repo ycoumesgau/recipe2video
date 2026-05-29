@@ -40,6 +40,7 @@ import {
   buildClipsFromPlacements,
   defaultPlacementsForSegments,
   ensureLinkedAudioClipOnTimeline,
+  hasExplicitNoMusicTimeline,
   readPlacementsState,
   readTimelineState,
   resolveLinkedAudioMediaAssetId,
@@ -166,28 +167,34 @@ export async function getAssemblyPageData(
           })),
         );
 
+  const audioSyncJson =
+    activePreset?.audioSync ?? composition?.audioSync ?? null;
   const linkedAudioAsset = persistedAudioMediaAssetId
     ? mediaAssets.find((asset) => asset.id === persistedAudioMediaAssetId)
     : undefined;
 
   // Build the timeline-side audio state (just audioClips post-PR A).
-  const persistedTimelineState = readTimelineState(
-    activePreset?.audioSync ?? composition?.audioSync ?? null,
-    {
-      audioMediaAssetId: persistedAudioMediaAssetId,
-      audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
-    },
-  );
-  const timelineState: AssemblyTimelineState = ensureLinkedAudioClipOnTimeline(
-    {
-      schema: "timeline_v2",
-      audioClips: persistedTimelineState.audioClips,
-    },
-    {
-      audioMediaAssetId: persistedAudioMediaAssetId,
-      audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
-    },
-  );
+  const persistedTimelineState = readTimelineState(audioSyncJson, {
+    audioMediaAssetId: persistedAudioMediaAssetId,
+    audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
+  });
+  const timelineState: AssemblyTimelineState = hasExplicitNoMusicTimeline(
+    audioSyncJson,
+  )
+    ? {
+        schema: "timeline_v2",
+        audioClips: persistedTimelineState.audioClips,
+      }
+    : ensureLinkedAudioClipOnTimeline(
+        {
+          schema: "timeline_v2",
+          audioClips: persistedTimelineState.audioClips,
+        },
+        {
+          audioMediaAssetId: persistedAudioMediaAssetId,
+          audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
+        },
+      );
 
   const linkedAudioMediaAssetId = resolveLinkedAudioMediaAssetId(
     timelineState.audioClips,
@@ -471,23 +478,27 @@ export async function buildRemotionPropsForCompositionRow(
     ? mediaAssets.find((asset) => asset.id === persistedAudioMediaAssetId)
     : undefined;
 
-  const persistedTimelineState = readTimelineState(
-    audioSyncJson ?? null,
-    {
-      audioMediaAssetId: persistedAudioMediaAssetId,
-      audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
-    },
-  );
-  const timelineState: AssemblyTimelineState = ensureLinkedAudioClipOnTimeline(
-    {
-      schema: "timeline_v2",
-      audioClips: persistedTimelineState.audioClips,
-    },
-    {
-      audioMediaAssetId: persistedAudioMediaAssetId,
-      audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
-    },
-  );
+  const persistedTimelineState = readTimelineState(audioSyncJson ?? null, {
+    audioMediaAssetId: persistedAudioMediaAssetId,
+    audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
+  });
+  const timelineState: AssemblyTimelineState = hasExplicitNoMusicTimeline(
+    audioSyncJson,
+  )
+    ? {
+        schema: "timeline_v2",
+        audioClips: persistedTimelineState.audioClips,
+      }
+    : ensureLinkedAudioClipOnTimeline(
+        {
+          schema: "timeline_v2",
+          audioClips: persistedTimelineState.audioClips,
+        },
+        {
+          audioMediaAssetId: persistedAudioMediaAssetId,
+          audioDurationSeconds: linkedAudioAsset?.durationSeconds ?? null,
+        },
+      );
 
   const linkedAudioMediaAssetId = resolveLinkedAudioMediaAssetId(
     timelineState.audioClips,

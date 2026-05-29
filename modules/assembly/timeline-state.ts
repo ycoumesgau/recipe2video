@@ -72,6 +72,30 @@ export function getEmptyTimelineState(): AssemblyTimelineState {
  * clips yet, materialise a full-length clip so Assembly preview/export can
  * use the uploaded music without forcing another Music-page visit.
  */
+/**
+ * True when the preset was saved with an explicit empty `timeline_v2` audio
+ * track (user turned music off). In that case we must not re-seed Suno clips
+ * on load/render even if `audio_media_asset_id` was not cleared yet.
+ */
+export function hasExplicitNoMusicTimeline(
+  audioSyncJson: Json | null | undefined,
+): boolean {
+  if (!isRecord(audioSyncJson) || audioSyncJson.schema !== TIMELINE_SCHEMA) {
+    return false;
+  }
+
+  const clips = audioSyncJson.audioClips;
+  return Array.isArray(clips) && clips.length === 0;
+}
+
+/**
+ * When a Suno track is linked to the preset but the timeline has no audio
+ * clips yet, materialise a full-length clip so Assembly preview/export can
+ * use the uploaded music without forcing another Music-page visit.
+ *
+ * Skipped when {@link hasExplicitNoMusicTimeline} is true (preset saved
+ * without music).
+ */
 export function ensureLinkedAudioClipOnTimeline(
   timelineState: AssemblyTimelineState,
   input: {
@@ -528,7 +552,7 @@ export function resolveLinkedAudioMediaAssetId(
   persistedAudioMediaAssetId?: string | null,
 ): string | null {
   if (audioClips.length === 0) {
-    return persistedAudioMediaAssetId ?? null;
+    return null;
   }
   if (
     persistedAudioMediaAssetId &&
