@@ -19,7 +19,10 @@ import {
   normalizeReferenceName,
 } from "@/modules/references/reference-matching";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
-import type { SegmentStatus } from "@/modules/storyboard/segment-status";
+import {
+  segmentStatusAfterFailedGeneration,
+  type SegmentStatus,
+} from "@/modules/storyboard/segment-status";
 import type { VideoProject } from "@/modules/videos/video.types";
 import type { VideoStatus } from "@/modules/videos/video-status";
 import {
@@ -328,7 +331,10 @@ export async function requestSegmentGenerationWorkflow(
 
     return { generationId: generation.id, runwayTaskId: runwayTask.id };
   } catch (error) {
-    await deps.updateSegmentStatus(segment.id, "failed");
+    await deps.updateSegmentStatus(
+      segment.id,
+      segmentStatusAfterFailedGeneration(segment),
+    );
     throw error;
   }
 }
@@ -349,7 +355,10 @@ export async function pollSegmentGenerationWorkflow(
       status: "failed",
       completedAt: deps.now(),
     });
-    await deps.updateSegmentStatus(segment.id, "failed");
+    await deps.updateSegmentStatus(
+      segment.id,
+      segmentStatusAfterFailedGeneration(segment),
+    );
     throw new Error("Generation is missing a Runway task ID.");
   }
 
@@ -382,7 +391,10 @@ export async function pollSegmentGenerationWorkflow(
         status: "failed",
         completedAt: deps.now(),
       });
-      await deps.updateSegmentStatus(segment.id, "failed");
+      await deps.updateSegmentStatus(
+      segment.id,
+      segmentStatusAfterFailedGeneration(segment),
+    );
       throw new Error("Succeeded Runway task did not include an output URL.");
     }
 
@@ -420,7 +432,10 @@ export async function pollSegmentGenerationWorkflow(
   }
 
   if (task.status === "FAILED" || task.status === "CANCELLED") {
-    await deps.updateSegmentStatus(segment.id, "failed");
+    await deps.updateSegmentStatus(
+      segment.id,
+      segmentStatusAfterFailedGeneration(segment),
+    );
     if (deps.logCost && (generation.costCredits ?? 0) > 0) {
       await refundRunwaySegmentGenerationCost(deps.logCost, {
         videoId: segment.videoId,
@@ -495,7 +510,10 @@ export async function persistSegmentOutputWorkflow(
       status: "failed",
       completedAt: deps.now(),
     });
-    await deps.updateSegmentStatus(segment.id, "failed");
+    await deps.updateSegmentStatus(
+      segment.id,
+      segmentStatusAfterFailedGeneration(segment),
+    );
     throw error;
   }
 }

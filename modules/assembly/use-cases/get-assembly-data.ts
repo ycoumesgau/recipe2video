@@ -5,6 +5,7 @@ import { listMediaAssetsByVideoId } from "@/modules/media-assets/repositories/me
 import { createStorageSignedUrl } from "@/modules/media-assets/services/storage.service";
 import { listGenerationsBySegmentIds } from "@/modules/generation/repositories/generation.repository";
 import { listSegmentsByVideoId } from "@/modules/storyboard/repositories/segment.repository";
+import { segmentHasAcceptedVariant } from "@/modules/storyboard/segment-status";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 import { getVideoProjectById } from "@/modules/videos/repositories/video.repository";
 import type { SupabaseDataClient } from "@/shared/supabase/client.types";
@@ -101,8 +102,8 @@ export async function getAssemblyPageData(
     listPresetsByVideoId(supabase, videoId),
   ]);
 
-  const acceptedSegments = segments.filter(
-    (segment) => segment.status === "accepted",
+  const acceptedSegments = segments.filter((segment) =>
+    segmentHasAcceptedVariant(segment),
   );
   const conversationNameBySegmentId = await loadConversationNamesBySegmentIds(
     supabase,
@@ -426,8 +427,8 @@ export async function buildRemotionPropsForCompositionRow(
     listMediaAssetsByVideoId(supabase, videoId),
   ]);
 
-  const acceptedSegments = segments.filter(
-    (segment) => segment.status === "accepted",
+  const acceptedSegments = segments.filter((segment) =>
+    segmentHasAcceptedVariant(segment),
   );
   const conversationNameBySegmentId = await loadConversationNamesBySegmentIds(
     supabase,

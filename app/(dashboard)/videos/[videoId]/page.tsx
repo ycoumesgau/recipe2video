@@ -30,6 +30,7 @@ import {
 } from "@/modules/recipe-agent/repositories/recipe-agent.repository";
 import { RecipeAgentPanel } from "@/modules/recipe-agent/ui/recipe-agent-panel";
 import { loadRecipeAgentContext } from "@/modules/recipe-agent/load-recipe-agent-context";
+import { segmentHasAcceptedVariant } from "@/modules/storyboard/segment-status";
 import { getStoryboardReviewData } from "@/modules/storyboard/use-cases/load-storyboard-fixture";
 import { listRecipeSourceImagePreviewUrls } from "@/modules/media-assets/use-cases/list-recipe-source-image-preview-urls";
 import { computeNextAction } from "@/modules/videos/compute-next-action";
@@ -74,8 +75,8 @@ export default async function VideoDetailPage({
     serverActiveConversationId,
   } = await loadProject(videoId, query.conversation);
 
-  const acceptedSegments = seedanceSegments.filter(
-    (segment) => segment.status === "accepted",
+  const acceptedSegments = seedanceSegments.filter((segment) =>
+    segmentHasAcceptedVariant(segment),
   ).length;
   const recipeSource = readRecipeSourceSummary(project);
   const cursorAgentSelection = project

@@ -1,5 +1,6 @@
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import type { Generation } from "@/modules/generation/generation.types";
+import { segmentHasAcceptedVariant } from "@/modules/storyboard/segment-status";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 
 import type { AssemblySegmentClip } from "./assembly.types";
@@ -166,7 +167,7 @@ export function buildSegmentVariantCatalogue(input: {
       }
       // Primary asset on accepted segment without a generation row in the list.
       const primary = selectPrimaryAssetForSegment(segment, input.mediaAssets);
-      if (primary && segment.status === "accepted") {
+      if (primary && segmentHasAcceptedVariant(segment)) {
         pushCandidate({
           segment,
           generation: null,
