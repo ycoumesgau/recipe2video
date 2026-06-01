@@ -167,7 +167,7 @@ export function buildSegmentVariantCatalogue(input: {
       }
       // Primary asset on accepted segment without a generation row in the list.
       const primary = selectPrimaryAssetForSegment(segment, input.mediaAssets);
-      if (primary && segment.status === "accepted") {
+      if (primary && segmentHasAcceptedVariant(segment)) {
         pushCandidate({
           segment,
           generation: null,

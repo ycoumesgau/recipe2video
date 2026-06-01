@@ -143,3 +143,89 @@ test("buildSegmentVariantCatalogue stacks two variants for the same storyboard s
   assert.equal(groups.length, 1);
   assert.equal(groups[0]?.variants.length, 2);
 });
+
+test("buildSegmentVariantCatalogue keeps the selected take when segment status is failed after a retry", () => {
+  const segment: SeedanceSegment = {
+    id: "seg_main",
+    videoId: "vid",
+    position: 1,
+    title: "Hook",
+    arc: "",
+    mode: "References",
+    logicalSceneIds: [],
+    description: "",
+    prompt: "",
+    promptInitial: "",
+    references: [],
+    beats: [],
+    timing: [],
+    continuity: "",
+    risk: "",
+    audioPrompt: "",
+    negatives: [],
+    qaChecklist: {
+      referencesWithinLimit: true,
+      globalKitchenReferencePresent: true,
+      referenceRolesExplicit: true,
+      promptWithinPracticalLimit: true,
+      hardCutsSpecified: true,
+      mandatoryTimingSpecified: true,
+      noSpeechVoiceoverOrMusic: true,
+      fragileFoodPhysicsHandled: true,
+      nonStandardGeometryHandled: true,
+      sourcePoliciesApplied: [],
+    },
+    durationTarget: 5,
+    status: "failed",
+    selectedGenerationId: "gen_accepted",
+  };
+
+  const generations: Generation[] = [
+    {
+      id: "gen_accepted",
+      segmentId: "seg_main",
+      model: "seedance2",
+      modelParams: {},
+      status: "succeeded",
+      mediaAssetId: "asset_accepted",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    },
+    {
+      id: "gen_failed_retry",
+      segmentId: "seg_main",
+      model: "seedance2",
+      modelParams: {},
+      status: "failed",
+      createdAt: "2026-01-03T00:00:00.000Z",
+    },
+  ];
+
+  const mediaAssets: MediaAsset[] = [
+    {
+      id: "asset_accepted",
+      videoId: "vid",
+      segmentId: "seg_main",
+      generationId: "gen_accepted",
+      type: "accepted_clip",
+      provider: "supabase",
+      storageBucket: "accepted_clips",
+      storagePath: "hook.mp4",
+      status: "stored",
+      durationSeconds: 5,
+      createdAt: "2026-01-02T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    },
+  ];
+
+  const entries = buildSegmentVariantCatalogue({
+    allSegments: [segment],
+    acceptedSegments: [segment],
+    generations,
+    mediaAssets,
+    conversationNameBySegmentId: new Map(),
+  });
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.mediaAssetId, "asset_accepted");
+  assert.equal(entries[0]?.isActiveVariant, true);
+});
