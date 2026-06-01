@@ -1096,6 +1096,45 @@ test("pollSegmentGenerationWorkflow persists a succeeded task and requests outpu
   assert.deepEqual(sentEvents, ["segment.output.persist.requested"]);
 });
 
+test("pollSegmentGenerationWorkflow keeps accepted status when a later variant fails", async () => {
+  const segmentStatuses: string[] = [];
+
+  await pollSegmentGenerationWorkflow(
+    {
+      generationId: "generation-1",
+      taskId: "task-1",
+      requestedByUserId: "user-1",
+      isAllowlisted: true,
+    },
+    {
+      getGenerationById: async () => baseGeneration,
+      getSegmentById: async () => ({
+        ...baseSegment,
+        status: "generating",
+        selectedGenerationId: "generation-accepted",
+      }),
+      getRunwayTask: async () => ({
+        id: "task-1",
+        status: "CANCELLED",
+        generationStatus: "failed",
+        isTerminal: true,
+      }),
+      updateGenerationStatus: async (input) => ({
+        ...baseGeneration,
+        status: input.status,
+      }),
+      updateSegmentStatus: async (_segmentId, status) => {
+        segmentStatuses.push(status);
+        return { ...baseSegment, status };
+      },
+      sendEvent: async () => undefined,
+      now: () => "2026-05-09T01:00:00.000Z",
+    },
+  );
+
+  assert.deepEqual(segmentStatuses, ["accepted"]);
+});
+
 test("pollSegmentGenerationWorkflow refunds credits when Runway fails the task", async () => {
   const costOperations: string[] = [];
 

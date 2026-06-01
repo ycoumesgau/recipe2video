@@ -8,7 +8,10 @@ import type {
   SeedanceSegment,
   SegmentReference,
 } from "../storyboard.types";
-import type { SegmentStatus } from "../segment-status";
+import {
+  segmentHasAcceptedVariant,
+  type SegmentStatus,
+} from "../segment-status";
 
 type SegmentRow = Database["public"]["Tables"]["segments"]["Row"];
 
@@ -211,12 +214,13 @@ export type SegmentProgressRow = {
   videoId: string;
   position: number;
   status: SegmentStatus;
+  selectedGenerationId: string | null;
 };
 
 /**
  * Count storyboard slots (distinct `position`) rather than raw segment rows.
  * A slot counts as accepted when any conversation's segment at that position
- * is accepted — matching Assembly's cross-conversation mix semantics.
+ * already has an accepted variant — matching Assembly's cross-conversation mix semantics.
  */
 export function summarizeSegmentProgressByPosition(rows: SegmentProgressRow[]): {
   acceptedCount: number;
@@ -231,7 +235,7 @@ export function summarizeSegmentProgressByPosition(rows: SegmentProgressRow[]): 
 
   let acceptedCount = 0;
   for (const positionRows of byPosition.values()) {
-    if (positionRows.some((row) => row.status === "accepted")) {
+    if (positionRows.some((row) => segmentHasAcceptedVariant(row))) {
       acceptedCount += 1;
     }
   }
@@ -252,7 +256,7 @@ export async function listSegmentProgressByVideoIds(
 
   const { data, error } = await supabase
     .from("segments")
-    .select("id, video_id, position, status")
+    .select("id, video_id, position, status, selected_generation_id")
     .in("video_id", videoIds);
 
   throwIfSupabaseError(error, "listSegmentProgressByVideoIds failed");
@@ -262,6 +266,7 @@ export async function listSegmentProgressByVideoIds(
     videoId: row.video_id,
     position: row.position,
     status: row.status as SegmentStatus,
+    selectedGenerationId: row.selected_generation_id,
   }));
 }
 

@@ -19,3 +19,36 @@ export const SEGMENT_STATUSES = [
 ] as const;
 
 export type SegmentStatus = (typeof SEGMENT_STATUSES)[number];
+
+/**
+ * Whether a storyboard slot already has an operator-approved take.
+ *
+ * `segments.selected_generation_id` is the source of truth for the accepted
+ * variant. A later failed or cancelled Runway task must not make totals treat
+ * the slot as unvalidated when that pointer is still set.
+ */
+export function segmentHasAcceptedVariant(segment: {
+  status: SegmentStatus;
+  selectedGenerationId?: string | null;
+}): boolean {
+  if (segment.selectedGenerationId) {
+    return true;
+  }
+
+  return segment.status === "accepted";
+}
+
+/**
+ * Segment row status after a generation attempt ends without a new accepted take.
+ * Preserves `accepted` when an earlier variant is still selected.
+ */
+export function segmentStatusAfterFailedGeneration(segment: {
+  status: SegmentStatus;
+  selectedGenerationId?: string | null;
+}): SegmentStatus {
+  if (segmentHasAcceptedVariant(segment)) {
+    return "accepted";
+  }
+
+  return "failed";
+}

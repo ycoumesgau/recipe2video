@@ -1,5 +1,6 @@
 import type { MediaAsset } from "@/modules/media-assets/media-asset.types";
 import type { Generation } from "@/modules/generation/generation.types";
+import { segmentHasAcceptedVariant } from "@/modules/storyboard/segment-status";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
 
 import type { AssemblySegmentClip } from "./assembly.types";
