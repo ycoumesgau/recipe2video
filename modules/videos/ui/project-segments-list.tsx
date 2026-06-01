@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { PlayCircle } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { AlertTriangle, PlayCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { GenerationRscSync } from "@/modules/generation/ui/generation-rsc-sync";
 import { launchSelectedSegmentsAction } from "@/modules/generation/actions";
 import type { SeedanceSegment } from "@/modules/storyboard/storyboard.types";
@@ -38,6 +46,8 @@ export function ProjectSegmentsList({
   const [selectedSegmentIds, setSelectedSegmentIds] = useState<string[]>(
     selectableSegmentIds,
   );
+  const [launchConfirmOpen, setLaunchConfirmOpen] = useState(false);
+  const launchFormRef = useRef<HTMLFormElement>(null);
   const selectableSet = new Set(selectableSegmentIds);
   const effectiveSelectedSegmentIds = selectedSegmentIds.filter((id) =>
     selectableSet.has(id),
@@ -73,10 +83,14 @@ export function ProjectSegmentsList({
             storyboard before reviewing variants.
           </div>
         ) : (
-          <form action={launchSelectedSegmentsAction} className="space-y-4">
+          <form
+            ref={launchFormRef}
+            action={launchSelectedSegmentsAction}
+            className="space-y-4"
+          >
             <input name="videoId" type="hidden" value={videoId} />
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+            <div className="hidden flex-wrap items-center justify-between gap-3 rounded-lg border p-3 md:flex">
               <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
                 <input
                   checked={allSelected}
@@ -90,11 +104,26 @@ export function ProjectSegmentsList({
                 />
                 Select all ready segments
               </label>
-              <Button disabled={!hasSelection} size="sm" type="submit">
+              <Button
+                disabled={!hasSelection}
+                onClick={() => setLaunchConfirmOpen(true)}
+                size="sm"
+                type="button"
+              >
                 <PlayCircle className="h-4 w-4" />
                 Launch selected ({effectiveSelectedSegmentIds.length})
               </Button>
             </div>
+
+            <BatchLaunchConfirmDialog
+              onConfirm={() => {
+                setLaunchConfirmOpen(false);
+                launchFormRef.current?.requestSubmit();
+              }}
+              onOpenChange={setLaunchConfirmOpen}
+              open={launchConfirmOpen}
+              segmentCount={effectiveSelectedSegmentIds.length}
+            />
 
             <div className="grid gap-4 md:grid-cols-2">
               {seedanceSegments.map((segment) => {
@@ -166,10 +195,76 @@ export function ProjectSegmentsList({
                 );
               })}
             </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 md:hidden">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  checked={allSelected}
+                  disabled={selectableSegmentIds.length === 0}
+                  onChange={(event) => {
+                    setSelectedSegmentIds(
+                      event.target.checked ? selectableSegmentIds : [],
+                    );
+                  }}
+                  type="checkbox"
+                />
+                Select all ready segments
+              </label>
+              <Button
+                disabled={!hasSelection}
+                onClick={() => setLaunchConfirmOpen(true)}
+                size="sm"
+                type="button"
+              >
+                <PlayCircle className="h-4 w-4" />
+                Launch selected ({effectiveSelectedSegmentIds.length})
+              </Button>
+            </div>
           </form>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function BatchLaunchConfirmDialog({
+  open,
+  onOpenChange,
+  segmentCount,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  segmentCount: number;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent showCloseButton>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            Launch {segmentCount} Seedance segment
+            {segmentCount === 1 ? "" : "s"}?
+          </DialogTitle>
+          <DialogDescription className="text-left">
+            This queues a paid Runway generation for each selected segment.
+            Accidental taps on mobile are costly — confirm only if you intend
+            to launch all {segmentCount} segment
+            {segmentCount === 1 ? "" : "s"} now.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button onClick={() => onOpenChange(false)} type="button" variant="outline">
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} type="button">
+            <PlayCircle className="h-4 w-4" />
+            Yes, launch {segmentCount} segment{segmentCount === 1 ? "" : "s"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
